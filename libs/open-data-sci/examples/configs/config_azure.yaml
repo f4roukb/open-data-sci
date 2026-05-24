@@ -1,0 +1,58 @@
+# OpenDataSci — Azure OpenAI config
+#
+# Usage:
+#   opendatasci data.csv --config examples/config_azure.yaml
+#
+# Prerequisites:
+#   pip install "open-data-sci[azure]"
+#
+# Authentication — API key OR service principal (not both):
+#
+#   API key:
+#     export AZURE_OPENAI_ENDPOINT=https://my-resource.openai.azure.com
+#     export AZURE_OPENAI_API_KEY=...
+#
+#   Service principal (requires [azure] extra):
+#     export AZURE_OPENAI_ENDPOINT=https://my-resource.openai.azure.com
+#     export AZURE_TENANT_ID=...
+#     export AZURE_CLIENT_ID=...
+#     export AZURE_CLIENT_SECRET=...
+#
+# TUI flags override any value here at launch.
+
+# ── Primary model ─────────────────────────────────────────────────────────────
+# The model value here is the *deployment name* in your Azure OpenAI resource,
+# not the underlying model name — they may differ depending on how you named
+# the deployment in the Azure portal.
+provider: azure
+model: gpt-4o
+
+# ── Secondary (auxiliary) model ───────────────────────────────────────────────
+secondary_provider: azure
+secondary_model: gpt-4o-mini
+
+# ── Sampling ──────────────────────────────────────────────────────────────────
+temperature: 0.1
+
+# ── Azure endpoint & API version ─────────────────────────────────────────────
+# Falls back to AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_VERSION env vars.
+# azure_endpoint: https://my-resource.openai.azure.com
+# azure_api_version: 2025-01-01-preview
+
+# ── Agent identity ────────────────────────────────────────────────────────────
+name: Sai
+
+# ── Web access ────────────────────────────────────────────────────────────────
+extra_web_domains:
+  - arxiv.org
+  - huggingface.co
+  - paperswithcode.com
+  - kaggle.com
+
+# ── Parallelism ───────────────────────────────────────────────────────────────
+worker_timeout_seconds: 600
+
+# ── Context management ────────────────────────────────────────────────────────
+midturn_compaction_threshold: 80000
+
+# ── Diagnostics ───────────────────────────────────────────────────────────────

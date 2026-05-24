@@ -1,0 +1,29 @@
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# uv cache
+.uv-cache/
+
+# Benchmark artifacts
+.benchmarks/
+.benchmark/
+
+# Run artifacts
+run-*.json
+
+# Secrets
+.env
+.env.local

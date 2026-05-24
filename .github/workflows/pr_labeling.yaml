@@ -1,0 +1,58 @@
+name: PR Labeler
+
+on:
+  pull_request:
+    types: [opened]
+
+jobs:
+  label:
+    runs-on: ubuntu-22.04
+    permissions:
+      pull-requests: write
+      issues: write
+
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.pull_request.body || '';
+
+            const labelColors = {
+              feature:  '0075ca', // blue
+              bug:      'd73a4a', // red
+              refactor: 'e4e669', // yellow
+              docs:     '006b75', // teal
+              perf:     '5319e7', // purple
+              chore:    'cfd3d7', // light gray
+              breaking: 'b60205', // dark red
+            };
+
+            const labels = Object.keys(labelColors).filter(name =>
+              new RegExp(`- \\[x\\] ${name}`, 'i').test(body)
+            );
+
+            if (labels.length === 0) return;
+
+            for (const name of labels) {
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name,
+                });
+              } catch {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name,
+                  color: labelColors[name],
+                });
+              }
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              labels,
+            });

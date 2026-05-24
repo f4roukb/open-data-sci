@@ -1,0 +1,81 @@
+name: Bug Report
+description: Something is broken
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "**Fill every field that applies. Delete rows that don't.**"
+
+  - type: textarea
+    id: what
+    attributes:
+      label: "What happened"
+      description: "Actual vs expected. One sentence each."
+      placeholder: |
+        Actual: astream() raises KeyError after loading a .parquet file.
+        Expected: Streams events normally.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: "Minimal repro"
+      description: "Smallest runnable snippet that triggers the bug."
+      render: python
+      placeholder: |
+        from opendatasci import OpenDataSci
+        async with OpenDataSci() as datasci:
+            await datasci.load_file("data.parquet")
+            async for e in datasci.astream("count rows"):
+                print(e)
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: "Error / traceback"
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: "open-data-sci version"
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: "LLM provider"
+      options:
+        - OpenAI
+        - Anthropic
+        - AWS Bedrock
+        - Google Gemini
+        - Google Vertex AI
+        - Ollama
+        - vLLM
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: "Python version"
+      placeholder: "3.12.11"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: "OS"
+      placeholder: "macOS 14.5 / Ubuntu 22.04 / Windows 11"
+    validations:
+      required: false

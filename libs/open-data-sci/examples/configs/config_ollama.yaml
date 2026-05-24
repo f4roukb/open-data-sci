@@ -1,0 +1,51 @@
+# OpenDataSci — Ollama config
+#
+# Usage:
+#   opendatasci data.csv --config examples/config_ollama.yaml
+#
+# Prerequisites:
+#   pip install "open-data-sci[ollama]"
+#   Install Ollama: https://ollama.com
+#
+# Pull a model and start the server before launching OpenDataSci:
+#   ollama pull llama3.2:3b
+#   ollama serve               # starts on http://localhost:11434 by default
+#
+# No API key required.
+# TUI flags override any value here at launch.
+
+# ── Primary model ─────────────────────────────────────────────────────────────
+provider: ollama
+model: llama3.2:3b
+
+# ── Secondary (auxiliary) model ───────────────────────────────────────────────
+secondary_provider: ollama
+secondary_model: llama3.2:3b
+
+# ── Sampling ──────────────────────────────────────────────────────────────────
+temperature: 0.1
+
+# ── Server URL ────────────────────────────────────────────────────────────────
+# Falls back to LLM_SERVER_BASE_URL env var, then http://localhost:11434.
+# Uncomment if your Ollama server is not on the default port or host.
+# llm_server_base_url: http://localhost:11434
+
+# ── Agent identity ────────────────────────────────────────────────────────────
+name: Sai
+
+# ── Web access ────────────────────────────────────────────────────────────────
+extra_web_domains:
+  - arxiv.org
+  - huggingface.co
+  - paperswithcode.com
+  - kaggle.com
+
+# ── Parallelism ───────────────────────────────────────────────────────────────
+worker_timeout_seconds: 600
+
+# ── Context management ────────────────────────────────────────────────────────
+# Smaller local models often have 4 K–8 K token context windows; compact more
+# aggressively by lowering this threshold.
+midturn_compaction_threshold: 40000
+
+# ── Diagnostics ───────────────────────────────────────────────────────────────
