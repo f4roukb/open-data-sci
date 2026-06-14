@@ -112,9 +112,13 @@ class _RecordingEphemeral(EphemeralHandle):
 class _RecordingThinking(ThinkingHandle):
     def __init__(self) -> None:
         self.dismissed = False
+        self.finished: str | None = None
 
     def dismiss(self) -> None:
         self.dismissed = True
+
+    def finish(self, summary: str) -> None:
+        self.finished = summary
 
 
 class _RecordingTurnStatus(TurnStatusHandle):
