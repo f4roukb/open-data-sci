@@ -1,0 +1,98 @@
+site_name: Open Data Sci
+site_description: Data scientist AI agent — Make your data valuable instantly by delegating all the data science work to this expert.
+site_url: https://open-data-sci.readthedocs.io/
+repo_url: https://github.com/f4roukb/open-data-sci
+repo_name: f4roukb/open-data-sci
+edit_uri: edit/main/libs/open-data-sci/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tooltips
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+            unwrap_annotated: true
+            merge_init_into_class: true
+            heading_level: 2
+            filters: ["!^_"]
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - API Reference:
+      - Overview: api/index.md
+      - create_agent: api/open_data_sci.md
+      - Agent: api/agent.md
+      - OpenDataSciConfig: api/config.md
+      - TUI Service: api/session_manager.md
+      - Memory: api/memory.md
+      - Workspace: api/workbench.md
+      - Sandbox & Execution: api/session.md
+      - Events & Types: api/types.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+  - attr_list
+  - def_list
+  - md_in_html
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/f4roukb/open-data-sci

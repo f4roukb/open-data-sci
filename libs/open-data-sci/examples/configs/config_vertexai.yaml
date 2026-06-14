@@ -1,0 +1,52 @@
+# OpenDataSci — Google Vertex AI config
+#
+# Usage:
+#   opendatasci data.csv --config examples/config_vertexai.yaml
+#
+# Prerequisites:
+#   pip install "open-data-sci[gcp]"
+#
+# Authentication (Application Default Credentials — pick one):
+#   gcloud auth application-default login          # user credentials
+#   export GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json  # service account
+#   # on GCE / Cloud Run / GKE: credentials are fetched automatically
+#
+# Required env vars:
+#   export GOOGLE_CLOUD_PROJECT=my-gcp-project
+#   export GOOGLE_CLOUD_LOCATION=us-central1       # optional, defaults to us-central1
+#
+# TUI flags override any value here at launch.
+
+# ── Primary model ─────────────────────────────────────────────────────────────
+provider: vertexai
+model: gemini-2.5-pro
+
+# ── Secondary (auxiliary) model ───────────────────────────────────────────────
+secondary_provider: vertexai
+secondary_model: gemini-2.5-flash
+
+# ── Sampling ──────────────────────────────────────────────────────────────────
+temperature: 0.1
+
+# ── GCP project & location ───────────────────────────────────────────────────
+# Falls back to GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION env vars.
+# google_cloud_project: my-gcp-project
+# google_cloud_location: us-central1
+
+# ── Agent identity ────────────────────────────────────────────────────────────
+name: Sai
+
+# ── Web access ────────────────────────────────────────────────────────────────
+extra_web_domains:
+  - arxiv.org
+  - huggingface.co
+  - paperswithcode.com
+  - kaggle.com
+
+# ── Parallelism ───────────────────────────────────────────────────────────────
+worker_timeout_seconds: 600
+
+# ── Context management ────────────────────────────────────────────────────────
+midturn_compaction_threshold: 80000
+
+# ── Diagnostics ───────────────────────────────────────────────────────────────

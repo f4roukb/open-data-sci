@@ -1,0 +1,42 @@
+# OpenDataSci — OpenAI config
+#
+# Usage:
+#   opendatasci data.csv --config examples/config_openai.yaml
+#
+# Set your API key:
+#   export OPENAI_API_KEY=sk-...
+# TUI flags override any value here at launch.
+
+# ── Primary model ─────────────────────────────────────────────────────────────
+provider: openai
+model: gpt-5.5
+
+# ── Secondary (auxiliary) model ───────────────────────────────────────────────
+# Used for lightweight tasks: memory summarisation, dataset card updates, etc.
+secondary_provider: openai
+secondary_model: gpt-5.4-mini
+
+# ── Sampling ──────────────────────────────────────────────────────────────────
+temperature: 0.1
+
+# ── Agent identity ────────────────────────────────────────────────────────────
+name: Sai
+
+# ── Web access ────────────────────────────────────────────────────────────────
+extra_web_domains:
+  - arxiv.org
+  - huggingface.co
+  - paperswithcode.com
+  - kaggle.com
+
+# ── Parallelism ───────────────────────────────────────────────────────────────
+worker_timeout_seconds: 600
+
+# ── Context management ────────────────────────────────────────────────────────
+midturn_compaction_threshold: 80000
+
+# ── API key ───────────────────────────────────────────────────────────────────
+# Prefer the OPENAI_API_KEY env var over hardcoding here.
+# openai_api_key: sk-...
+
+# ── Diagnostics ───────────────────────────────────────────────────────────────

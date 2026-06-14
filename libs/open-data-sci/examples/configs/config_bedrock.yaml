@@ -1,0 +1,53 @@
+# OpenDataSci — AWS Bedrock config
+#
+# Usage:
+#   opendatasci data.csv --config examples/config_bedrock.yaml
+#
+# Prerequisites:
+#   pip install "open-data-sci[aws]"
+#   Enable model access in the Bedrock console (Bedrock → Model access)
+#
+# Authentication (boto3 credential chain — pick one):
+#   export AWS_ACCESS_KEY_ID=AKIA...
+#   export AWS_SECRET_ACCESS_KEY=...
+#   export AWS_SESSION_TOKEN=...        # only for temporary STS credentials
+#   # or: use ~/.aws/credentials, an IAM role, aws-vault, or AWS SSO
+#
+# TUI flags override any value here at launch.
+
+# ── Primary model ─────────────────────────────────────────────────────────────
+# Cross-region inference requires the regional prefix (us., eu., ap.).
+provider: bedrock
+model: us.anthropic.claude-sonnet-4-6
+
+# ── Secondary (auxiliary) model ───────────────────────────────────────────────
+secondary_provider: bedrock
+secondary_model: us.anthropic.claude-haiku-4-5-20251001-v1:0
+
+# ── Sampling & reasoning ──────────────────────────────────────────────────────
+# Anthropic on Bedrock overrides temperature to 1 when extended thinking is active.
+temperature: 0.1
+thinking_budget: 8000
+
+# ── Region ────────────────────────────────────────────────────────────────────
+# Falls back to REGION env var, then us-east-1.
+# The cross-region inference model prefix (us./eu./ap.) must match this region.
+aws_region: us-east-1
+
+# ── Agent identity ────────────────────────────────────────────────────────────
+name: Sai
+
+# ── Web access ────────────────────────────────────────────────────────────────
+extra_web_domains:
+  - arxiv.org
+  - huggingface.co
+  - paperswithcode.com
+  - kaggle.com
+
+# ── Parallelism ───────────────────────────────────────────────────────────────
+worker_timeout_seconds: 600
+
+# ── Context management ────────────────────────────────────────────────────────
+midturn_compaction_threshold: 80000
+
+# ── Diagnostics ───────────────────────────────────────────────────────────────

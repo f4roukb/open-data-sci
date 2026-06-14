@@ -1,0 +1,52 @@
+# OpenDataSci — vLLM config
+#
+# Usage:
+#   opendatasci data.csv --config examples/config_vllm.yaml
+#
+# Prerequisites:
+#   pip install vllm
+#   pip install "open-data-sci[vllm]"
+#
+# Start the vLLM server before launching OpenDataSci:
+#   vllm serve meta-llama/Llama-3.2-3B-Instruct
+#
+# Hugging Face login is required for gated models:
+#   huggingface-cli login
+#
+# No API key required.
+# TUI flags override any value here at launch.
+
+# ── Primary model ─────────────────────────────────────────────────────────────
+provider: vllm
+model: meta-llama/Llama-3.2-3B-Instruct
+
+# ── Secondary (auxiliary) model ───────────────────────────────────────────────
+secondary_provider: vllm
+secondary_model: meta-llama/Llama-3.2-3B-Instruct
+
+# ── Sampling ──────────────────────────────────────────────────────────────────
+temperature: 0.1
+
+# ── Server URL ────────────────────────────────────────────────────────────────
+# Falls back to LLM_SERVER_BASE_URL env var, then http://localhost:8000/v1.
+# Uncomment if your vLLM server is not on the default port or host.
+# llm_server_base_url: http://localhost:8000/v1
+
+# ── Agent identity ────────────────────────────────────────────────────────────
+name: Sai
+
+# ── Web access ────────────────────────────────────────────────────────────────
+extra_web_domains:
+  - arxiv.org
+  - huggingface.co
+  - paperswithcode.com
+  - kaggle.com
+
+# ── Parallelism ───────────────────────────────────────────────────────────────
+worker_timeout_seconds: 600
+
+# ── Context management ────────────────────────────────────────────────────────
+# Smaller open-weight models often have shorter context windows; compact earlier.
+midturn_compaction_threshold: 40000
+
+# ── Diagnostics ───────────────────────────────────────────────────────────────

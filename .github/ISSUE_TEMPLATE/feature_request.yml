@@ -1,0 +1,47 @@
+name: Feature Request
+description: Propose a new capability or improvement
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: "**Be specific. Vague requests are closed.**"
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Problem / motivation"
+      description: "What can't you do today, and why does it matter?"
+      placeholder: "There's no way to stream token-level deltas — only full event objects — which makes building real-time UIs slow."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: "Proposed solution"
+      description: "What should the API look like? Code sketch preferred."
+      render: python
+      placeholder: |
+        async for chunk in opendatasci.astream_text("query"):
+            print(chunk, end="", flush=True)
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Alternatives you've considered"
+      description: "Workarounds or other designs, and why they fall short."
+    validations:
+      required: false
+
+  - type: dropdown
+    id: willing
+    attributes:
+      label: "Willing to implement?"
+      options:
+        - "Yes — I'll open a PR"
+        - "Maybe — need guidance first"
+        - "No"
+    validations:
+      required: true

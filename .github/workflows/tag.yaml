@@ -1,0 +1,66 @@
+name: Tag Release
+
+# When a PR from `main` is merged into `release`, tag the release commit with
+# the version declared in pyproject.toml (v{version}).
+#
+# Releasing is therefore a two-step manual act with an automatic tag:
+#   1. Bump `project.version` in pyproject.toml on `main`.
+#   2. Open and merge a PR from `main` into `release`.
+#   -> this workflow creates the `v{version}` tag.
+#
+# Publishing that tag to PyPI is a separate, manually-triggered workflow
+# (see publish.yaml). The tag is created with GITHUB_TOKEN; no PAT is needed.
+on:
+  pull_request:
+    types: [closed]
+    branches: [release]
+
+jobs:
+  tag:
+    if: >
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.ref == 'main'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: libs/open-data-sci
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(sed -n 's/^version = "\([^"]*\)".*/\1/p' pyproject.toml | head -n1)
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not read project.version from pyproject.toml"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version in pyproject.toml: $VERSION"
+
+      - name: Skip if tag already exists
+        id: check
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists; nothing to do."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create and push tag
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+          echo "Created tag $TAG"
