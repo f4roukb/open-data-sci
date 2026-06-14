@@ -319,10 +319,11 @@ class SRTSandbox(BaseSandbox):
         # timeout can signal the *entire* tree (shell → bwrap/sandbox-exec →
         # python), not just the top-level shell, which would otherwise leak the
         # sandbox and its python child as orphans.
-        if os.name == "posix":
-            spawn_kwargs: dict[str, Any] = {"start_new_session": True}
+        spawn_kwargs: dict[str, Any]
+        if sys.platform != "win32":
+            spawn_kwargs = {"start_new_session": True}
         else:
-            spawn_kwargs = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}  # type: ignore[attr-defined]
+            spawn_kwargs = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
 
         proc: asyncio.subprocess.Process | None = None
         try:
@@ -360,7 +361,7 @@ class SRTSandbox(BaseSandbox):
         """Kill the subprocess's whole group and reap it, so no orphans or
         unreaped transports remain."""
         try:
-            if os.name == "posix":
+            if sys.platform != "win32":
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
             else:
                 proc.kill()
