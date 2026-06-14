@@ -1,4 +1,4 @@
-"""ParallelWorkerAgent spawning tool: spawn_workers."""
+"""ConcurrentWorkerAgent spawning tool: spawn_workers."""
 
 import asyncio
 import logging
@@ -94,10 +94,10 @@ async def _run_one(
                 )
             )
         from opendatasci.agents.agents import (
-            ParallelWorkerAgent,
+            ConcurrentWorkerAgent,
         )  # local import breaks circular dependency
 
-        agent = ParallelWorkerAgent(tools=tools, config=datasci_config)
+        agent = ConcurrentWorkerAgent(tools=tools, config=datasci_config)
         emit("worker_started", subtask.summary)
 
         try:
@@ -231,7 +231,7 @@ def create_worker_tools(
                 output = f"Error: worker failed — {type(result).__name__}: {result}"
             else:
                 output = result
-            sections.append(f"### ParallelWorkerAgent {i}: {subtask.subtask}\n\n{output}")
+            sections.append(f"### ConcurrentWorkerAgent {i}: {subtask.subtask}\n\n{output}")
         return "\n\n---\n\n".join(sections)
 
     return [spawn_workers]

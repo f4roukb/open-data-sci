@@ -135,7 +135,7 @@ Examples:
 ```
 feat: add vLLM provider support
 fix: handle empty DataFrame in dataset profiling
-perf: reduce memory usage in parallel worker aggregation
+perf: reduce memory usage in concurrent worker aggregation
 docs: add component test setup instructions
 ```
 

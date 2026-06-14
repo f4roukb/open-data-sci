@@ -22,7 +22,7 @@ Initial public release.
 - **Plan mode** — agent commits to a structured multi-step plan before executing; plans are persisted to `.opendatasci/plans/`.
 - **Self-review mode** — dedicated review pass catches and corrects mistakes before results are returned.
 - **Code verification** — a secondary LLM critiques generated code before execution, catching logical errors independently of the main model.
-- **Parallel workers** — up to 3 concurrent worker agents for ensembling, hyperparameter search, or experiment runs; each worker can be pre-loaded with a domain skill and optionally granted web access.
+- **Concurrent workers** — up to 3 concurrent worker agents for ensembling, hyperparameter search, or experiment runs; each worker can be pre-loaded with a domain skill and optionally granted web access.
 - **Web search and URL fetching** — agent can search the web and retrieve URLs; configurable domain allowlist via `OpenDataSciConfig`.
 - **Interactive user questions** — agent can pause mid-turn to ask the user a multiple-choice question and block until an answer is received.
 - **Dataset profiling** — automatic dataset profiling with hash-based result caching to avoid redundant recomputation.

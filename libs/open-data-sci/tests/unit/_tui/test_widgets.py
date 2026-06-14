@@ -615,7 +615,7 @@ class TestToolCallBlockRefreshSpacing:
 class TestToolCallBlockWorkerRowRendering:
     """Worker block renders a subtree:
 
-        ⚡ Spawned parallel workers
+        ⚡ Parallelizing
           └─ ⣾ Worker 1: …
           └─ ⣾ Worker 2: …
 
@@ -636,8 +636,8 @@ class TestToolCallBlockWorkerRowRendering:
         block = _make_block(communication="", worker_summaries=["w1"])
         lines = self._rendered_lines(block)
         # While workers run, the spinner is prepended to the header by
-        # _status_markup; expected layout is "{spin} ⚡ Spawned parallel workers".
-        assert "⚡ Spawned parallel workers" in lines[0]
+        # _status_markup; expected layout is "{spin} ⚡ Parallelizing".
+        assert "⚡ Parallelizing" in lines[0]
         assert not lines[0].rstrip().endswith(":")
 
     def test_header_done_state_has_no_trailing_colon(self) -> None:
@@ -645,7 +645,7 @@ class TestToolCallBlockWorkerRowRendering:
         block._worker_statuses[0] = "done"
         lines = self._rendered_lines(block)
         # All workers terminal → header rendered in the done style (no spinner).
-        assert lines[0] == "⚡ Spawned parallel workers"
+        assert lines[0] == "⚡ Parallelizing"
 
     def test_running_worker_row_has_indented_tree_prefix_before_spinner(self) -> None:
         block = _make_block(communication="", worker_summaries=["w1"])

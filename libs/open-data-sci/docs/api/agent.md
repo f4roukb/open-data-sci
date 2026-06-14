@@ -1,6 +1,6 @@
 # Agent
 
-`Agent` is the core conversational AI agent. It wraps a LangGraph state machine that orchestrates LLM calls, tool execution, parallel workers, and rolling memory.
+`Agent` is the core conversational AI agent. It wraps a LangGraph state machine that orchestrates LLM calls, tool execution, concurrent workers, and rolling memory.
 
 ## Lifecycle
 
@@ -80,11 +80,11 @@ print("Compacted:", summary)
 
 ---
 
-## ParallelWorkerAgent
+## ConcurrentWorkerAgent
 
-`ParallelWorkerAgent` is the sub-agent spawned internally when the orchestrator delegates subtasks to parallel workers. You do not normally construct this directly.
+`ConcurrentWorkerAgent` is the sub-agent spawned internally when the orchestrator delegates subtasks to concurrent workers. You do not normally construct this directly.
 
-::: opendatasci.agents.agents.ParallelWorkerAgent
+::: opendatasci.agents.agents.ConcurrentWorkerAgent
     options:
       show_root_heading: true
       show_source: false

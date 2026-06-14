@@ -78,7 +78,7 @@ _ARGS_PREVIEW_LEN = 80
 
 __all__ = [
     "Agent",
-    "ParallelWorkerAgent",
+    "ConcurrentWorkerAgent",
     "SUBAGENT_TAG",
     "WORKER_MAX_STEPS",
     "OnEventCallback",
@@ -409,7 +409,7 @@ class Agent(BaseOpenDataSciAgent):
         return summary
 
 
-class ParallelWorkerAgent:
+class ConcurrentWorkerAgent:
     """One-shot worker agent that executes a single delegated subtask to completion."""
 
     def __init__(

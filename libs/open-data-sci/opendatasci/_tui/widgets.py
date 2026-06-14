@@ -905,7 +905,7 @@ class ToolCallBlock(Static):
                 lines.append(escape(self._communication))
                 lines.append("")
             lines.append(
-                self._status_markup("⚡ Spawned parallel workers", done=self._done or all_terminal)
+                self._status_markup("⚡ Parallelizing", done=self._done or all_terminal)
             )
             for i, s in enumerate(self._worker_summaries):
                 if self._done:

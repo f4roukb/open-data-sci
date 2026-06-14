@@ -3,7 +3,7 @@
 Each test mocks at the LLM/sandbox boundary and exercises an end-to-end flow
 that involves several real subsystems wired together:
 
-* ``spawn_workers`` → ``ParallelWorkerAgent`` lifecycle (queues, sub-agent events, redactor)
+* ``spawn_workers`` → ``ConcurrentWorkerAgent`` lifecycle (queues, sub-agent events, redactor)
 * Plan-mode round-trip (``enter_plan_mode`` → ``exit_plan_mode``, ``LocalContextStore``)
 * Self-review-mode round-trip (``enter_self_review_mode`` → ``exit_self_review_mode``)
 * Turn summarization (``TurnSummarizer`` writing to ``ChatMemory``)
@@ -32,8 +32,8 @@ class TestSpawnWorkersFlow:
     """End-to-end spawn_workers exercising tools/workers.py + agent/worker.py.
 
     Patches ``opendatasci.agents.workers.create_model`` so the spawned
-    :class:`ParallelWorkerAgent` uses a scripted LLM rather than calling a real provider.
-    The ParallelWorkerAgent has no tools required for the test — it just returns a
+    :class:`ConcurrentWorkerAgent` uses a scripted LLM rather than calling a real provider.
+    The ConcurrentWorkerAgent has no tools required for the test — it just returns a
     final text on its first LLM call.
     """
 
@@ -41,12 +41,12 @@ class TestSpawnWorkersFlow:
         from tests.component.conftest import _ScriptedChatModel  # local import to avoid cycle
 
         # The worker LLM yields a single message: a final text response with no tool_calls,
-        # so ParallelWorkerAgent's loop exits after one iteration.
+        # so ConcurrentWorkerAgent's loop exits after one iteration.
         worker_msgs = [
             AIMessage(content="Worker 1: found 2 columns."),
             AIMessage(content="Worker 2: rev=300."),
         ]
-        # `iter(worker_msgs)` is shared, but each ParallelWorkerAgent constructs its own
+        # `iter(worker_msgs)` is shared, but each ConcurrentWorkerAgent constructs its own
         # scripted model via create_model — we need a fresh scripted model per worker.
         # Use a factory side_effect.
         worker_iter = iter(worker_msgs)

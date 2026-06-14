@@ -79,7 +79,7 @@ class _TurnPresenter:
     @staticmethod
     def _make_label(tool_display: ToolDisplay | None, event: ToolCallEvent) -> str:
         icon = tool_display.icon if tool_display else ""
-        label_text = (tool_display.label if tool_display else None) or event.tool
+        label_text = (tool_display.label if tool_display else None) or event.tool.replace("_", " ").title()
         return f"{icon} {label_text}".strip() if icon else label_text
 
     @staticmethod
@@ -101,7 +101,7 @@ class _TurnPresenter:
         self._agent_msg.append(event.content)
 
     def handle_tool_communication(self, event: ToolCommunicationEvent) -> None:
-        self._dismiss_thinking_block()
+        self._finish_thinking()
         tc_id = event.tool_call_id
         comm = event.content
         self._comm_buffers[tc_id] = comm

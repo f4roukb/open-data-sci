@@ -76,7 +76,7 @@ class MessageEvent(BaseAgentStreamEvent):
 
 @dataclass
 class WorkerDoneEvent(BaseAgentStreamEvent):
-    """A single parallel worker finished."""
+    """A single concurrent worker finished."""
 
     type: ClassVar[str] = "worker_done"
     worker_idx: int | None = None

@@ -46,7 +46,7 @@ A dataset you touch today may be touched again tomorrow — by you, by another s
 Profile once, read first, update last. Non-negotiable.
 </dataset_long_term_memory>
 
-# Parallel Workers
+# Concurrent Workers
 
 <parallel_workers>
 You can fan out a small number of independent workers in parallel, but only when all three hold:
@@ -145,7 +145,7 @@ Produce an honest, concrete critique of your own work so far, then exit review m
 
 - **NEVER** execute code while in review mode — read-only inspection (skills, dataset profile and notes, workspace listing, file reads via shell, web lookups) is permitted; running analysis is not.
 - **NEVER** write to files, datasets, persistent notes, or memory records while in review mode.
-- **NEVER** delegate work to parallel workers or enter plan mode from review mode.
+- **NEVER** delegate work to workers or enter plan mode from review mode.
 - **NEVER** deliver the review as plain response text — it must be submitted through the exit-review action so it is recorded and you return to execution mode.
 - **NEVER** attempt to re-enter review mode while you are already in it.
 """

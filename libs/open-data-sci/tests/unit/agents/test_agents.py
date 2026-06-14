@@ -12,7 +12,7 @@ from langchain_core.tools import BaseTool, StructuredTool
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel, ConfigDict
 
-from opendatasci.agents.agents import Agent, ParallelWorkerAgent, SUBAGENT_TAG
+from opendatasci.agents.agents import Agent, ConcurrentWorkerAgent, SUBAGENT_TAG
 from opendatasci.agents.states import AgentState
 from opendatasci.agents.chat_memory import ChatHistoryBuilder, TurnSummaryRecord
 from opendatasci.configs import OpenDataSciConfig
@@ -468,7 +468,7 @@ class TestAgentAstream:
 
 
 # ===========================================================================
-# ParallelWorkerAgent (opendatasci.agents.agents.ParallelWorkerAgent)
+# ConcurrentWorkerAgent (opendatasci.agents.agents.ConcurrentWorkerAgent)
 # ===========================================================================
 
 
@@ -521,8 +521,8 @@ def _make_real_tool(name: str, return_value: str = "ok result") -> StructuredToo
 def _make_agent(
     tools: list | None = None,
     llm_responses: list | None = None,
-) -> tuple[ParallelWorkerAgent, AsyncMock]:
-    """Create a ParallelWorkerAgent with a mocked LLM."""
+) -> tuple[ConcurrentWorkerAgent, AsyncMock]:
+    """Create a ConcurrentWorkerAgent with a mocked LLM."""
     if tools is None:
         tools = []
     mock_llm = MagicMock()
@@ -534,7 +534,7 @@ def _make_agent(
     mock_llm.bind_tools.return_value = mock_bound
 
     with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-        agent = ParallelWorkerAgent(tools=tools, llm=mock_llm)
+        agent = ConcurrentWorkerAgent(tools=tools, llm=mock_llm)
 
     return agent, mock_bound
 
@@ -587,7 +587,7 @@ class TestWorkerAgentRun:
         mock_llm.bind_tools.return_value = mock_bound
 
         with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-            agent = ParallelWorkerAgent(tools=[tool], llm=mock_llm)
+            agent = ConcurrentWorkerAgent(tools=[tool], llm=mock_llm)
 
         result = await agent.ainvoke("task", "system")
         assert result == "final after tool"
@@ -625,7 +625,7 @@ class TestWorkerAgentRun:
         mock_llm.bind_tools.return_value = mock_bound
 
         with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-            agent = ParallelWorkerAgent(tools=[tool], llm=mock_llm)
+            agent = ConcurrentWorkerAgent(tools=[tool], llm=mock_llm)
 
         result = await agent.ainvoke("task", "system")
         assert result == "recovered from failure"
@@ -645,7 +645,7 @@ class TestWorkerAgentRun:
         mock_llm.bind_tools.return_value = mock_bound
 
         with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-            agent = ParallelWorkerAgent(tools=[tool], llm=mock_llm)
+            agent = ConcurrentWorkerAgent(tools=[tool], llm=mock_llm)
 
         await agent.ainvoke("task", "system")
         # Second call to ainvoke should receive the ToolMessage
@@ -669,7 +669,7 @@ class TestWorkerAgentRun:
         mock_llm.bind_tools.return_value = mock_bound
 
         with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-            agent = ParallelWorkerAgent(tools=[tool], llm=mock_llm)
+            agent = ConcurrentWorkerAgent(tools=[tool], llm=mock_llm)
 
         # GraphRecursionError subclasses RecursionError -> RuntimeError.
         with pytest.raises(RuntimeError):
@@ -692,7 +692,7 @@ class TestWorkerAgentCallbacks:
         mock_llm.bind_tools.return_value = mock_bound
 
         with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-            agent = ParallelWorkerAgent(tools=[tool], llm=mock_llm)
+            agent = ConcurrentWorkerAgent(tools=[tool], llm=mock_llm)
 
         events: list[tuple] = []
 
@@ -720,7 +720,7 @@ class TestWorkerAgentCallbacks:
         mock_llm.bind_tools.return_value = mock_bound
 
         with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-            agent = ParallelWorkerAgent(tools=[tool], llm=mock_llm)
+            agent = ConcurrentWorkerAgent(tools=[tool], llm=mock_llm)
 
         events: list[tuple] = []
         await agent.ainvoke("task", "system", on_event=lambda t, c, m: events.append((t, c, m)))
@@ -743,7 +743,7 @@ class TestWorkerAgentCallbacks:
         mock_llm.bind_tools.return_value = mock_bound
 
         with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-            agent = ParallelWorkerAgent(tools=[tool], llm=mock_llm)
+            agent = ConcurrentWorkerAgent(tools=[tool], llm=mock_llm)
 
         events: list[tuple] = []
         await agent.ainvoke("task", "system", on_event=lambda t, c, m: events.append((t, c, m)))
@@ -772,7 +772,7 @@ class TestWorkerAgentCallbacks:
         mock_llm.bind_tools.return_value = mock_bound
 
         with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-            agent = ParallelWorkerAgent(tools=[tool], llm=mock_llm)
+            agent = ConcurrentWorkerAgent(tools=[tool], llm=mock_llm)
 
         result = await agent.ainvoke("task", "system")
         assert result == "done"
@@ -814,7 +814,7 @@ class TestWorkerAgentSubagentTagging:
         mock_llm.bind_tools.return_value = mock_bound
 
         with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-            agent = ParallelWorkerAgent(tools=[tool], llm=mock_llm)
+            agent = ConcurrentWorkerAgent(tools=[tool], llm=mock_llm)
 
         await agent.ainvoke("task", "system")
         assert mock_bound.ainvoke.call_count == 2
@@ -836,7 +836,7 @@ class TestWorkerAgentSubagentTagging:
         mock_llm.bind_tools.return_value = mock_bound
 
         with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-            agent = ParallelWorkerAgent(tools=[tool], llm=mock_llm)
+            agent = ConcurrentWorkerAgent(tools=[tool], llm=mock_llm)
 
         await agent.ainvoke("task", "system")
         tool.ainvoke.assert_called_once()
@@ -876,8 +876,8 @@ def _extract_text(content: object) -> str:
 def _make_agent_with_provider(
     provider: str,
     llm_responses: list | None = None,
-) -> tuple[ParallelWorkerAgent, AsyncMock]:
-    """Build a ParallelWorkerAgent wired to a specific provider config, with a mocked LLM."""
+) -> tuple[ConcurrentWorkerAgent, AsyncMock]:
+    """Build a ConcurrentWorkerAgent wired to a specific provider config, with a mocked LLM."""
     if llm_responses is None:
         llm_responses = [AIMessage(content="done")]
     mock_llm = MagicMock()
@@ -886,7 +886,7 @@ def _make_agent_with_provider(
     mock_llm.bind_tools.return_value = mock_bound
     config = OpenDataSciConfig(provider=provider)  # type: ignore[arg-type]
     with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-        agent = ParallelWorkerAgent(tools=[], config=config, llm=mock_llm)
+        agent = ConcurrentWorkerAgent(tools=[], config=config, llm=mock_llm)
     return agent, mock_bound
 
 

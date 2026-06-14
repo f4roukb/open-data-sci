@@ -97,10 +97,10 @@ class TestGetWorkerToolsStructure:
 # _run_one – direct tests (possible now that it is module-level)
 # ---------------------------------------------------------------------------
 
-# ParallelWorkerAgent is imported locally inside _run_one to break the
+# ConcurrentWorkerAgent is imported locally inside _run_one to break the
 # tools → agents → tools circular dependency, so it must be patched at its
 # definition site, not at opendatasci.tools.workers.
-_AGENT_PATCH = "opendatasci.agents.agents.ParallelWorkerAgent"
+_AGENT_PATCH = "opendatasci.agents.agents.ConcurrentWorkerAgent"
 
 
 class TestRunOne:

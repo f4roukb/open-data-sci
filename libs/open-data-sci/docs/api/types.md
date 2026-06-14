@@ -35,7 +35,7 @@ existing `event.type == "token"` comparisons continue to work alongside
 | `ToolCallEvent` | `"tool_call"` | `tool`, `tool_call_id`, `label`, `icon`, `display`, `summary`, `worker_summaries` | Agent is invoking a tool |
 | `ToolCommunicationEvent` | `"tool_communication"` | `content`, `tool_call_id`, `tool_name` | In-progress status from a long-running tool |
 | `ToolResultEvent` | `"tool_result"` | `content`, `tool_call_id`, `is_error` | Tool returned its result |
-| `WorkerDoneEvent` | `"worker_done"` | `worker_idx`, `success` | A parallel worker finished |
+| `WorkerDoneEvent` | `"worker_done"` | `worker_idx`, `success` | A concurrent worker finished |
 | `SubagentEvent` | `"subagent_event"` | `content`, `worker_idx`, `event_type`, `success`, `summary` | Lifecycle event from inside a running worker |
 | `InputRequiredEvent` | `"input_required"` | `content`, `choices` | Agent paused; call `astream(answer)` to resume |
 | `UsageEvent` | `"usage"` | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_creation_tokens` | Token usage update (fields are `int \| None`) |

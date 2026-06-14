@@ -49,7 +49,7 @@ class AgentTurnStreamProcessor:
 
     def process_event(self, event: dict[str, Any]) -> list[AgentStreamEvent]:
         """Process one raw graph event and return any StreamEvents to emit."""
-        # Drop events that bubbled up from a sub-agent (ParallelWorkerAgent) so the
+        # Drop events that bubbled up from a sub-agent (ConcurrentWorkerAgent) so the
         # TUI sees only the main agent's narration, tool calls, and the
         # high-level worker progress signals. Worker activity is surfaced via
         # ``SubagentEvent``/``WorkerDoneEvent`` events instead.
@@ -252,9 +252,9 @@ class AgentTurnStreamProcessor:
         if name == ToolName.SPAWN_WORKERS:
             tasks_arg = args.get("subtasks", [])
             worker_summaries = [
-                t.get("summary", f"ParallelWorkerAgent {i + 1}")
+                t.get("summary", f"ConcurrentWorkerAgent {i + 1}")
                 if isinstance(t, dict)
-                else f"ParallelWorkerAgent {i + 1}"
+                else f"ConcurrentWorkerAgent {i + 1}"
                 for i, t in enumerate(tasks_arg)
             ]
             events.append(
@@ -334,13 +334,19 @@ class AgentTurnStreamProcessor:
         is_error = (
             isinstance(output, ToolMessage) and getattr(output, "status", "success") == "error"
         )
+        # Prefer tool_call_id from the output (ToolMessage); fall back to event metadata
+        # for tools (e.g. StructuredTool via MCP) where on_tool_end fires with the raw
+        # return value before LangGraph wraps it in a ToolMessage.
+        tool_call_id = getattr(output, "tool_call_id", None) or event.get(
+            "metadata", {}
+        ).get("tool_call_id")
         out: list[AgentStreamEvent] = []
         if isinstance(output, ToolMessage):
             out.append(MessageEvent(message=output))
         out.append(
             ToolResultEvent(
                 content=tool_content,
-                tool_call_id=getattr(output, "tool_call_id", None),
+                tool_call_id=tool_call_id,
                 is_error=is_error,
             )
         )

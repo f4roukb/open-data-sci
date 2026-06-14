@@ -11,7 +11,7 @@ opendatasci/
 │                         # SandboxExecResult, ChatMemory
 ├── configs.py            # OpenDataSciConfig — all settings in one dataclass
 ├── agents/
-│   ├── agents.py         # Agent, ParallelWorkerAgent
+│   ├── agents.py         # Agent, ConcurrentWorkerAgent
 │   ├── agents_factory.py # create_agent() convenience factory
 │   └── chat_memory.py    # ChatMemory, ChatHistoryCompactor, TurnSummarizer
 ├── workspace/

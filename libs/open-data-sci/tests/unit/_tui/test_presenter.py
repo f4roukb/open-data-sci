@@ -617,6 +617,89 @@ class TestSubagentEventActivityFallbacks:
 
 
 # ---------------------------------------------------------------------------
+# _make_label — unregistered tools use Title Case (Fix 1)
+# ---------------------------------------------------------------------------
+
+
+class TestMakeLabel:
+    def test_unregistered_tool_title_cases_snake_name(self) -> None:
+        event = ToolCallEvent(tool="execute_python_code", tool_call_id="tc1", summary="")
+        label = _TurnPresenter._make_label(None, event)
+        assert label == "Execute Python Code"
+
+    def test_unregistered_tool_no_underscores_in_label(self) -> None:
+        event = ToolCallEvent(tool="my_mcp_tool_name", tool_call_id="tc1", summary="")
+        label = _TurnPresenter._make_label(None, event)
+        assert "_" not in label
+        assert label == "My Mcp Tool Name"
+
+    def test_registered_tool_uses_display_label_and_icon(self) -> None:
+        from opendatasci._tui.tools_display import ToolDisplay
+
+        td = ToolDisplay(label="Run Code", icon="🐍")
+        event = ToolCallEvent(tool="execute_python_code", tool_call_id="tc1", summary="")
+        label = _TurnPresenter._make_label(td, event)
+        assert "Run Code" in label
+        assert "🐍" in label
+
+    def test_registered_tool_without_icon_returns_label_only(self) -> None:
+        from opendatasci._tui.tools_display import ToolDisplay
+
+        td = ToolDisplay(label="Do Something", icon="")
+        event = ToolCallEvent(tool="do_something", tool_call_id="tc1", summary="")
+        label = _TurnPresenter._make_label(td, event)
+        assert label == "Do Something"
+
+
+# ---------------------------------------------------------------------------
+# handle_tool_communication — calls _finish_thinking (Fix 2)
+# ---------------------------------------------------------------------------
+
+
+class TestToolCommunicationFinishesThinking:
+    def _setup(self) -> tuple[_TurnPresenter, MagicMock, MagicMock]:
+        ui = _make_ui()
+        eph = MagicMock()
+        eph.is_running.return_value = True
+        ui.add_ephemeral_block.return_value = eph
+        p = _TurnPresenter(ui)
+        block = ui.add_thinking_block.return_value
+        return p, ui, block
+
+    def test_finish_with_summary_called_when_had_reasoning(self) -> None:
+        """If reasoning was received, tool_communication must call finish() (not dismiss())."""
+        p, _, block = self._setup()
+        p.handle_reasoning(_reasoning("thinking hard"))
+        p.handle_tool_communication(_tool_comm("tc1", "Loading data..."))
+        block.finish.assert_called_once()
+        block.dismiss.assert_not_called()
+
+    def test_dismiss_called_when_no_reasoning(self) -> None:
+        """Without any prior reasoning, tool_communication must call dismiss() (not finish())."""
+        p, _, block = self._setup()
+        p.handle_tool_communication(_tool_comm("tc1", "Loading data..."))
+        block.dismiss.assert_called_once()
+        block.finish.assert_not_called()
+
+    def test_thinking_block_cleared_after_tool_communication(self) -> None:
+        """After handle_tool_communication, _thinking_block must be None (idempotent)."""
+        p, _, _ = self._setup()
+        p.handle_tool_communication(_tool_comm("tc1", "Loading..."))
+        assert p._thinking_block is None
+
+    def test_second_tool_communication_does_not_double_dismiss(self) -> None:
+        """A second comm event for a different tool_call_id must not crash (block already gone)."""
+        p, ui, block = self._setup()
+        eph2 = MagicMock()
+        eph2.is_running.return_value = True
+        ui.add_ephemeral_block.return_value = eph2
+        p.handle_tool_communication(_tool_comm("tc1", "First..."))
+        # Thinking block already None at this point; second comm must not raise.
+        p.handle_tool_communication(_tool_comm("tc2", "Second..."))
+        block.dismiss.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
 # uncorrelated tool_result
 # ---------------------------------------------------------------------------
 

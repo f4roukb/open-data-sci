@@ -161,8 +161,7 @@ see [Getting Started](../docs/getting-started.md#choosing-a-provider) for their 
 **Long analyses:** OpenDataSci runs to completion even if the terminal is idle.
 Come back and type a follow-up when you're ready.
 
-**Parallel workers:** For tasks that benefit from parallelism — "train 5 models and
-compare", "try 3 feature engineering strategies" — OpenDataSci may spawn worker agents
+**Concurrent workers:** For tasks that benefit from concurrency, OpenDataSci may spawn worker agents
 automatically. You'll see their output stream in as each one finishes.
 
 **Project-level skills:** Drop a `.md` file into `.opendatasci/skills/` in your project

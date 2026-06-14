@@ -235,6 +235,47 @@ class TestStreamEventProcessor:
         assert len(results) == 1
         assert results[0].type == "tool_result"
 
+    def test_process_tool_end_string_output_uses_metadata_tool_call_id(self) -> None:
+        """When on_tool_end fires with a raw string (MCP / StructuredTool.from_function),
+        the tool_call_id must be read from event metadata rather than the output —
+        otherwise the TUI can never correlate the result with its running spinner."""
+        p = self._proc()
+        event = {
+            "event": "on_tool_end",
+            "data": {"output": "raw string result"},
+            "metadata": {"tool_call_id": "mcp-tc1"},
+        }
+        results = p.process_event(event)
+        tool_results = [e for e in results if e.type == "tool_result"]
+        assert len(tool_results) == 1
+        assert tool_results[0].tool_call_id == "mcp-tc1"
+        assert tool_results[0].content == "raw string result"
+
+    def test_process_tool_end_string_output_no_message_event_emitted(self) -> None:
+        """A raw-string output is not a ToolMessage so no MessageEvent must be emitted."""
+        p = self._proc()
+        event = {
+            "event": "on_tool_end",
+            "data": {"output": "plain result"},
+            "metadata": {"tool_call_id": "mcp-tc2"},
+        }
+        results = p.process_event(event)
+        assert not any(e.type == "message" for e in results)
+
+    def test_process_tool_end_tool_message_id_takes_precedence_over_metadata(self) -> None:
+        """When the output IS a ToolMessage, its own tool_call_id must win over metadata."""
+        p = self._proc()
+        tool_msg = ToolMessage(content="result", tool_call_id="msg-tc")
+        event = {
+            "event": "on_tool_end",
+            "data": {"output": tool_msg},
+            "metadata": {"tool_call_id": "meta-tc"},
+        }
+        results = p.process_event(event)
+        tool_results = [e for e in results if e.type == "tool_result"]
+        assert len(tool_results) == 1
+        assert tool_results[0].tool_call_id == "msg-tc"
+
     def test_process_model_end_emits_per_call_tokens(self) -> None:
         p = self._proc()
         msg = MagicMock()
@@ -910,7 +951,7 @@ class TestSpawnWorkersToolCall:
         assert tool_call.worker_summaries == ["Train", "Evaluate"]
 
     def test_spawn_workers_fills_default_summary_when_missing(self) -> None:
-        """A subtask dict without ``summary`` must fall back to ``ParallelWorkerAgent {i+1}``."""
+        """A subtask dict without ``summary`` must fall back to ``ConcurrentWorkerAgent {i+1}``."""
         from opendatasci.tools import ToolName
 
         tc = {
@@ -920,7 +961,7 @@ class TestSpawnWorkersToolCall:
         }
         results = self._proc().process_event(_chain_end_with_tool_calls([tc]))
         tool_call = next(e for e in results if e.type == "tool_call")
-        assert tool_call.worker_summaries == ["Train", "ParallelWorkerAgent 2"]
+        assert tool_call.worker_summaries == ["Train", "ConcurrentWorkerAgent 2"]
 
     def test_spawn_workers_non_dict_subtask_falls_back_to_default(self) -> None:
         """If ``subtasks`` contains non-dict entries the placeholder name is used."""
@@ -933,7 +974,7 @@ class TestSpawnWorkersToolCall:
         }
         results = self._proc().process_event(_chain_end_with_tool_calls([tc]))
         tool_call = next(e for e in results if e.type == "tool_call")
-        assert tool_call.worker_summaries == ["ParallelWorkerAgent 1"]
+        assert tool_call.worker_summaries == ["ConcurrentWorkerAgent 1"]
 
     def test_spawn_workers_empty_subtasks_yields_empty_summaries(self) -> None:
         from opendatasci.tools import ToolName
