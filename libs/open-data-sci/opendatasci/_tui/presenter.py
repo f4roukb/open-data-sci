@@ -79,7 +79,9 @@ class _TurnPresenter:
     @staticmethod
     def _make_label(tool_display: ToolDisplay | None, event: ToolCallEvent) -> str:
         icon = tool_display.icon if tool_display else ""
-        label_text = (tool_display.label if tool_display else None) or event.tool.replace("_", " ").title()
+        label_text = (tool_display.label if tool_display else None) or event.tool.replace(
+            "_", " "
+        ).title()
         return f"{icon} {label_text}".strip() if icon else label_text
 
     @staticmethod

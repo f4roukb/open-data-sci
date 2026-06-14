@@ -757,9 +757,7 @@ class ThinkingBlock(Static):
             self._spin_timer.stop()
             self._spin_timer = None
         self.update(
-            Text.from_markup(
-                f"[dim {theme['text_muted']}]{summary}[/dim {theme['text_muted']}]"
-            )
+            Text.from_markup(f"[dim {theme['text_muted']}]{summary}[/dim {theme['text_muted']}]")
         )
 
     def on_unmount(self) -> None:
@@ -904,9 +902,7 @@ class ToolCallBlock(Static):
             if self._communication:
                 lines.append(escape(self._communication))
                 lines.append("")
-            lines.append(
-                self._status_markup("⚡ Parallelizing", done=self._done or all_terminal)
-            )
+            lines.append(self._status_markup("⚡ Parallelizing", done=self._done or all_terminal))
             for i, s in enumerate(self._worker_summaries):
                 if self._done:
                     # Force-done: keep terminal rows as-is; promote any still-running row to

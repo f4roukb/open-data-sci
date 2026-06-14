@@ -13,6 +13,10 @@
 
 **OpenDataSci is a truly autonomous AI agent purpose-built for data science and machine learning.** Point it at a workspace or file, tell it what you need, and it plans following scentific methdology, writes and executes code, checks its own work when needed, and iterates fast until it gets it right. **No data science knowledge required.**
 
+<div align="center">
+  <video src="resources/demo/run-open-data-sci-fast.mp4" autoplay muted loop width="900"></video>
+</div>
+
 ---
 
 ## Benchmark

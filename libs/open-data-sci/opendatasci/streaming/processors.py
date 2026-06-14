@@ -337,9 +337,9 @@ class AgentTurnStreamProcessor:
         # Prefer tool_call_id from the output (ToolMessage); fall back to event metadata
         # for tools (e.g. StructuredTool via MCP) where on_tool_end fires with the raw
         # return value before LangGraph wraps it in a ToolMessage.
-        tool_call_id = getattr(output, "tool_call_id", None) or event.get(
-            "metadata", {}
-        ).get("tool_call_id")
+        tool_call_id = getattr(output, "tool_call_id", None) or event.get("metadata", {}).get(
+            "tool_call_id"
+        )
         out: list[AgentStreamEvent] = []
         if isinstance(output, ToolMessage):
             out.append(MessageEvent(message=output))

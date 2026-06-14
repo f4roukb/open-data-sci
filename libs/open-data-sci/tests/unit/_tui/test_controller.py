@@ -900,7 +900,7 @@ class TestRunAgent:
         event = ReasoningEvent(content="thinking…")
         mock_service.astream.return_value = _aiter(event)
         await loaded_controller.run_agent("q")
-        mock_ui.add_message.assert_any_call("thinking", "")
+        mock_ui.add_thinking_block.assert_called()
 
     async def test_run_agent_adds_divider_at_end(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
