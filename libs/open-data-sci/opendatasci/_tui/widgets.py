@@ -752,6 +752,16 @@ class ThinkingBlock(Static):
     def dismiss(self) -> None:
         self.remove()
 
+    def finish(self, summary: str) -> None:
+        if self._spin_timer is not None:
+            self._spin_timer.stop()
+            self._spin_timer = None
+        self.update(
+            Text.from_markup(
+                f"[dim {theme['text_muted']}]{summary}[/dim {theme['text_muted']}]"
+            )
+        )
+
     def on_unmount(self) -> None:
         if self._spin_timer is not None:
             self._spin_timer.stop()

@@ -44,6 +44,8 @@ class EphemeralHandle(ABC):
 class ThinkingHandle(ABC):
     @abstractmethod
     def dismiss(self) -> None: ...
+    @abstractmethod
+    def finish(self, summary: str) -> None: ...
 
 
 class TurnStatusHandle(ABC):

@@ -38,8 +38,8 @@ class _TurnPresenter:
     def __init__(self, ui: UIAdapter) -> None:
         self._ui = ui
         self._agent_msg: MessageHandle | None = None
-        self._thinking_msg: MessageHandle | None = None
         self._thinking_start: float = 0.0
+        self._had_reasoning: bool = False
         self._ephemerals: list[EphemeralHandle] = []
         # tool_call_id → ephemeral (promoted once tool_call fires)
         self._ephemerals_by_id: dict[str, EphemeralHandle] = {}
@@ -59,6 +59,7 @@ class _TurnPresenter:
     def _show_thinking_block(self) -> None:
         if self._thinking_block is None:
             self._thinking_block = self._ui.add_thinking_block()
+            self._had_reasoning = False
 
     def _dismiss_thinking_block(self) -> None:
         if self._thinking_block is not None:
@@ -66,11 +67,14 @@ class _TurnPresenter:
             self._thinking_block = None
 
     def _finish_thinking(self) -> None:
-        if self._thinking_msg is None:
+        if self._thinking_block is None:
             return
-        elapsed = int(time.monotonic() - self._thinking_start)
-        self._thinking_msg.finish_with_summary(f"Thought for {elapsed}s")
-        self._thinking_msg = None
+        if self._had_reasoning:
+            elapsed = int(time.monotonic() - self._thinking_start)
+            self._thinking_block.finish(f"Thought for {elapsed}s")
+        else:
+            self._thinking_block.dismiss()
+        self._thinking_block = None
 
     @staticmethod
     def _make_label(tool_display: ToolDisplay | None, event: ToolCallEvent) -> str:
@@ -86,13 +90,11 @@ class _TurnPresenter:
     # ── Event handlers ────────────────────────────────────────────────────────
 
     def handle_reasoning(self, event: ReasoningEvent) -> None:
-        self._dismiss_thinking_block()
-        if self._thinking_msg is None:
+        if not self._had_reasoning:
             self._thinking_start = time.monotonic()
-            self._thinking_msg = self._ui.add_message("thinking", "")
+            self._had_reasoning = True
 
     def handle_token(self, event: TokenEvent) -> None:
-        self._dismiss_thinking_block()
         self._finish_thinking()
         if self._agent_msg is None:
             self._agent_msg = self._ui.add_message("agent", "")
@@ -131,7 +133,6 @@ class _TurnPresenter:
                 self._hidden_tool_call_ids.add(tool_call_id)
             return
 
-        self._dismiss_thinking_block()
         self._finish_thinking()
         has_narration = self._agent_msg is not None
         if self._agent_msg is not None:
@@ -229,7 +230,7 @@ class _TurnPresenter:
             turn_status.update_context(context_tokens, cached_tokens)
 
     def handle_response(self, event: ResponseEvent) -> None:
-        self._dismiss_thinking_block()
+        self._finish_thinking()
         if self._agent_msg is None and event.content:
             self._agent_msg = self._ui.add_message("agent", event.content)
 
@@ -249,9 +250,8 @@ class _TurnPresenter:
 
     def cleanup(self) -> None:
         """Finalise all open UI elements (called from the run_agent finally block)."""
-        self._dismiss_thinking_block()
+        self._finish_thinking()
         for e in self._ephemerals:
             e.set_done()
         if self._agent_msg is not None:
             self._agent_msg.finish()
-        self._finish_thinking()

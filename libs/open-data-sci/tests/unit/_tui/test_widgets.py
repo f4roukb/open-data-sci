@@ -17,6 +17,7 @@ from opendatasci._tui.widgets import (
     CommandHighlighter,
     MessageBubble,
     SmartInput,
+    ThinkingBlock,
     ToolCallBlock,
     TurnStatusBar,
     _InputHistory,
@@ -1177,6 +1178,55 @@ class TestMessageBubbleEndToEndFinishBeforeMount:
         ):
             bubble.on_mount()
         schedule.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# ThinkingBlock
+# ---------------------------------------------------------------------------
+
+
+class TestThinkingBlock:
+    def _make_block(self) -> ThinkingBlock:
+        block = ThinkingBlock()
+        block.update = MagicMock()  # type: ignore[assignment]
+        return block
+
+    def test_finish_stops_spin_timer(self) -> None:
+        block = self._make_block()
+        timer = MagicMock()
+        block._spin_timer = timer
+        block.finish("Thought for 3s")
+        timer.stop.assert_called_once()
+        assert block._spin_timer is None
+
+    def test_finish_noop_when_timer_already_none(self) -> None:
+        block = self._make_block()
+        block._spin_timer = None
+        block.finish("Thought for 0s")  # must not raise
+
+    def test_finish_updates_display_with_summary(self) -> None:
+        block = self._make_block()
+        block._spin_timer = None
+        block.finish("Thought for 5s")
+        rendered: Text = block.update.call_args[0][0]
+        assert "Thought for 5s" in rendered.plain
+
+    def test_finish_uses_text_muted_color(self) -> None:
+        from opendatasci._tui import theme as _theme
+
+        block = self._make_block()
+        block._spin_timer = None
+        block.finish("Thought for 2s")
+        rendered: Text = block.update.call_args[0][0]
+        muted_color = _theme.active["text_muted"]
+        assert any(muted_color in str(span.style) for span in rendered._spans)
+
+    def test_finish_does_not_remove_widget(self) -> None:
+        block = self._make_block()
+        block.remove = MagicMock()  # type: ignore[assignment]
+        block._spin_timer = None
+        block.finish("Thought for 1s")
+        block.remove.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

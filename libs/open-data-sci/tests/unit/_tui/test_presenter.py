@@ -72,26 +72,27 @@ class TestThinkingBlockSpinner:
 
 
 class TestHandleReasoning:
-    def test_does_not_append_reasoning_content(self) -> None:
+    def test_does_not_create_thinking_message_bubble(self) -> None:
         ui = _make_ui()
         p = _TurnPresenter(ui)
         p.handle_reasoning(_reasoning("I am thinking hard"))
-        msg = ui.add_message.return_value
-        msg.append.assert_not_called()
+        thinking_calls = [c for c in ui.add_message.call_args_list if c.args[0] == "thinking"]
+        assert len(thinking_calls) == 0
 
-    def test_reasoning_opens_thinking_message(self) -> None:
+    def test_thinking_block_not_dismissed_on_reasoning(self) -> None:
         ui = _make_ui()
         p = _TurnPresenter(ui)
+        block = ui.add_thinking_block.return_value
         p.handle_reasoning(_reasoning("x"))
-        ui.add_message.assert_any_call("thinking", "")
+        block.dismiss.assert_not_called()
 
-    def test_thinking_message_opened_only_once_across_multiple_chunks(self) -> None:
+    def test_thinking_start_recorded_only_on_first_chunk(self) -> None:
         ui = _make_ui()
         p = _TurnPresenter(ui)
         p.handle_reasoning(_reasoning("a"))
+        first_start = p._thinking_start
         p.handle_reasoning(_reasoning("b"))
-        thinking_calls = [c for c in ui.add_message.call_args_list if c.args[0] == "thinking"]
-        assert len(thinking_calls) == 1
+        assert p._thinking_start == first_start
 
 
 # ---------------------------------------------------------------------------
@@ -100,15 +101,23 @@ class TestHandleReasoning:
 
 
 class TestCleanup:
-    def test_cleanup_finalises_thinking_msg_with_summary(self) -> None:
+    def test_cleanup_finalises_thinking_block_with_summary(self) -> None:
         ui = _make_ui()
         p = _TurnPresenter(ui)
+        block = ui.add_thinking_block.return_value
         p.handle_reasoning(_reasoning("pondering"))
         p.cleanup()
-        msg = ui.add_message.return_value
-        msg.finish_with_summary.assert_called_once()
-        summary_arg = msg.finish_with_summary.call_args.args[0]
+        block.finish.assert_called_once()
+        summary_arg = block.finish.call_args.args[0]
         assert "Thought for" in summary_arg
+
+    def test_cleanup_dismisses_thinking_block_when_no_reasoning(self) -> None:
+        ui = _make_ui()
+        p = _TurnPresenter(ui)
+        block = ui.add_thinking_block.return_value
+        p.cleanup()
+        block.dismiss.assert_called_once()
+        block.finish.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
