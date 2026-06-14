@@ -21,9 +21,11 @@
 
 The task was to predict whether an F1 driver will pit on the next lap. Pit stops are rare events, making class imbalance a core challenge. The right call on any given lap depends on many domain-specific factors. For example, tyre degradation, race position, competitor strategy, safety car windows, and dozens of interacting variables that require careful feature engineering and proper temporal handling to exploit.
 
-OpenDataSci was given the raw competition data and a single plain-English instruction. No domain hints, prompt tuning, or human guidance. It explored the data, engineered features, trained and validated models, tuned hyperparameters, and created a submission on its own.
+The winner of the competition scored AUC 0.95503 across 195 submissions, a 0.00434 gap that cost a month of full-time work: a dozen model families including deep learning models, AutoML sweeps across four libraries, multiple notebooks with up to 400 hand-engineered features, Auto feature engineering (AutoFE) tools that either failed outright or timed out after 12 hours, and 186 out-of-fold models to ensemble. Claude was used throughout, yet repeatedly needed to be talked out of giving up too early and kept regenerating entire notebooks for minor edits, causing session lockouts.
 
-_In comparison, the winner scored AUC 0.95503 with 195 submissions!_
+OpenDataSci needed just one simple instruction to achieve comparable quality with no effort whatsoever. It was given the zipped data and was simply asked to win the competition. No domain hints, prompt tuning, or human guidance. OpenDataSci autonomously explored the data, trained a baseline, engineered features, tuned hyperparameters, trained and validated models, built diverse ensembles, iterated in a data-driven way, and created a submission.
+
+([Winner's writeup](https://www.kaggle.com/competitions/playground-series-s6e5/writeups/1st-place-by-the-skin-of-my-teeth))
 
 ---
 
