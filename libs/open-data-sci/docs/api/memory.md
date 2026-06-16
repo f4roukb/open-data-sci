@@ -2,23 +2,24 @@
 
 OpenDataSci maintains two layers of conversation memory:
 
-1. **`ChatMemory`** — a rolling window of turn summaries injected into every system prompt. Keeps the agent aware of recent history without blowing up the context window.
+1. **`PreparedHistory`** — a dataclass assembled at the start of each turn. It carries the trimmed message list and any recalled context (preamble + rolling turn summaries) as plain text ready for the system prompt.
 2. **`ChatHistoryCompactor`** — compacts raw LangChain message history by asking the LLM to summarise older turns. Called by `Agent.compact_chat_history()`.
 
-## ChatMemory
+## PreparedHistory
 
-`ChatMemory` is a dataclass returned by `ChatMemoryBuilder.build()` at the start of each turn. It carries two things:
+`PreparedHistory` is a dataclass returned by `ChatHistoryBuilder.build()` at the start of each turn. It carries three things:
 
-- **`messages`** — the chat history ready to feed the agent, with a leading memory `SystemMessage` prepended when there is recalled context.
+- **`messages`** — Human/AI/Tool messages only (no `SystemMessage`). Mid-turn compaction is applied when the ongoing turn exceeds the token budget.
+- **`memory_text`** — Rendered recall context (preamble + turn summaries) as a plain string for the system prompt. `None` when there is nothing to recall.
 - **`turn_summaries`** — the updated rolling list of `TurnSummaryRecord` objects to write back to agent state.
 
-The agent manages `ChatMemory` internally via `ChatMemoryBuilder`. After every turn, `TurnSummarizer` uses the secondary LLM to generate a structured summary, which is scheduled in the background and flushed at the start of the next turn.
+The agent manages `PreparedHistory` internally via `ChatHistoryBuilder`. After every turn, `TurnSummarizer` uses the secondary LLM to generate a structured summary, which is scheduled in the background and flushed at the start of the next turn.
 
 ```python
-from opendatasci.agents.chat_memory import ChatMemory, TurnSummaryRecord
+from opendatasci.agents.chat_memory import PreparedHistory, TurnSummaryRecord
 
-# ChatMemory is a plain dataclass — the agent creates and consumes it internally.
-# Inspect it from graph state if needed:
+# PreparedHistory is a plain dataclass — the agent creates and consumes it internally.
+# Inspect turn summaries from graph state if needed:
 snapshot = agent.graph.get_state({"configurable": {"thread_id": session_id}})
 turn_summaries: list[TurnSummaryRecord] = snapshot.values.get("turn_summaries", [])
 for record in turn_summaries:
@@ -46,7 +47,7 @@ new_messages = await compactor.compact(messages, cutoff=2)
 
 ## Reference
 
-::: opendatasci.agents.chat_memory.ChatMemory
+::: opendatasci.agents.chat_memory.PreparedHistory
     options:
       show_root_heading: true
       show_source: false
