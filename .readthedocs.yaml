@@ -4,13 +4,11 @@ build:
   os: ubuntu-24.04
   tools:
     python: "3.12"
+  jobs:
+    install:
+      - pip install "mkdocs>=1.6.0,<2.0.0" "mkdocs-material>=9.5.0,<10.0.0" "mkdocstrings[python]>=0.26.0,<1.0.0"
+      - pip install --no-deps ./libs/open-data-sci
+      - pip install annotated-types "langchain-core>=0.3.0,<1.0.0" "langgraph>=0.2.0,<1.0.0" "pydantic>=2.0.0,<3.0.0" "pydantic-settings>=2.0.0,<3.0.0" "rich>=13.0.0,<14.0.0" "sandbox-runtime>=0.2.0,<1.0.0" "textual>=0.47.0,<0.48.0" "python-dotenv>=1.0.0,<2.0.0" "httpx>=0.27.0,<1.0.0" "xxhash>=3.5.0,<4.0.0" "pandas>=2.0.0,<3.0.0"
 
 mkdocs:
   configuration: libs/open-data-sci/mkdocs.yaml
-
-python:
-  install:
-    - method: pip
-      path: libs/open-data-sci
-      extra_requirements:
-        - docs
