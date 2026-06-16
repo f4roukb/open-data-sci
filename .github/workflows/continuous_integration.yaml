@@ -62,6 +62,13 @@ jobs:
           flags: unit
           fail_ci_if_error: false
 
+      - name: Upload unit test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: libs/open-data-sci/coverage/unit-junit.xml
+
   component-tests:
     name: component tests
     runs-on: ubuntu-22.04
@@ -94,3 +101,10 @@ jobs:
           files: libs/open-data-sci/coverage/component.xml
           flags: component
           fail_ci_if_error: false
+
+      - name: Upload component test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: libs/open-data-sci/coverage/component-junit.xml
