@@ -1,11 +1,11 @@
 <div align="center">
-  <img src="resources/logo/logo-light.png" alt="OpenDataSci" width="640" />
+  <img src="resources/logo/logo-light.png" alt="OpenDataSci" width="70%" />
 </div>
 
 **OpenDataSci is a truly autonomous AI agent purpose-built for data science and machine learning.** Point it at a dataset (single file or directory), tell it what you need: it plans with scientific rigor, writes and executes code, self-reviews its progress, and iterates fast until it gets it right. **No data science knowledge required.**
 
 <div align="center">
-  <video src="resources/demo/run-open-data-sci-fast.mp4" controls autoplay muted loop width="900"></video>
+  <img src="resources/demo/run-open-data-sci-fast.gif" alt="OpenDataSci demo" width="95%" />
 </div>
 
 ---
