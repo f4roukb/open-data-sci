@@ -38,7 +38,7 @@ dependencies = [
     # HDF5
     "tables>=3.9.0,<4.0.0",
     # XML
-    "lxml>=5.0.0,<6.0.0",
+    "lxml>=6.1.0,<7.0.0",
     # Image / encoding
     "Pillow>=10.0.0,<11.0.0",
     # LLM / agent stack (only the sub-packages we actually import)
@@ -164,7 +164,7 @@ opendatasci_agent_libs = [
     # HDF5
     "tables>=3.9.0,<4.0.0",
     # XML
-    "lxml>=5.0.0,<6.0.0",
+    "lxml>=6.1.0,<7.0.0",
     # Image / encoding
     "Pillow>=10.0.0,<11.0.0",
     # Numerics
