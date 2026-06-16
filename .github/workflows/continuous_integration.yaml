@@ -6,7 +6,7 @@ on:
   push:
     branches:
       - main
-      - release/**
+      - release*
 
 # Cancel an in-progress run when new commits are pushed to the same PR.
 concurrency:
