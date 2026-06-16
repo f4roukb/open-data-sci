@@ -111,7 +111,7 @@ No setup friction. OpenDataSci ships with the complete stack a practitioner woul
 
 ## Documentation
 
-The full documentation is available at [open-data-sci.readthedocs.io](https://open-data-sci.readthedocs.io/), covering getting started, the Python SDK API reference, and configuration.
+The full documentation is available at [opendatasci.readthedocs.io](https://opendatasci.readthedocs.io/en/latest/), covering getting started, the Python SDK API reference, and configuration.
 
 ---
 
