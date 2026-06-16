@@ -2,20 +2,24 @@
   <img src="resources/logo/logo-light.png" alt="OpenDataSci" width="640" />
 </div>
 
-<div align="center">
-  <p>
-    <a href="#what-it-does">What it does</a> ·
-    <a href="#why-not-a-general-purpose-ai-tool">Why not a general-purpose AI tool?</a> ·
-    <a href="#supported-llm-providers">Models</a> ·
-    <a href="libs/open-data-sci/README.md">Full Reference</a>
-  </p>
-</div>
-
 **OpenDataSci is a truly autonomous AI agent purpose-built for data science and machine learning.** Point it at a dataset (single file or directory), tell it what you need: it plans with scientific rigor, writes and executes code, self-reviews its progress, and iterates fast until it gets it right. **No data science knowledge required.**
 
 <div align="center">
   <video src="resources/demo/run-open-data-sci-fast.mp4" controls autoplay muted loop width="900"></video>
 </div>
+
+---
+
+## Contents
+
+- [Benchmark](#benchmark)
+- [What does OpenDataSci do?](#what-it-does)
+- [For data scientists](#for-data-scientists)
+- [Supported LLM providers](#supported-llm-providers)
+- [Built-in ML library surface](#built-in-ml-library-surface)
+- [Setup](#setup)
+- [Examples](#examples)
+- [Documentation](#documentation)
 
 ---
 
@@ -33,7 +37,7 @@ Find the winner's full writeup [here](https://www.kaggle.com/competitions/playgr
 
 ---
 
-## What it does
+## What does OpenDataSci do?
 
 Most "AI for data" tools turn you into the bottleneck. Every experiment starts with re-explaining your data from scratch. Every output still needs a data scientist to verify. Every wrong turn costs a full cycle: prompt, wait, review, correct, repeat. And the moment you close the session, every insight and learned quirk of your dataset is gone.
 
