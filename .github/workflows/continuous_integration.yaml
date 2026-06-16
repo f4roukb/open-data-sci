@@ -73,6 +73,26 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: libs/open-data-sci/coverage/unit-junit.xml
 
+  check-docs-build:
+    name: check docs build
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: libs/open-data-sci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install docs dependencies
+        run: pip install -r docs/requirements.txt
+
+      - name: Build docs
+        run: mkdocs build -f mkdocs.yaml
+
   component-tests:
     name: component tests
     runs-on: ubuntu-22.04

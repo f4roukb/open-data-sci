@@ -8,12 +8,12 @@ This section documents the full public Python API for `opendatasci`.
 opendatasci/
 ├── __init__.py           # Public re-exports: create_agent, Agent,
 │                         # OpenDataSciConfig, LocalWorkspace, AgentStreamEvent,
-│                         # SandboxExecResult, ChatMemory
+│                         # SandboxExecResult, PreparedHistory
 ├── configs.py            # OpenDataSciConfig — all settings in one dataclass
 ├── agents/
 │   ├── agents.py         # Agent, ConcurrentWorkerAgent
 │   ├── agents_factory.py # create_agent() convenience factory
-│   └── chat_memory.py    # ChatMemory, ChatHistoryCompactor, TurnSummarizer
+│   └── chat_memory.py    # PreparedHistory, ChatHistoryCompactor, TurnSummarizer
 ├── workspace/
 │   ├── base.py           # BaseWorkspace (ABC)
 │   └── local.py          # LocalWorkspace
@@ -39,7 +39,7 @@ from opendatasci import (
     LocalWorkspace,         # Filesystem-backed workspace
     AgentStreamEvent,       # Streaming event dataclass
     SandboxExecResult,      # Code execution result dataclass
-    ChatMemory,             # Rolling conversation memory
+    PreparedHistory,        # Assembled turn context (messages + memory text)
 )
 ```
 
@@ -51,7 +51,7 @@ from opendatasci import (
 | [Agent](agent.md) | Full agent class: `astream`, `rewind_turn`, `compact_chat_history`, … |
 | [OpenDataSciConfig](config.md) | All configuration fields and environment variable mappings |
 | [TUI Service](session_manager.md) | `OpenDataSciTuiService` — service layer used by the terminal UI |
-| [Memory](memory.md) | `ChatMemory`, `ChatHistoryCompactor` |
+| [Memory](memory.md) | `PreparedHistory`, `ChatHistoryCompactor` |
 | [Workspace](workbench.md) | `BaseWorkspace`, `LocalWorkspace` |
 | [Sandbox & Execution](session.md) | `BaseSandbox`, `SandboxExecResult`, TUI command allowlist |
 | [Events & Types](types.md) | `AgentStreamEvent` — all event types explained |
