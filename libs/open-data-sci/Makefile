@@ -79,10 +79,10 @@ all: format lint-fix type-check
 test: test-unit test-component
 
 test-unit:
-	uv run pytest tests/unit -n auto --cov=$(PACKAGE) --cov-report=term-missing --cov-report=html:coverage/unit --cov-report=xml:coverage/unit.xml
+	uv run pytest tests/unit -n auto --cov=$(PACKAGE) --cov-report=term-missing --cov-report=html:coverage/unit --cov-report=xml:coverage/unit.xml --junitxml=coverage/unit-junit.xml -o junit_family=legacy
 
 test-component:
-	uv run pytest tests/component -n auto --cov=$(PACKAGE) --cov-report=term-missing --cov-report=html:coverage/component --cov-report=xml:coverage/component.xml
+	uv run pytest tests/component -n auto --cov=$(PACKAGE) --cov-report=term-missing --cov-report=html:coverage/component --cov-report=xml:coverage/component.xml --junitxml=coverage/component-junit.xml -o junit_family=legacy
 
 clean:
 	rm -rf build/
