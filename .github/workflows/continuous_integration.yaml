@@ -8,6 +8,9 @@ on:
       - main
       - release*
 
+permissions:
+  contents: read
+
 # Cancel an in-progress run when new commits are pushed to the same PR.
 concurrency:
   group: ci-${{ github.ref }}
