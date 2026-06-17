@@ -78,8 +78,15 @@ def _clean_html(content: str) -> str:
                 parent.remove(el)
         text: str = doc.text_content()
     except Exception:
-        text = re.sub(r"<script[^>]*>.*?</script>", "", content, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(
+            r"<\s*script\b[^>]*>.*?<\s*/\s*script\b[^>]*>",
+            "",
+            content,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        text = re.sub(
+            r"<\s*style\b[^>]*>.*?<\s*/\s*style\b[^>]*>", "", text, flags=re.DOTALL | re.IGNORECASE
+        )
         text = re.sub(r"<[^>]+>", "", text)
 
     lines = [ln.strip() for ln in text.splitlines()]

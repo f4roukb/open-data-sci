@@ -39,8 +39,6 @@ dependencies = [
     "tables>=3.9.0,<4.0.0",
     # XML
     "lxml>=6.1.0,<7.0.0",
-    # Image / encoding
-    "Pillow>=10.0.0,<11.0.0",
     # LLM / agent stack (only the sub-packages we actually import)
     "langchain-core>=0.3.0,<1.0.0",
     "langchain-openai>=0.2.0,<1.0.0",
@@ -165,8 +163,6 @@ opendatasci_agent_libs = [
     "tables>=3.9.0,<4.0.0",
     # XML
     "lxml>=6.1.0,<7.0.0",
-    # Image / encoding
-    "Pillow>=10.0.0,<11.0.0",
     # Numerics
     "numpy>=1.26.0,<2.0.0",
     "numba>=0.60.0,<1.0.0",

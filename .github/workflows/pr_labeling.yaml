@@ -4,6 +4,8 @@ on:
   pull_request:
     types: [opened]
 
+permissions: {}
+
 jobs:
   label:
     runs-on: ubuntu-22.04
