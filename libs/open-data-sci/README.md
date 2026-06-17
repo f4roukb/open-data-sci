@@ -24,7 +24,7 @@ A production-grade AI agent for data science and machine learning. See the [proj
 pip install open-data-sci
 ```
 
-**Requirements:** Python 3.12+
+**Requirements:** Python 3.12
 
 ### Provider extras
 

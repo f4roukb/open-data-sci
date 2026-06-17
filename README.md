@@ -105,7 +105,6 @@ No setup friction. OpenDataSci ships with the complete stack a practitioner woul
 | Dimensionality reduction | UMAP |
 | Validation | pandera |
 | Visualisation | matplotlib, seaborn, plotly |
-| Numerics | NumPy, SciPy, SymPy, Numba |
 
 ---
 
