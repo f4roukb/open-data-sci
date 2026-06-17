@@ -37,7 +37,7 @@ class AgentGraphFactory:
         self._chat_history_builder = chat_history_builder
         self._checkpointer = checkpointer
 
-    def build(self) -> CompiledStateGraph:
+    def build(self) -> CompiledStateGraph[AgentState, AgentState]:
         """Compile and return the graph, ready to run."""
         agent_node = AgentNode(
             get_llm_with_tools=self._get_llm_with_tools,
@@ -68,7 +68,7 @@ class WorkerGraphFactory:
         self._tools = tools
         self._build_system_context = build_system_context
 
-    def build(self) -> CompiledStateGraph:
+    def build(self) -> CompiledStateGraph[AgentState, AgentState]:
         """Compile and return the worker graph, ready to run."""
         agent_node = AgentNode(
             get_llm_with_tools=lambda state: self._llm_with_tools,
