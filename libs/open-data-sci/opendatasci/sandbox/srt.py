@@ -1,9 +1,9 @@
 """SRT-backed sandbox for OpenDataSci sessions.
 
 Platform support: the underlying Sandbox Runtime only sandboxes on macOS and
-Linux. On other platforms (e.g. Windows) ``SandboxManager.initialize`` raises a
-``RuntimeError`` at first use; this class is therefore exercised only under mocks
-on such hosts.
+Linux. Windows is unsupported: ``sandbox_runtime`` imports the Unix-only
+``resource`` module at import time, so this module fails to import at all on
+Windows; this class is therefore exercised only under mocks on such hosts.
 """
 
 import asyncio
@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator
 
 from sandbox_runtime import SandboxManager, SandboxRuntimeConfig
+from sandbox_runtime.utils.platform import get_platform
 
 from opendatasci.sandbox.base import (
     BaseSandbox,
@@ -33,6 +34,46 @@ from opendatasci.sandbox.base import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Install commands per platform, used to build an actionable error message when
+# the native sandbox binaries (bwrap/socat/ripgrep) are missing. ``pip install``
+# cannot provide these — they must come from the OS package manager.
+_INSTALL_HINTS: dict[str, str] = {
+    "macos": "brew install ripgrep",
+    "linux": (
+        "sudo apt-get install -y bubblewrap socat ripgrep  # Debian/Ubuntu\n"
+        "  sudo dnf install -y bubblewrap socat ripgrep      # Fedora\n"
+        "  sudo pacman -S --noconfirm bubblewrap socat ripgrep  # Arch"
+    ),
+}
+
+
+def check_sandbox_dependencies() -> None:
+    """Raise ``RuntimeError`` with actionable guidance if the sandbox cannot run.
+
+    Call this as early as possible (e.g. at agent construction) so a missing
+    system dependency surfaces immediately, rather than on the first sandboxed
+    code execution deep into a session.
+    """
+    if SandboxManager.check_dependencies():
+        return
+
+    platform = get_platform()
+    if not SandboxManager.is_supported_platform(platform):
+        raise RuntimeError(
+            f"OpenDataSci's sandbox is not supported on platform '{platform}'. "
+            "Only macOS and Linux are supported."
+        )
+
+    install_hint = _INSTALL_HINTS.get(platform)
+    required = (
+        "ripgrep (rg)" if platform == "macos" else "ripgrep (rg), bubblewrap (bwrap), and socat"
+    )
+    message = f"Missing required sandbox dependencies for {platform}: {required}."
+    if install_hint:
+        message += f" Install with:\n  {install_hint}"
+    raise RuntimeError(message)
+
 
 _RUNNER_SRC = Path(__file__).parent / "_runner.py"
 
@@ -426,6 +467,11 @@ class SRTSandboxFactory(BaseSandboxFactory):
         command_timeout: Maximum seconds a single sandbox command may run
             before being killed.  Forwarded verbatim to every
             :class:`SRTSandbox` created by :meth:`create`.
+
+    Raises:
+        RuntimeError: From :meth:`create`, if the host is missing a required
+            native sandbox dependency (e.g. bubblewrap/socat on Linux,
+            ripgrep on macOS) or the platform is unsupported (e.g. Windows).
     """
 
     def __init__(self, *, command_timeout: int | None = None) -> None:
@@ -433,6 +479,7 @@ class SRTSandboxFactory(BaseSandboxFactory):
 
     @asynccontextmanager
     async def create(self, workspace_path: Path | None = None) -> AsyncIterator[SRTSandbox]:
+        check_sandbox_dependencies()
         sandbox = SRTSandbox(
             workspace_path=workspace_path,
             command_timeout=self._command_timeout,

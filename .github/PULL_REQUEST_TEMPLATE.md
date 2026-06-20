@@ -6,11 +6,11 @@
 - [ ] perf
 - [ ] chore
 - [ ] breaking
+- [ ] release
 
 ## Issue
 <!-- Link issue or one-sentence motivation -->
 Issue: #
-Motivation: ...
 
 ## What changed
 <!-- Detail your changes here -->
@@ -22,7 +22,7 @@ Motivation: ...
 
 ## Checklist
 - [ ] Self-reviewed the diff
-- [ ] No debug code
+- [ ] Tests added / updated
 - [ ] Type hints added / updated
 - [ ] Docs updated (if public API changed)
-- [ ] Tests added / updated
+- [ ] No debug code

@@ -58,7 +58,7 @@ cd open-data-sci/libs/open-data-sci
 
 # 2. Install system-level sandbox dependencies
 #    (ripgrep on macOS; bubblewrap + socat + ripgrep on Linux)
-make install-sys-deps
+make install-system-dependencies
 
 # 3. Install Python dependencies (includes dev extras)
 make install-dev
