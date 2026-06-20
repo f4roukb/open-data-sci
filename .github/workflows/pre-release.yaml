@@ -1,7 +1,7 @@
-name: Pre-release
-
 # Sanity-checks the package before it lands on a release branch:
 # build the artifacts, inspect them, and smoke-test the wheel in a clean venv.
+name: Pre-release
+
 on:
   pull_request:
     branches:

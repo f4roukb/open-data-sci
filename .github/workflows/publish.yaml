@@ -1,5 +1,3 @@
-name: Publish
-
 # Manually publish an existing tag to PyPI and create its GitHub Release.
 #
 # Run from the Actions tab, passing the tag to publish (e.g. v0.2.0). Tags are
@@ -8,6 +6,8 @@ name: Publish
 #
 # Decoupling publish from tagging means a tag can exist without being on PyPI
 # yet, and a failed publish can be re-run on the same tag.
+name: Publish
+
 on:
   workflow_dispatch:
     inputs:

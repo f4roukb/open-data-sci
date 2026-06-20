@@ -1,5 +1,3 @@
-name: Tag Release
-
 # When a PR from `main` is merged into `release`, tag the release commit with
 # the version declared in pyproject.toml (v{version}).
 #
@@ -10,6 +8,8 @@ name: Tag Release
 #
 # Publishing that tag to PyPI is a separate, manually-triggered workflow
 # (see publish.yaml). The tag is created with GITHUB_TOKEN; no PAT is needed.
+name: Tag Release
+
 on:
   pull_request:
     types: [closed]
