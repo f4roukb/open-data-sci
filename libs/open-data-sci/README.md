@@ -24,7 +24,9 @@ A production-grade AI agent for data science and machine learning. See the [proj
 pip install open-data-sci
 ```
 
-**Requirements:** Python 3.12, macOS or Linux (Windows is not supported)
+**Requirements:**
+- Python: 3.12
+- Platform: macOS or Linux (Windows is not supported)
 
 ### System dependencies
 
@@ -44,7 +46,7 @@ sudo dnf install -y bubblewrap socat ripgrep
 sudo pacman -S --noconfirm bubblewrap socat ripgrep
 ```
 
-If you've cloned the repository, `make install-sys-deps` runs the right command for your platform automatically. If these binaries are missing, `create_agent` raises a `RuntimeError` describing exactly what to install.
+If you've cloned the repository, `make install-system-dependencies` runs the right command for your platform automatically.
 
 ### Provider extras
 
