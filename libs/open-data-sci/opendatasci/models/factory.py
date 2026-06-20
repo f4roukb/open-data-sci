@@ -112,8 +112,8 @@ def create_model(config: OpenDataSciConfig) -> BaseChatModel:
             from opendatasci.models.local import create_ollama_model as _create
 
             return _create(config)
-        case Provider.VLLM:
-            from opendatasci.models.local import create_vllm_model as _create
+        case Provider.OPENAI_COMPATIBLE_SERVER:
+            from opendatasci.models.local import create_openai_compatible_model as _create
 
             return _create(config)
 
@@ -169,8 +169,8 @@ def create_secondary_model(config: OpenDataSciConfig) -> BaseChatModel:
             from opendatasci.models.local import create_ollama_secondary_model as _create
 
             return _create(config)
-        case Provider.VLLM:
-            from opendatasci.models.local import create_vllm_secondary_model as _create
+        case Provider.OPENAI_COMPATIBLE_SERVER:
+            from opendatasci.models.local import create_openai_compatible_secondary_model as _create
 
             return _create(config)
 

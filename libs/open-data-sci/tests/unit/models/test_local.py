@@ -1,4 +1,4 @@
-﻿"""Unit tests for opendatasci.models.local factory functions (Ollama and vLLM)."""
+"""Unit tests for opendatasci.models.local factory functions (Ollama and OpenAI-compatible servers)."""
 
 
 import sys
@@ -11,8 +11,8 @@ from opendatasci.models.local import (
     cached_system_prompt,
     create_ollama_model,
     create_ollama_secondary_model,
-    create_vllm_model,
-    create_vllm_secondary_model,
+    create_openai_compatible_model,
+    create_openai_compatible_secondary_model,
 )
 
 
@@ -32,8 +32,8 @@ def fake_chat_ollama(monkeypatch):
 
 
 @pytest.fixture
-def fake_chat_openai_vllm(monkeypatch):
-    """Insert a fake ``langchain_openai`` module with a recording ``ChatOpenAI`` for vLLM."""
+def fake_chat_openai_compatible(monkeypatch):
+    """Insert a fake ``langchain_openai`` module with a recording ``ChatOpenAI``."""
     captured: dict = {}
 
     def _ctor(**kwargs):
@@ -113,84 +113,86 @@ class TestCreateOllamaSecondaryModel:
                 create_ollama_secondary_model(OpenDataSciConfig(provider="ollama"))  # type: ignore[arg-type]
 
 
-class TestCreateVllmPrimaryModel:
-    def test_uses_resolved_model(self, fake_chat_openai_vllm) -> None:
-        config = OpenDataSciConfig(provider="vllm", model="llama-test")  # type: ignore[arg-type]
-        create_vllm_model(config)
-        assert fake_chat_openai_vllm["model"] == "llama-test"
+class TestCreateOpenAICompatiblePrimaryModel:
+    def test_uses_resolved_model(self, fake_chat_openai_compatible) -> None:
+        config = OpenDataSciConfig(provider="openai_compatible_server", model="llama-test")  # type: ignore[arg-type]
+        create_openai_compatible_model(config)
+        assert fake_chat_openai_compatible["model"] == "llama-test"
 
-    def test_falls_back_to_provider_default(self, fake_chat_openai_vllm) -> None:
-        config = OpenDataSciConfig(provider="vllm")  # type: ignore[arg-type]
-        create_vllm_model(config)
-        assert fake_chat_openai_vllm["model"] == config.model
+    def test_falls_back_to_provider_default(self, fake_chat_openai_compatible) -> None:
+        config = OpenDataSciConfig(provider="openai_compatible_server")  # type: ignore[arg-type]
+        create_openai_compatible_model(config)
+        assert fake_chat_openai_compatible["model"] == config.model
 
-    def test_temperature_propagated(self, fake_chat_openai_vllm) -> None:
-        config = OpenDataSciConfig(provider="vllm", temperature=0.4)  # type: ignore[arg-type]
-        create_vllm_model(config)
-        assert fake_chat_openai_vllm["temperature"] == 0.4
+    def test_temperature_propagated(self, fake_chat_openai_compatible) -> None:
+        config = OpenDataSciConfig(provider="openai_compatible_server", temperature=0.4)  # type: ignore[arg-type]
+        create_openai_compatible_model(config)
+        assert fake_chat_openai_compatible["temperature"] == 0.4
 
-    def test_base_url_from_config(self, fake_chat_openai_vllm, monkeypatch) -> None:
+    def test_base_url_from_config(self, fake_chat_openai_compatible, monkeypatch) -> None:
         monkeypatch.delenv("LLM_SERVER_BASE_URL", raising=False)
-        config = OpenDataSciConfig(provider="vllm", llm_server_base_url="http://custom:8000/v1")  # type: ignore[arg-type]
-        create_vllm_model(config)
-        assert fake_chat_openai_vllm["base_url"] == "http://custom:8000/v1"
+        config = OpenDataSciConfig(
+            provider="openai_compatible_server", llm_server_base_url="http://custom:8000/v1"
+        )  # type: ignore[arg-type]
+        create_openai_compatible_model(config)
+        assert fake_chat_openai_compatible["base_url"] == "http://custom:8000/v1"
 
-    def test_base_url_from_env_var(self, fake_chat_openai_vllm, monkeypatch) -> None:
+    def test_base_url_from_env_var(self, fake_chat_openai_compatible, monkeypatch) -> None:
         monkeypatch.setenv("LLM_SERVER_BASE_URL", "http://gpu-server:8000/v1")
-        config = OpenDataSciConfig(provider="vllm")  # type: ignore[arg-type]
-        create_vllm_model(config)
-        assert fake_chat_openai_vllm["base_url"] == "http://gpu-server:8000/v1"
+        config = OpenDataSciConfig(provider="openai_compatible_server")  # type: ignore[arg-type]
+        create_openai_compatible_model(config)
+        assert fake_chat_openai_compatible["base_url"] == "http://gpu-server:8000/v1"
 
-    def test_base_url_defaults_to_localhost(self, fake_chat_openai_vllm, monkeypatch) -> None:
+    def test_base_url_defaults_to_localhost(self, fake_chat_openai_compatible, monkeypatch) -> None:
         monkeypatch.delenv("LLM_SERVER_BASE_URL", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        config = OpenDataSciConfig(provider="vllm")  # type: ignore[arg-type]
-        create_vllm_model(config)
-        assert fake_chat_openai_vllm["base_url"] == "http://localhost:8000/v1"
+        config = OpenDataSciConfig(provider="openai_compatible_server")  # type: ignore[arg-type]
+        create_openai_compatible_model(config)
+        assert fake_chat_openai_compatible["base_url"] == "http://localhost:8000/v1"
 
-    def test_api_key_defaults_to_empty(self, fake_chat_openai_vllm, monkeypatch) -> None:
+    def test_api_key_defaults_to_empty(self, fake_chat_openai_compatible, monkeypatch) -> None:
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        config = OpenDataSciConfig(provider="vllm")  # type: ignore[arg-type]
-        create_vllm_model(config)
-        assert fake_chat_openai_vllm["api_key"] == "EMPTY"
+        config = OpenDataSciConfig(provider="openai_compatible_server")  # type: ignore[arg-type]
+        create_openai_compatible_model(config)
+        assert fake_chat_openai_compatible["api_key"] == "EMPTY"
 
-    def test_api_key_from_config_preferred(self, fake_chat_openai_vllm, monkeypatch) -> None:
+    def test_api_key_from_config_preferred(self, fake_chat_openai_compatible, monkeypatch) -> None:
         monkeypatch.setenv("OPENAI_API_KEY", "env-key")
-        config = OpenDataSciConfig(provider="vllm", openai_api_key="my-vllm-token")  # type: ignore[arg-type]
-        create_vllm_model(config)
-        assert fake_chat_openai_vllm["api_key"] == "my-vllm-token"
+        config = OpenDataSciConfig(provider="openai_compatible_server", openai_api_key="my-server-token")  # type: ignore[arg-type]
+        create_openai_compatible_model(config)
+        assert fake_chat_openai_compatible["api_key"] == "my-server-token"
 
     def test_missing_package_raises_llm_provider_error(self, monkeypatch) -> None:
         monkeypatch.delitem(sys.modules, "langchain_openai", raising=False)
         with patch.dict(sys.modules, {"langchain_openai": None}):
             with pytest.raises(ValueError, match="langchain-openai"):
-                create_vllm_model(OpenDataSciConfig(provider="vllm"))  # type: ignore[arg-type]
+                create_openai_compatible_model(OpenDataSciConfig(provider="openai_compatible_server"))  # type: ignore[arg-type]
 
 
-class TestCreateVllmSecondaryModel:
-    def test_uses_resolved_secondary_model(self, fake_chat_openai_vllm) -> None:
-        config = OpenDataSciConfig(provider="vllm", secondary_model="llama-mini-test")  # type: ignore[arg-type]
-        create_vllm_secondary_model(config)
-        assert fake_chat_openai_vllm["model"] == "llama-mini-test"
+class TestCreateOpenAICompatibleSecondaryModel:
+    def test_uses_resolved_secondary_model(self, fake_chat_openai_compatible) -> None:
+        config = OpenDataSciConfig(provider="openai_compatible_server", secondary_model="llama-mini-test")  # type: ignore[arg-type]
+        create_openai_compatible_secondary_model(config)
+        assert fake_chat_openai_compatible["model"] == "llama-mini-test"
 
-    def test_temperature_is_zero(self, fake_chat_openai_vllm) -> None:
-        create_vllm_secondary_model(OpenDataSciConfig(provider="vllm"))  # type: ignore[arg-type]
-        assert fake_chat_openai_vllm["temperature"] == 0
+    def test_temperature_is_zero(self, fake_chat_openai_compatible) -> None:
+        create_openai_compatible_secondary_model(OpenDataSciConfig(provider="openai_compatible_server"))  # type: ignore[arg-type]
+        assert fake_chat_openai_compatible["temperature"] == 0
 
-    def test_max_tokens_capped(self, fake_chat_openai_vllm) -> None:
-        create_vllm_secondary_model(OpenDataSciConfig(provider="vllm"))  # type: ignore[arg-type]
-        assert fake_chat_openai_vllm["max_tokens"] == 1000
+    def test_max_tokens_capped(self, fake_chat_openai_compatible) -> None:
+        create_openai_compatible_secondary_model(OpenDataSciConfig(provider="openai_compatible_server"))  # type: ignore[arg-type]
+        assert fake_chat_openai_compatible["max_tokens"] == 1000
 
-    def test_base_url_defaults_to_localhost(self, fake_chat_openai_vllm, monkeypatch) -> None:
+    def test_base_url_defaults_to_localhost(self, fake_chat_openai_compatible, monkeypatch) -> None:
         monkeypatch.delenv("LLM_SERVER_BASE_URL", raising=False)
-        create_vllm_secondary_model(OpenDataSciConfig(provider="vllm"))  # type: ignore[arg-type]
-        assert fake_chat_openai_vllm["base_url"] == "http://localhost:8000/v1"
+        create_openai_compatible_secondary_model(OpenDataSciConfig(provider="openai_compatible_server"))  # type: ignore[arg-type]
+        assert fake_chat_openai_compatible["base_url"] == "http://localhost:8000/v1"
 
     def test_missing_package_raises_llm_provider_error(self, monkeypatch) -> None:
         monkeypatch.delitem(sys.modules, "langchain_openai", raising=False)
         with patch.dict(sys.modules, {"langchain_openai": None}):
             with pytest.raises(ValueError, match="langchain-openai"):
-                create_vllm_secondary_model(OpenDataSciConfig(provider="vllm"))  # type: ignore[arg-type]
+                create_openai_compatible_secondary_model(OpenDataSciConfig(provider="openai_compatible_server"))  # type: ignore[arg-type]
 
 
 class TestCachedSystemPrompt:

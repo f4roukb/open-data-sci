@@ -19,7 +19,6 @@ The default installation includes the Anthropic and OpenAI clients. Install addi
 | `open-data-sci[gcp]` | Google Vertex AI |
 | `open-data-sci[azure]` | Azure OpenAI |
 | `open-data-sci[ollama]` | Ollama (local models) |
-| `open-data-sci[vllm]` | vLLM (self-hosted) |
 
 ### Capability extras
 
@@ -48,7 +47,7 @@ OpenDataSci works with every major LLM provider. Select one via the `--provider`
 | Google Vertex AI | `vertexai` | `gemini-2.5-pro` | Application Default Credentials |
 | Azure OpenAI | `azure` | `gpt-4o` | `AZURE_OPENAI_API_KEY` or service principal |
 | Ollama | `ollama` | `llama3.2:3b` | none (local server) |
-| vLLM | `vllm` | `meta-llama/Llama-3.2-3B-Instruct` | none (self-hosted) |
+| OpenAI-compatible server (e.g. vLLM) | `openai_compatible_server` | `meta-llama/Llama-3.2-3B-Instruct` | none (self-hosted) |
 
 Run `opendatasci --list-providers` to print this table at any time.
 
@@ -111,11 +110,12 @@ Run `opendatasci --list-providers` to print this table at any time.
     opendatasci data.csv --provider ollama --model llama3.2:3b
     ```
 
-=== "vLLM"
+=== "OpenAI-compatible server"
 
     ```bash
-    # Start vLLM first: vllm serve meta-llama/Llama-3.2-3B-Instruct
-    opendatasci data.csv --provider vllm --model meta-llama/Llama-3.2-3B-Instruct
+    # Start any OpenAI-compatible server first, e.g. vLLM:
+    # vllm serve meta-llama/Llama-3.2-3B-Instruct
+    opendatasci data.csv --provider openai_compatible_server --model meta-llama/Llama-3.2-3B-Instruct
     ```
 
 ---
@@ -300,14 +300,14 @@ Create `.opendatasci/skills/` in your workspace and add Markdown files describin
 | Variable | Description |
 |----------|-------------|
 | `ANTHROPIC_API_KEY` | Anthropic API key |
-| `OPENAI_API_KEY` | OpenAI / vLLM API key |
+| `OPENAI_API_KEY` | OpenAI / OpenAI-compatible server API key |
 | `GOOGLE_API_KEY` | Google Gemini API key |
 | `AZURE_OPENAI_API_KEY` | Azure OpenAI API key |
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI resource URL |
 | `REGION` | Cloud region (Bedrock) |
 | `GOOGLE_CLOUD_PROJECT` | GCP project ID (Vertex AI) |
 | `GOOGLE_CLOUD_LOCATION` | Vertex AI region |
-| `LLM_SERVER_BASE_URL` | Custom endpoint (Ollama / vLLM) |
+| `LLM_SERVER_BASE_URL` | Custom endpoint (Ollama / OpenAI-compatible server) |
 | `SKILLS_DIRECTORY` | Path to a user-defined skills directory |
 | `BUILTIN_SKILLS_DIRECTORY` | Override the bundled built-in skills directory |
 | `CODE_EXEC_TIMEOUT` | Max seconds for one sandbox execution (default: `1800`) |

@@ -1,16 +1,16 @@
-"""021 — Batch analysis script with vLLM.
+"""021 — Batch analysis script with an OpenAI-compatible server.
 
-Identical workflow to 020_script_anthropic.py but driven by a local vLLM server
-instead of the Anthropic API. No API key is required; a vLLM server must be
-running before this script starts.
+Identical workflow to 020_script_anthropic.py but driven by a local
+OpenAI-compatible inference server (e.g. vLLM) instead of the Anthropic API.
+No API key is required; the server must be running before this script starts.
 
-Start the vLLM server first:
+Start a vLLM server first (or any other OpenAI-compatible server):
 
     vllm serve meta-llama/Llama-3.2-3B-Instruct
 
 Then run this script:
 
-    python 021_script_vllm.py
+    python 021_script_openai_compatible_server.py
 
 The script generates three synthetic monthly sales CSVs, processes each with
 OpenDataSci, and writes reports to ./reports/.
@@ -103,17 +103,17 @@ async def main() -> None:
             _write_sales_csv(p, month, rng)
             log.info("Created %s", p)
 
-    # vLLM server must be running before this line executes.
+    # An OpenAI-compatible server (e.g. vLLM) must be running before this line executes.
     # Set LLM_SERVER_BASE_URL if your server is not on the default
     # http://localhost:8000/v1 — e.g. LLM_SERVER_BASE_URL=http://gpu-box:8000/v1
     config = OpenDataSciConfig(
-        provider="vllm",
+        provider="openai_compatible_server",
         model="meta-llama/Llama-3.2-3B-Instruct",
         temperature=0.1,
     )
 
     csv_files = sorted(data_dir.glob("*.csv"))
-    log.info("Analysing %d file(s) via vLLM (%s)", len(csv_files), config.model)
+    log.info("Analysing %d file(s) via OpenAI-compatible server (%s)", len(csv_files), config.model)
 
     for path in csv_files:
         await analyse(path, config, output_dir)

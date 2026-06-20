@@ -8,8 +8,9 @@ def cached_system_prompt(prompt: str, provider: Provider) -> str | list[dict[str
 
     Each backend opts into prompt caching in the way its API expects:
     Anthropic and Bedrock embed an explicit cache breakpoint in the message;
-    OpenAI, Gemini, Ollama and vLLM rely on automatic server-side caching of
-    the prompt prefix and return the prompt as a plain string.
+    OpenAI, Gemini, Ollama and OpenAI-compatible servers (e.g. vLLM) rely on
+    automatic server-side caching of the prompt prefix and return the prompt
+    as a plain string.
     """
     match provider:
         case Provider.ANTHROPIC:
@@ -32,7 +33,7 @@ def cached_system_prompt(prompt: str, provider: Provider) -> str | list[dict[str
             from opendatasci.models.microsoft import cached_system_prompt as _impl  # type: ignore[assignment]  # noqa: I001
 
             return _impl(prompt)
-        case Provider.OLLAMA | Provider.VLLM:
+        case Provider.OLLAMA | Provider.OPENAI_COMPATIBLE_SERVER:
             from opendatasci.models.local import cached_system_prompt as _local_impl
 
             return _local_impl(prompt)

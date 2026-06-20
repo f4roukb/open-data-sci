@@ -1,10 +1,17 @@
-# 011 — Exploring data from the TUI with vLLM
+# 011 — Exploring data from the TUI with an OpenAI-compatible server
 
-vLLM is a self-hosted inference server. It runs entirely on your hardware —
-no API key, no data sent to a third party, and no per-token cost beyond electricity.
-A modern GPU (or a recent Apple Silicon Mac) is required.
+OpenDataSci supports any self-hosted inference server that exposes an
+OpenAI-compatible HTTP API — vLLM, LM Studio, llama.cpp's server,
+text-generation-inference, and others. It runs entirely on your hardware —
+no API key, no data sent to a third party, and no per-token cost beyond
+electricity. A modern GPU (or a recent Apple Silicon Mac) is required for
+most servers.
 
-## When to choose vLLM
+This walkthrough uses vLLM as the example server; swap in any other
+OpenAI-compatible server and the `--provider openai_compatible_server` flag
+still applies.
+
+## When to choose a self-hosted server
 
 - Data that cannot leave your machine (PII, trade secrets, regulated data)
 - Offline or air-gapped environments
@@ -17,13 +24,12 @@ For cloud inference without managing servers, see
 
 ---
 
-## Setup
+## Setup (vLLM example)
 
-### 1 — Install vLLM and the provider extra
+### 1 — Install vLLM
 
 ```bash
 pip install vllm
-pip install "open-data-sci[vllm]"
 ```
 
 ### 2 — Start the vLLM server
@@ -43,7 +49,8 @@ vllm serve meta-llama/Llama-3.2-3B-Instruct --quantization awq
 ```
 
 The server listens on `http://localhost:8000/v1` by default.
-Set `LLM_SERVER_BASE_URL` only if you change the port or host:
+Set `LLM_SERVER_BASE_URL` only if you change the port or host, or if you're
+pointing at a different OpenAI-compatible server entirely:
 
 ```bash
 export LLM_SERVER_BASE_URL=http://localhost:9000/v1   # non-default port
@@ -64,17 +71,17 @@ huggingface-cli login
 ## Launching
 
 ```bash
-# Default vLLM model (meta-llama/Llama-3.2-3B-Instruct)
-opendatasci sales.csv --provider vllm
+# Default model (meta-llama/Llama-3.2-3B-Instruct)
+opendatasci sales.csv --provider openai_compatible_server
 
 # Choose a different model — must match what the running server is serving
-opendatasci sales.csv --provider vllm --model meta-llama/Llama-3.1-8B-Instruct
+opendatasci sales.csv --provider openai_compatible_server --model meta-llama/Llama-3.1-8B-Instruct
 
 # Custom server URL
-LLM_SERVER_BASE_URL=http://192.168.1.10:8000/v1 opendatasci sales.csv --provider vllm
+LLM_SERVER_BASE_URL=http://192.168.1.10:8000/v1 opendatasci sales.csv --provider openai_compatible_server
 
 # Load config from file
-opendatasci sales.csv --config examples/config_vllm.yaml
+opendatasci sales.csv --config examples/config_openai_compatible_server.yaml
 ```
 
 ---

@@ -102,12 +102,6 @@ jax = [
     "flax>=0.8.0,<1.0.0",
     "optax>=0.2.0,<1.0.0",
 ]
-vllm = [
-    # vllm exposes an OpenAI-compatible API; langchain-openai (already a core
-    # dependency) is the client library.  This extra exists as an explicit
-    # marker and pins the underlying openai SDK directly.
-    "openai>=1.0.0,<2.0.0",
-]
 dev = [
     "pytest>=7.0.0,<8.0.0",
     "pytest-cov>=4.0.0,<5.0.0",

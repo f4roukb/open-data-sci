@@ -66,7 +66,7 @@ config = OpenDataSciConfig.from_yaml("opendatasci_config.yaml")
 | `google_cloud_location` | `GOOGLE_CLOUD_LOCATION` | Vertex AI region |
 | `azure_endpoint` | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI resource endpoint URL |
 | `azure_api_version` | `AZURE_OPENAI_API_VERSION` | Azure API version (default: `2025-01-01-preview`) |
-| `llm_server_base_url` | `LLM_SERVER_BASE_URL` | Custom endpoint for Ollama / vLLM |
+| `llm_server_base_url` | `LLM_SERVER_BASE_URL` | Custom endpoint for Ollama / OpenAI-compatible server |
 
 ### Sampling & reasoning
 
@@ -122,7 +122,7 @@ config = OpenDataSciConfig.from_yaml("opendatasci_config.yaml")
 | `vertexai` | `gemini-2.5-pro` | `gemini-2.5-flash` |
 | `azure` | `gpt-4o` | `gpt-4o-mini` |
 | `ollama` | `llama3.2:3b` | `llama3.2:3b` |
-| `vllm` | `meta-llama/Llama-3.2-3B-Instruct` | `meta-llama/Llama-3.2-3B-Instruct` |
+| `openai_compatible_server` | `meta-llama/Llama-3.2-3B-Instruct` | `meta-llama/Llama-3.2-3B-Instruct` |
 
 ---
 

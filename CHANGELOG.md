@@ -15,7 +15,7 @@ Initial public release.
 - **Autonomous agent** — plans, writes Python, executes it in an isolated sandbox, inspects output, and iterates without human-in-the-loop prompting.
 - **Sandboxed execution** — code runs inside a native OS sandbox (macOS sandbox-exec / Linux bubblewrap) via `sandbox-runtime`, preventing filesystem and network escapes.
 - **Full ML/DS library surface** — Polars, Pandas, DuckDB, scikit-learn, LightGBM, XGBoost, CatBoost, Optuna, Prophet, SHAP, PyOD, UMAP, matplotlib, seaborn, plotly, and more. Deep learning (JAX, Flax, Optax) is available via the `[jax]` extra.
-- **Multi-provider LLM support** — Anthropic Claude, OpenAI, Google Gemini (AI Studio & Vertex AI), Amazon Bedrock, Azure OpenAI, Ollama, and vLLM.
+- **Multi-provider LLM support** — Anthropic Claude, OpenAI, Google Gemini (AI Studio & Vertex AI), Amazon Bedrock, Azure OpenAI, Ollama, and OpenAI-compatible servers (e.g., vLLM server).
 - **Extended thinking** — reasoning tokens are extracted and streamed as a dedicated event type for models that expose chain-of-thought.
 - **Domain skills** — focused methodology prompts for Data Science, Machine Learning, Deep Learning, Quantitative Analysis, Competitive Data Science, and Education; custom project-level skills via `.opendatasci/skills/`.
 - **Injectable skill store** — `Agent` accepts an optional `skill_store` parameter (`BaseSkillStore`) to supply a custom skill source; shared across the orchestrator and all spawned workers. Defaults to `LocalSkillStore` pointed at `<workspace>/.opendatasci/skills/`.

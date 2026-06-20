@@ -9,4 +9,4 @@ class Provider(StrEnum):
     VERTEXAI = auto()
     AZURE = auto()
     OLLAMA = auto()
-    VLLM = auto()
+    OPENAI_COMPATIBLE_SERVER = auto()

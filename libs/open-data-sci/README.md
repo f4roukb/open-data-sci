@@ -58,7 +58,6 @@ pip install "open-data-sci[gemini]"    # Google Gemini (AI Studio)
 pip install "open-data-sci[gcp]"       # Google Vertex AI
 pip install "open-data-sci[azure]"     # Azure OpenAI
 pip install "open-data-sci[ollama]"    # Ollama (local models)
-pip install "open-data-sci[vllm]"      # vLLM (self-hosted)
 ```
 
 ### Capability extras
@@ -154,7 +153,7 @@ opendatasci PATH [OPTIONS]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--provider` | `anthropic` | LLM provider for the primary model. Choices: `anthropic`, `openai`, `bedrock`, `gemini`, `vertexai`, `azure`, `ollama`, `vllm` |
+| `--provider` | `anthropic` | LLM provider for the primary model. Choices: `anthropic`, `openai`, `bedrock`, `gemini`, `vertexai`, `azure`, `ollama`, `openai_compatible_server` |
 | `--model` | *(provider default)* | Primary model name — provider-specific identifier. Omit to use the provider's default (see [Models](#models)) |
 | `--secondary-provider` | *(same as `--provider`)* | Provider for the secondary (auxiliary) model — may differ from `--provider` |
 | `--secondary-model` | *(provider default)* | Secondary model name for lightweight tasks (summarisation, etc.) |
@@ -283,19 +282,19 @@ async with create_agent("data.parquet", config=config) as agent:
 
 | Field | Description |
 |-------|-------------|
-| `provider` | LLM provider (`"anthropic"`, `"openai"`, `"bedrock"`, `"gemini"`, `"vertexai"`, `"azure"`, `"ollama"`, `"vllm"`) |
+| `provider` | LLM provider (`"anthropic"`, `"openai"`, `"bedrock"`, `"gemini"`, `"vertexai"`, `"azure"`, `"ollama"`, `"openai_compatible_server"`) |
 | `model` | Primary model identifier — omit to use the provider default |
 | `secondary_provider` | Provider for the lightweight secondary model — defaults to the primary provider |
 | `secondary_model` | Secondary model identifier — omit to use the provider default |
 | `anthropic_api_key` | Anthropic API key (env: `ANTHROPIC_API_KEY`) |
-| `openai_api_key` | OpenAI / vLLM API key (env: `OPENAI_API_KEY`) |
+| `openai_api_key` | OpenAI / OpenAI-compatible server API key (env: `OPENAI_API_KEY`) |
 | `google_api_key` | Google Gemini API key (env: `GOOGLE_API_KEY`) |
 | `azure_api_key` | Azure OpenAI API key (env: `AZURE_OPENAI_API_KEY`) |
 | `aws_region` | AWS region for Bedrock (env: `REGION`) |
 | `google_cloud_project` | GCP project ID for Vertex AI (env: `GOOGLE_CLOUD_PROJECT`) |
 | `google_cloud_location` | Vertex AI region (env: `GOOGLE_CLOUD_LOCATION`) |
 | `azure_endpoint` | Azure OpenAI resource endpoint URL (env: `AZURE_OPENAI_ENDPOINT`) |
-| `llm_server_base_url` | Custom API base URL — required for `ollama` and `vllm` (env: `LLM_SERVER_BASE_URL`) |
+| `llm_server_base_url` | Custom API base URL — required for `ollama` and `openai_compatible_server` (env: `LLM_SERVER_BASE_URL`) |
 
 ---
 
@@ -307,12 +306,12 @@ OpenDataSci supports every major LLM provider. Pass `--provider` to the TUI or s
 |----------|------|----------------|---------------|
 | Anthropic | `anthropic` | *(none — default)* | `claude-sonnet-4-6` |
 | OpenAI | `openai` | *(none)* | `gpt-5.5` |
+| OpenAI-compatible server (e.g. vLLM) | `openai_compatible_server` | *(none)* | `meta-llama/Llama-3.2-3B-Instruct` |
 | AWS Bedrock | `bedrock` | `open-data-sci[aws]` | `us.anthropic.claude-sonnet-4-6` |
 | Google Gemini | `gemini` | `open-data-sci[gemini]` | `gemini-2.5-pro` |
 | Google Vertex AI | `vertexai` | `open-data-sci[gcp]` | `gemini-2.5-pro` |
 | Azure OpenAI | `azure` | `open-data-sci[azure]` | `gpt-4o` |
 | Ollama | `ollama` | `open-data-sci[ollama]` | `llama3.2:3b` |
-| vLLM | `vllm` | `open-data-sci[vllm]` | `meta-llama/Llama-3.2-3B-Instruct` |
 
 Pass `--list-providers` to print this table from the TUI at any time.
 
@@ -336,7 +335,7 @@ Place these files inside your workspace's `.opendatasci/` directory:
 | `ANTHROPIC_API_KEY` | API key for the Anthropic provider |
 | `OPENAI_API_KEY` | API key for the OpenAI provider |
 | `REGION` | Cloud provider region |
-| `LLM_SERVER_BASE_URL` | Custom API base URL — used by `ollama` and `vllm` providers |
+| `LLM_SERVER_BASE_URL` | Custom API base URL — used by `ollama` and `openai_compatible_server` providers |
 | `SKILLS_DIRECTORY` | Path to a directory of user-defined skill files (overrides none by default) |
 | `BUILTIN_SKILLS_DIRECTORY` | Path to the built-in skills directory (defaults to the bundled `resources/skills`) |
 | `CODE_EXEC_TIMEOUT` | Max seconds for a single sandboxed code execution (default: `1800`) |

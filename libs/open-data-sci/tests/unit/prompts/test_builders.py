@@ -112,15 +112,22 @@ class TestSystemPromptBuilderBuild:
         content = builder.build()[0].content
         assert isinstance(content, str)
 
-    def test_vllm_provider_uses_plain_string(self) -> None:
-        builder = self._make(provider="vllm")
+    def test_openai_compatible_server_provider_uses_plain_string(self) -> None:
+        builder = self._make(provider="openai_compatible_server")
         content = builder.build()[0].content
         assert isinstance(content, str)
 
     def test_cached_system_prompt_preserves_text(self) -> None:
         # The wrapped content must always carry the full system prompt,
         # regardless of how the provider chooses to mark up cache breakpoints.
-        for provider in ("anthropic", "bedrock", "openai", "gemini", "ollama", "vllm"):
+        for provider in (
+            "anthropic",
+            "bedrock",
+            "openai",
+            "gemini",
+            "ollama",
+            "openai_compatible_server",
+        ):
             builder = self._make(provider=provider)
             text = _all_text(builder.build())
             assert MAIN_SYSTEM_PROMPT.format(name="Sai") in text, provider
@@ -318,7 +325,7 @@ class TestSystemPromptCachingAndOrder:
 
     # --- Non-breakpoint providers degrade gracefully ---
 
-    @pytest.mark.parametrize("provider", ["openai", "gemini", "ollama", "vllm"])
+    @pytest.mark.parametrize("provider", ["openai", "gemini", "ollama", "openai_compatible_server"])
     def test_breakpoint_providers_skipped_keeps_plain_strings(self, provider: str) -> None:
         # Providers with server-side automatic caching get plain strings for
         # both the base prompt and the skill — there is nothing to mark.
