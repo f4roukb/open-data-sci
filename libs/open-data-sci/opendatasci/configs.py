@@ -19,7 +19,7 @@ DEFAULT_MODEL: MappingProxyType[Provider, str] = MappingProxyType(
         Provider.VERTEXAI: "gemini-2.5-pro",
         Provider.AZURE: "gpt-4o",
         Provider.OLLAMA: "llama3.2:3b",
-        Provider.VLLM: "meta-llama/Llama-3.2-3B-Instruct",
+        Provider.OPENAI_COMPATIBLE_SERVER: "meta-llama/Llama-3.2-3B-Instruct",
     }
 )
 
@@ -32,7 +32,7 @@ DEFAULT_SECONDARY_MODEL: MappingProxyType[Provider, str] = MappingProxyType(
         Provider.VERTEXAI: "gemini-2.5-flash",
         Provider.AZURE: "gpt-4o-mini",
         Provider.OLLAMA: "llama3.2:3b",
-        Provider.VLLM: "meta-llama/Llama-3.2-3B-Instruct",
+        Provider.OPENAI_COMPATIBLE_SERVER: "meta-llama/Llama-3.2-3B-Instruct",
     }
 )
 
@@ -48,7 +48,8 @@ class OpenDataSciConfig(BaseSettings):
         provider:        LLM provider for the primary model.  One of
                          ``"anthropic"``, ``"openai"``, ``"bedrock"``,
                          ``"gemini"``, ``"vertexai"``, ``"azure"``,
-                         ``"ollama"``, ``"vllm"``.
+                         ``"ollama"``, ``"openai_compatible_server"`` (any
+                         self-hosted OpenAI-compatible server, e.g. vLLM).
         model:           Provider-specific model identifier.  Falls back to a
                          sensible default per provider when not set.
         secondary_provider: LLM provider for the secondary (auxiliary) model.
@@ -59,7 +60,8 @@ class OpenDataSciConfig(BaseSettings):
                          summarisation.  Falls back to a sensible default per
                          provider when not set.
         anthropic_api_key: API key for Anthropic (``ANTHROPIC_API_KEY``).
-        openai_api_key:    API key for OpenAI and vLLM (``OPENAI_API_KEY``).
+        openai_api_key:    API key for OpenAI and OpenAI-compatible servers
+                           (``OPENAI_API_KEY``).
         google_api_key:    API key for Google Gemini (``GOOGLE_API_KEY``).
         azure_api_key:     API key for Azure OpenAI (``AZURE_OPENAI_API_KEY``).
                            Omit when using service-principal auth instead.
@@ -76,8 +78,8 @@ class OpenDataSciConfig(BaseSettings):
                            ``"2025-01-01-preview"``.
         llm_server_base_url: Base URL for self-hosted providers
                            (``LLM_SERVER_BASE_URL``).  Required for
-                           ``"ollama"`` and ``"vllm"``; falls back to
-                           ``http://localhost:11434`` and
+                           ``"ollama"`` and ``"openai_compatible_server"``;
+                           falls back to ``http://localhost:11434`` and
                            ``http://localhost:8000/v1`` respectively when
                            not set.
         temperature:     LLM sampling temperature.  Ignored for Anthropic and
@@ -167,7 +169,7 @@ class OpenDataSciConfig(BaseSettings):
     azure_endpoint: str | None = Field(default=None, alias="AZURE_OPENAI_ENDPOINT")
     azure_api_version: str = Field(default="2025-01-01-preview", alias="AZURE_OPENAI_API_VERSION")
 
-    # ── Self-hosted endpoint (Ollama / vLLM) ──────────────────────────────────
+    # ── Self-hosted endpoint (Ollama / OpenAI-compatible server) ──────────────
     llm_server_base_url: str | None = Field(default=None, alias="LLM_SERVER_BASE_URL")
 
     # ── Sampling & reasoning ──────────────────────────────────────────────────

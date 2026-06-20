@@ -36,8 +36,9 @@ def create_ollama_secondary_model(config: OpenDataSciConfig) -> BaseChatModel:
     return model
 
 
-def create_vllm_model(config: OpenDataSciConfig) -> BaseChatModel:
-    """Instantiate an OpenAI-compatible ``ChatOpenAI`` model against a local vLLM server."""
+def create_openai_compatible_model(config: OpenDataSciConfig) -> BaseChatModel:
+    """Instantiate a ``ChatOpenAI`` model against any OpenAI-compatible inference server
+    (e.g. vLLM, LM Studio, llama.cpp, text-generation-inference, ...)."""
     try:
         from langchain_openai import ChatOpenAI
     except ImportError as exc:
@@ -50,8 +51,9 @@ def create_vllm_model(config: OpenDataSciConfig) -> BaseChatModel:
     )
 
 
-def create_vllm_secondary_model(config: OpenDataSciConfig) -> BaseChatModel:
-    """Instantiate a cheap vLLM-backed ``ChatOpenAI`` model for auxiliary tasks."""
+def create_openai_compatible_secondary_model(config: OpenDataSciConfig) -> BaseChatModel:
+    """Instantiate a cheap ``ChatOpenAI`` model for auxiliary tasks against any
+    OpenAI-compatible inference server."""
     try:
         from langchain_openai import ChatOpenAI
     except ImportError as exc:
@@ -68,9 +70,10 @@ def create_vllm_secondary_model(config: OpenDataSciConfig) -> BaseChatModel:
 def cached_system_prompt(prompt: str) -> str:
     """Return the system prompt unchanged.
 
-    Both Ollama and vLLM perform automatic prefix caching server-side: Ollama
-    enables it by default for recent versions, and vLLM enables it when
-    started with `--enable-prefix-caching`. Caching is keyed on the leading
-    prompt prefix, so no client-side cache markers are required.
+    Both Ollama and OpenAI-compatible servers (e.g. vLLM) perform automatic
+    prefix caching server-side: Ollama enables it by default for recent
+    versions, and vLLM enables it when started with `--enable-prefix-caching`.
+    Caching is keyed on the leading prompt prefix, so no client-side cache
+    markers are required.
     """
     return prompt

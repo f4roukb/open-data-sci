@@ -957,7 +957,7 @@ class TestWorkerAgentSystemPromptCaching:
         marked = [m for m in messages_out if hasattr(m, "content") and _has_cache_marker(m.content)]
         assert len(marked) == 1
 
-    @pytest.mark.parametrize("provider", ["openai", "gemini", "ollama", "vllm"])
+    @pytest.mark.parametrize("provider", ["openai", "gemini", "ollama", "openai_compatible_server"])
     async def test_non_breakpoint_providers_use_plain_strings(self, provider: str) -> None:
         # Providers with server-side automatic caching get plain-string content
         # for both base and skill so the prefix stays byte-identical.

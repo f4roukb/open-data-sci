@@ -19,7 +19,6 @@ pip install "open-data-sci[gemini]"   # Gemini AI Studio
 pip install "open-data-sci[gcp]"      # Vertex AI
 pip install "open-data-sci[azure]"    # Azure OpenAI
 pip install "open-data-sci[ollama]"   # Ollama
-pip install "open-data-sci[vllm]"     # vLLM
 ```
 
 ---
@@ -31,7 +30,7 @@ Full-screen terminal UI — ask questions in plain English, no code required.
 | File | Provider | Notes |
 |------|----------|-------|
 | [`tui/010_tui_anthropic.md`](tui/010_tui_anthropic.md) | Anthropic | Full walkthrough: session flow, slash commands, file attachments, keyboard shortcuts |
-| [`tui/011_tui_vllm.md`](tui/011_tui_vllm.md) | vLLM | Self-hosted, no API key; covers vLLM server setup and local-model tips |
+| [`tui/011_tui_openai_compatible_server.md`](tui/011_tui_openai_compatible_server.md) | OpenAI-compatible server | Self-hosted, no API key; covers vLLM server setup and local-model tips |
 | [`tui/012_tui_bedrock.md`](tui/012_tui_bedrock.md) | AWS Bedrock | Managed inference via IAM; covers credentials, model access, and cross-region IDs |
 
 ---
@@ -44,7 +43,7 @@ sales CSVs, analyses each, and writes plain-text reports to `./reports/`.
 | File | Provider |
 |------|----------|
 | [`scripts/020_script_anthropic.py`](scripts/020_script_anthropic.py) | Anthropic |
-| [`scripts/021_script_vllm.py`](scripts/021_script_vllm.py) | vLLM |
+| [`scripts/021_script_openai_compatible_server.py`](scripts/021_script_openai_compatible_server.py) | OpenAI-compatible server |
 | [`scripts/022_script_bedrock.py`](scripts/022_script_bedrock.py) | AWS Bedrock |
 
 Key pattern (identical across all variants):
@@ -69,7 +68,7 @@ cell is a follow-up turn in the same conversation.
 | File | Provider |
 |------|----------|
 | [`notebooks/030_notebook_anthropic.ipynb`](notebooks/030_notebook_anthropic.ipynb) | Anthropic |
-| [`notebooks/031_notebook_vllm.ipynb`](notebooks/031_notebook_vllm.ipynb) | vLLM |
+| [`notebooks/031_notebook_openai_compatible_server.ipynb`](notebooks/031_notebook_openai_compatible_server.ipynb) | OpenAI-compatible server |
 | [`notebooks/032_notebook_bedrock.ipynb`](notebooks/032_notebook_bedrock.ipynb) | AWS Bedrock |
 
 ---
@@ -88,7 +87,7 @@ TUI flags override values set here.
 | [`configs/config_vertexai.yaml`](configs/config_vertexai.yaml) | Google Vertex AI | Application Default Credentials |
 | [`configs/config_azure.yaml`](configs/config_azure.yaml) | Azure OpenAI | `AZURE_OPENAI_API_KEY` or service principal |
 | [`configs/config_ollama.yaml`](configs/config_ollama.yaml) | Ollama | *(none — local server)* |
-| [`configs/config_vllm.yaml`](configs/config_vllm.yaml) | vLLM | *(none — local server)* |
+| [`configs/config_openai_compatible_server.yaml`](configs/config_openai_compatible_server.yaml) | OpenAI-compatible server | *(none — local server)* |
 
 Usage:
 

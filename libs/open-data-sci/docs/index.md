@@ -7,7 +7,7 @@
 - **Conversational analysis** — multi-turn sessions with full context; follow-up questions build on previous answers
 - **Sandboxed code execution** — all Python runs in an isolated SRT sandbox; no side-effects to your environment
 - **Concurrent workers** — complex tasks (e.g. "compare five models") are split across concurrent sub-agents automatically
-- **Every major LLM provider** — Anthropic, OpenAI, AWS Bedrock, Google Gemini, Vertex AI, Azure OpenAI, Ollama, vLLM
+- **Every major LLM provider** — Anthropic, OpenAI, AWS Bedrock, Google Gemini, Vertex AI, Azure OpenAI, Ollama, and any OpenAI-compatible server (e.g. vLLM)
 - **Extended thinking** — long-horizon reasoning via Anthropic and Bedrock's extended-thinking mode
 - **Skills system** — drop Markdown skill files into `.opendatasci/skills/` to inject domain methodology
 - **MCP tool servers** — connect the agent to external tool servers via `.opendatasci/mcp.json`

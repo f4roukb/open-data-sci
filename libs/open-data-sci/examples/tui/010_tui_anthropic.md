@@ -135,8 +135,8 @@ opendatasci sales.csv --provider gemini --model gemini-2.5-pro
 # Local model via Ollama  (no API key needed)
 opendatasci sales.csv --provider ollama --model llama3.2:3b
 
-# Self-hosted vLLM
-opendatasci sales.csv --provider vllm --model meta-llama/Llama-3.2-3B-Instruct
+# Self-hosted OpenAI-compatible server (e.g. vLLM)
+opendatasci sales.csv --provider openai_compatible_server --model meta-llama/Llama-3.2-3B-Instruct
 ```
 
 AWS Bedrock, Azure OpenAI, and Google Vertex AI are also supported —

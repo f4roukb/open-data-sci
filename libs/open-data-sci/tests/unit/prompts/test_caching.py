@@ -22,7 +22,14 @@ class TestDispatcher:
 
     @pytest.mark.parametrize(
         "provider",
-        [Provider.OPENAI, Provider.GEMINI, Provider.VERTEXAI, Provider.AZURE, Provider.OLLAMA, Provider.VLLM],
+        [
+            Provider.OPENAI,
+            Provider.GEMINI,
+            Provider.VERTEXAI,
+            Provider.AZURE,
+            Provider.OLLAMA,
+            Provider.OPENAI_COMPATIBLE_SERVER,
+        ],
     )
     def test_automatic_providers_return_plain_string(self, provider: Provider) -> None:
         assert cached_system_prompt(_PROMPT, provider) == _PROMPT

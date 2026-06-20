@@ -36,7 +36,7 @@ _PROVIDER_DISPLAY: dict[Provider, str] = {
     Provider.VERTEXAI: "Google Vertex AI",
     Provider.AZURE: "Azure OpenAI",
     Provider.OLLAMA: "Ollama",
-    Provider.VLLM: "vLLM",
+    Provider.OPENAI_COMPATIBLE_SERVER: "OpenAI-compatible server",
 }
 
 

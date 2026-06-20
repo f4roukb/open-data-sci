@@ -272,7 +272,7 @@ _PROVIDER_KEY_FIELD: dict[Provider, str | None] = {
     Provider.OPENAI: "openai_api_key",
     Provider.GEMINI: "google_api_key",
     Provider.AZURE: "azure_api_key",
-    Provider.VLLM: "openai_api_key",
+    Provider.OPENAI_COMPATIBLE_SERVER: "openai_api_key",
     Provider.BEDROCK: None,
     Provider.VERTEXAI: None,
     Provider.OLLAMA: None,

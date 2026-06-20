@@ -81,7 +81,7 @@ OpenDataSci supports every major cloud provider and fully self-hosted deployment
 - Google Vertex AI
 - Azure OpenAI
 - Ollama (local)
-- vLLM (self-hosted)
+- OpenAI-compatible servers (e.g., vLLM server)
 
 You can take it a step further and mix providers within a single session: one model for heavy reasoning, another for lightweight tasks like summarisation.
 
