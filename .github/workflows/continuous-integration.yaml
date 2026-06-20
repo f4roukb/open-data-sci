@@ -1,3 +1,5 @@
+# Runs static checks, unit tests, docs build, and component tests on every
+# pull request and on pushes to main/release branches.
 name: CI
 
 on:
