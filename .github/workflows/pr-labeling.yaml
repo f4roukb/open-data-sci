@@ -1,8 +1,10 @@
+# Auto-labels new PRs (feature/bug/refactor/docs/perf/chore/breaking) based on
+# which checkboxes are ticked in the PR description.
 name: PR Labeler
 
 on:
   pull_request:
-    types: [opened]
+    types: [opened, reopened]
 
 permissions: {}
 
