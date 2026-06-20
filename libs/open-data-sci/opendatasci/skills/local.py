@@ -6,7 +6,7 @@ from opendatasci.skills.base import BaseSkillStore, Skill
 
 logger = logging.getLogger(__name__)
 
-_BUILTIN_SKILLS_DIRECTORY = Path(__file__).resolve().parents[2] / "resources" / "skills"
+_BUILTIN_SKILLS_DIRECTORY = Path(__file__).resolve().parents[1] / "resources" / "skills"
 
 _BUILTIN_NAMES = [
     "data_science",
