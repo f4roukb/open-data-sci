@@ -1,4 +1,4 @@
-.PHONY: help install install-dev install-sys-deps format format-check lint lint-fix type-check deadcode static-checks all clean test test-unit test-component docs docs-serve
+.PHONY: help install install-dev install-system-dependencies format format-check lint lint-fix type-check deadcode static-checks all clean test test-unit test-component docs docs-serve
 
 PACKAGE = opendatasci
 
@@ -6,7 +6,7 @@ help:
 	@echo "Available targets:"
 	@echo "  install        Install package in production mode (EXTRAS=aws,gemini,...)"
 	@echo "  install-dev    Install package with dev dependencies (EXTRAS=aws,gemini,...)"
-	@echo "  install-sys-deps Install system-level dependencies required by sandbox-runtime (SRT)"
+	@echo "  install-system-dependencies Install system-level dependencies required by sandbox-runtime (SRT)"
 	@echo "  format         Run ruff formatter (writes)"
 	@echo "  format-check   Run ruff formatter in check mode (read-only)"
 	@echo "  lint           Run ruff linter"
@@ -33,7 +33,7 @@ install-dev:
 
 # sandbox-runtime (SRT) relies on native OS sandboxing binaries.
 # macOS needs ripgrep; Linux also needs bubblewrap and socat.
-install-sys-deps:
+install-system-dependencies:
 	@if [ "$$(uname)" = "Darwin" ]; then \
 		echo "Installing macOS system deps for SRT (ripgrep)..."; \
 		brew install ripgrep; \

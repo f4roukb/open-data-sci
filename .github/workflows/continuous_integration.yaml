@@ -113,7 +113,7 @@ jobs:
           enable-cache: true
 
       - name: Install system dependencies
-        run: make install-sys-deps
+        run: make install-system-dependencies
 
       - name: Install dependencies
         run: make install-dev
