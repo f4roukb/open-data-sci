@@ -1,0 +1,233 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "open-data-sci"
+version = "0.1.0"
+description = "AI agent for data science and machine learning"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+authors = [
+    {name = "Farouk Boukil", email = "b4farouk@gmail.com"}
+]
+license = {file = "LICENSE"}
+keywords = [
+    "ai", "agent", "machine-learning", "data-science",
+    "analytics"
+]
+classifiers = [
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
+]
+
+dependencies = [
+    # DataFrame libraries
+    "polars[calamine]>=1.0.0,<2.0.0",
+    "pandas[excel,parquet,feather]>=2.0.0,<3.0.0",
+    "connectorx>=0.3.0,<1.0.0",
+    # XML
+    "lxml>=6.1.0,<7.0.0",
+    # LLM / agent stack (only the sub-packages we actually import)
+    "langchain-core>=0.3.0,<1.0.0",
+    "langchain-openai>=0.2.0,<1.0.0",
+    "langchain-anthropic>=0.2.0,<1.0.0",
+    "langgraph>=0.2.0,<1.0.0",
+    # Numerics
+    "numpy>=1.26.0,<2.0.0",
+    # Data science
+    "scikit-learn>=1.5.0,<2.0.0",
+    "scipy>=1.14.0,<2.0.0",
+    "statsmodels>=0.14.0,<1.0.0",
+    "shap>=0.46.0,<1.0.0",
+    "catboost>=1.2.0,<2.0.0",
+    "lightgbm>=4.0.0,<5.0.0",
+    "xgboost>=2.0.0,<3.0.0",
+    "optuna>=3.6.0,<4.0.0",
+    "prophet>=1.1.0,<2.0.0",
+    "umap-learn>=0.5.0,<1.0.0",
+    "imbalanced-learn>=0.12.0,<1.0.0",
+    "networkx>=3.0.0,<4.0.0",
+    "pyod>=2.0.0,<3.0.0",
+    "category-encoders>=2.6.0,<3.0.0",
+    # Visualisation
+    "matplotlib>=3.7.0,<4.0.0",
+    "seaborn>=0.12.0,<1.0.0",
+    "plotly>=5.15.0,<6.0.0",
+    # Config / settings
+    "python-dotenv>=1.0.0,<2.0.0",
+    "pydantic>=2.0.0,<3.0.0",
+    "pydantic-settings>=2.0.0,<3.0.0",
+    "pyyaml>=6.0,<7.0",
+    # TUI / TUI
+    "rich>=13.0.0,<14.0.0",
+    "textual>=0.47.0,<0.48.0",
+    # Fast hashing
+    "xxhash>=3.5.0,<4.0.0",
+    # Web search & fetching
+    "duckduckgo-search>=6.0.0,<7.0.0",
+    "httpx>=0.27.0,<1.0.0",
+    # Sandbox runtime
+    "sandbox-runtime>=0.2.0,<1.0.0",
+]
+
+[project.optional-dependencies]
+aws = [
+    "boto3>=1.34.0,<2.0.0",
+    "langchain-aws>=0.2.0,<1.0.0",
+]
+gemini = [
+    "langchain-google-genai>=2.0.0,<3.0.0",
+]
+gcp = [
+    "langchain-google-vertexai>=2.0.0,<3.0.0",
+]
+azure = [
+    "azure-identity>=1.15.0,<2.0.0",
+]
+ollama = [
+    "langchain-ollama>=0.2.0,<1.0.0",
+]
+jax = [
+    "jax[cpu]>=0.4.0,<1.0.0",
+    "flax>=0.8.0,<1.0.0",
+    "optax>=0.2.0,<1.0.0",
+]
+dev = [
+    "pytest>=7.0.0,<8.0.0",
+    "pytest-cov>=4.0.0,<5.0.0",
+    "pytest-asyncio>=0.23.0,<1.0.0",
+    "pytest-xdist>=3.0.0,<4.0.0",
+    "ruff>=0.8.0,<1.0.0",
+    "mypy>=1.13.0,<2.0.0",
+    "pandas-stubs>=2.0.0,<3.0.0",
+    "types-openpyxl>=3.1.0,<4.0.0",
+    "vulture>=2.0.0,<3.0.0",
+    "kaggle>=1.6.0,<2.0.0",
+]
+docs = [
+    "mkdocs>=1.6.0,<2.0.0",
+    "mkdocs-material>=9.5.0,<10.0.0",
+    "mkdocstrings[python]>=0.26.0,<1.0.0",
+]
+
+[project.scripts]
+opendatasci = "opendatasci._tui.app:main"
+
+[project.urls]
+Homepage = "https://github.com/f4roukb/open-data-sci"
+Repository = "https://github.com/f4roukb/open-data-sci"
+Documentation = "https://open-data-sci.readthedocs.io"
+"Bug Tracker" = "https://github.com/f4roukb/open-data-sci/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["opendatasci"]
+
+# Libraries exposed to the agent's sandboxed Python environment.
+# Kept here so the list_python_libs tool can surface them to the agent at
+# runtime without hard-coding them anywhere in the source.
+[tool.opendatasci]
+opendatasci_agent_libs = [
+    # DataFrame
+    "polars[calamine]>=1.0.0,<2.0.0",
+    "pandas[excel,parquet,feather]>=2.0.0,<3.0.0",
+    "connectorx>=0.3.0,<1.0.0",
+    # XML
+    "lxml>=6.1.0,<7.0.0",
+    # Numerics
+    "numpy>=1.26.0,<2.0.0",
+    # Data science
+    "scikit-learn>=1.5.0,<2.0.0",
+    "scipy>=1.14.0,<2.0.0",
+    "statsmodels>=0.14.0,<1.0.0",
+    "shap>=0.46.0,<1.0.0",
+    "catboost>=1.2.0,<2.0.0",
+    "lightgbm>=4.0.0,<5.0.0",
+    "xgboost>=2.0.0,<3.0.0",
+    "optuna>=3.6.0,<4.0.0",
+    "prophet>=1.1.0,<2.0.0",
+    "umap-learn>=0.5.0,<1.0.0",
+    "imbalanced-learn>=0.12.0,<1.0.0",
+    "networkx>=3.0.0,<4.0.0",
+    "pyod>=2.0.0,<3.0.0",
+    "category-encoders>=2.6.0,<3.0.0",
+    # Visualisation
+    "matplotlib>=3.7.0,<4.0.0",
+    "seaborn>=0.12.0,<1.0.0",
+    "plotly>=5.15.0,<6.0.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_configs = true
+show_error_codes = true
+show_column_numbers = true
+pretty = true
+
+[[tool.mypy.overrides]]
+module = [
+    "langchain.*", "langchain_core.*",
+    "langchain_openai.*", "langchain_anthropic.*", "langchain_aws.*",
+    "langchain_google_genai.*", "langchain_ollama.*",
+    "langgraph.*",
+    "openpyxl.*", "fastexcel.*",
+    "pyarrow.*", "tables.*", "lxml.*",
+    "scipy.*", "statsmodels.*",
+    "plotly.*", "seaborn.*",
+    "rich.*",
+    "polars.*", "connectorx.*",
+    "numba.*", "modin.*",
+    "shap.*",
+    "catboost.*",
+    "lightgbm.*",
+    "xgboost.*",
+    "jax.*",
+    "flax.*",
+    "optax.*",
+    "optuna.*",
+    "prophet.*",
+    "umap.*",
+    "imblearn.*",
+    "pyod.*",
+    "category_encoders.*",
+    "PIL.*",
+    "duckduckgo_search.*",
+    "boto3", "boto3.*", "botocore.*",
+    "docker", "docker.*",
+    "opensandbox", "opensandbox.*",
+    "sandbox_runtime", "sandbox_runtime.*",
+    "google.cloud.*", "google.oauth2.*",
+]
+ignore_missing_imports = true
+
+[dependency-groups]
+dev = [
+    "pytest>=7.4.4",
+    "pytest-asyncio>=0.23.8",
+    "pyyaml>=6.0.3",
+]

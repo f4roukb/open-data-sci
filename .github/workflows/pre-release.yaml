@@ -1,0 +1,76 @@
+# Sanity-checks the package before it lands on a release branch:
+# build the artifacts, inspect them, and smoke-test the wheel in a clean venv.
+name: Pre-release
+
+on:
+  pull_request:
+    branches:
+      - release*
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pre-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-inspect:
+    name: build and inspect artifacts
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: libs/open-data-sci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Build
+        run: uv build
+
+      - name: Inspect sdist contents
+        run: tar tzf dist/*.tar.gz
+
+      - name: Validate metadata with twine
+        run: uv run --with twine twine check dist/*
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: libs/open-data-sci/dist/
+
+  smoke-test-install:
+    name: smoke-test wheel install
+    needs: build-and-inspect
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: libs/open-data-sci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: libs/open-data-sci/dist/
+
+      - name: Install wheel in a clean venv and import it
+        run: |
+          python -m venv test-install
+          source test-install/bin/activate
+          pip install dist/*.whl
+          python -c "import opendatasci; print('ok')"

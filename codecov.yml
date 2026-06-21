@@ -1,0 +1,33 @@
+coverage:
+  precision: 2
+  round: down
+  range: "25...100"
+
+  status:
+    project:
+      unit:
+        target: 80%
+        flags:
+          - unit
+      component:
+        target: 50%
+        flags:
+          - component
+    patch:
+      default:
+        target: 80%
+
+flags:
+  unit:
+    paths:
+      - libs/open-data-sci/opendatasci/
+    carryforward: true
+  component:
+    paths:
+      - libs/open-data-sci/opendatasci/
+    carryforward: true
+
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  require_changes: true

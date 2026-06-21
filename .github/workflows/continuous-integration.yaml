@@ -1,0 +1,139 @@
+# Runs static checks, unit tests, docs build, and component tests on every
+# pull request and on pushes to main/release branches.
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - main
+      - release*
+
+permissions:
+  contents: read
+
+# Cancel an in-progress run when new commits are pushed to the same PR.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-checks:
+    name: static checks
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: libs/open-data-sci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: make install-dev
+
+      - name: Run static checks
+        run: make static-checks
+
+  unit-tests:
+    name: unit tests
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: libs/open-data-sci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: make install-dev
+
+      - name: Run unit tests
+        run: make test-unit
+
+      - name: Upload unit test coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: libs/open-data-sci/coverage/unit.xml
+          flags: unit
+          fail_ci_if_error: false
+
+      - name: Upload unit test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: libs/open-data-sci/coverage/unit-junit.xml
+
+  check-docs-build:
+    name: check docs build
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: libs/open-data-sci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install docs dependencies
+        run: pip install -r docs/requirements.txt
+
+      - name: Build docs
+        run: mkdocs build -f mkdocs.yaml
+
+  component-tests:
+    name: component tests
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: libs/open-data-sci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install system dependencies
+        run: make install-system-dependencies
+
+      - name: Install dependencies
+        run: make install-dev
+
+      - name: Run component tests
+        run: make test-component
+
+      - name: Upload component test coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: libs/open-data-sci/coverage/component.xml
+          flags: component
+          fail_ci_if_error: false
+
+      - name: Upload component test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: libs/open-data-sci/coverage/component-junit.xml
