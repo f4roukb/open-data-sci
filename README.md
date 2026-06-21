@@ -2,6 +2,16 @@
   <img src="resources/logo/logo-light.png" alt="OpenDataSci" width="70%" />
 </div>
 
+<div align="center">
+
+[![CI](https://github.com/f4roukb/open-data-sci/actions/workflows/continuous-integration.yaml/badge.svg)](https://github.com/f4roukb/open-data-sci/actions/workflows/continuous-integration.yaml)
+[![PyPI version](https://img.shields.io/pypi/v/open-data-sci.svg)](https://pypi.org/project/open-data-sci/)
+[![Python versions](https://img.shields.io/pypi/pyversions/open-data-sci.svg)](https://pypi.org/project/open-data-sci/)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![GitHub release](https://img.shields.io/github/v/release/f4roukb/open-data-sci.svg)](https://github.com/f4roukb/open-data-sci/releases)
+
+</div>
+
 **OpenDataSci is a truly autonomous AI agent purpose-built for data science and machine learning.** Point it at a dataset (single file or directory), tell it what you need: it plans with scientific rigor, writes and executes code, self-reviews its progress, and iterates fast until it gets it right. **No data science knowledge required.**
 
 <div align="center">
