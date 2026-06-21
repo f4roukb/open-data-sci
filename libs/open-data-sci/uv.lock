@@ -524,21 +524,6 @@ wheels = [
 ]
 
 [[package]]
-name = "duckdb"
-version = "1.5.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ee/11/e05a7eb73a373d523e45d83c261025e02bc31ebf868e6282c30c4d02cc59/duckdb-1.5.0.tar.gz", hash = "sha256:f974b61b1c375888ee62bc3125c60ac11c4e45e4457dd1bb31a8f8d3cf277edd", size = 17981141, upload-time = "2026-03-09T12:50:26.372Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/43/73/120e673e48ae25aaf689044c25ef51b0ea1d088563c9a2532612aea18e0a/duckdb-1.5.0-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:9ea988d1d5c8737720d1b2852fd70e4d9e83b1601b8896a1d6d31df5e6afc7dd", size = 30057869, upload-time = "2026-03-09T12:49:14.65Z" },
-    { url = "https://files.pythonhosted.org/packages/21/e9/61143471958d36d3f3e764cb4cd43330be208ddbff1c78d3310b9ee67fe8/duckdb-1.5.0-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:cb786d5472afc16cc3c7355eb2007172538311d6f0cc6f6a0859e84a60220375", size = 15963092, upload-time = "2026-03-09T12:49:17.478Z" },
-    { url = "https://files.pythonhosted.org/packages/4f/71/76e37c9a599ad89dd944e6cbb3e6a8ad196944a421758e83adea507637b6/duckdb-1.5.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:dc92b238f4122800a7592e99134124cc9048c50f766c37a0778dd2637f5cbe59", size = 14220562, upload-time = "2026-03-09T12:49:23.518Z" },
-    { url = "https://files.pythonhosted.org/packages/db/b8/de1831656d5d13173e27c79c7259c8b9a7bdc314fdc8920604838ea4c46d/duckdb-1.5.0-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:1b74cb205c21d3696d8f8b88adca401e1063d6e6f57c1c4f56a243610b086e30", size = 19245329, upload-time = "2026-03-09T12:49:26.307Z" },
-    { url = "https://files.pythonhosted.org/packages/1f/8d/33d349a3bcbd3e9b7b4e904c19d5b97f058c4c20791b89a8d6323bb93dce/duckdb-1.5.0-cp312-cp312-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:6e56c19ffd1ffe3642fa89639e71e2e00ab0cf107b62fe16e88030acaebcbde6", size = 21348041, upload-time = "2026-03-09T12:49:30.283Z" },
-    { url = "https://files.pythonhosted.org/packages/e2/ec/591a4cad582fae04bc8f8b4a435eceaaaf3838cf0ca771daae16a3c2995b/duckdb-1.5.0-cp312-cp312-win_amd64.whl", hash = "sha256:86525e565ec0c43420106fd34ba2c739a54c01814d476c7fed3007c9ed6efd86", size = 13053781, upload-time = "2026-03-09T12:49:33.574Z" },
-    { url = "https://files.pythonhosted.org/packages/db/62/42e0a13f9919173bec121c0ff702406e1cdd91d8084c3e0b3412508c3891/duckdb-1.5.0-cp312-cp312-win_arm64.whl", hash = "sha256:5faeebc178c986a7bfa68868a023001137a95a1110bf09b7356442a4eae0f7e7", size = 13862906, upload-time = "2026-03-09T12:49:36.598Z" },
-]
-
-[[package]]
 name = "duckduckgo-search"
 version = "6.4.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1925,6 +1910,15 @@ wheels = [
 ]
 
 [[package]]
+name = "odfpy"
+version = "1.4.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "defusedxml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/97/73/8ade73f6749177003f7ce3304f524774adda96e6aaab30ea79fd8fda7934/odfpy-1.4.1.tar.gz", hash = "sha256:db766a6e59c5103212f3cc92ec8dd50a0f3a02790233ed0b52148b70d3c438ec", size = 717045, upload-time = "2020-01-18T16:55:48.852Z" }
+
+[[package]]
 name = "ollama"
 version = "0.6.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1945,9 +1939,7 @@ dependencies = [
     { name = "catboost" },
     { name = "category-encoders" },
     { name = "connectorx" },
-    { name = "duckdb" },
     { name = "duckduckgo-search" },
-    { name = "fastexcel" },
     { name = "httpx" },
     { name = "imbalanced-learn" },
     { name = "langchain-anthropic" },
@@ -1959,14 +1951,11 @@ dependencies = [
     { name = "matplotlib" },
     { name = "networkx" },
     { name = "numpy" },
-    { name = "openpyxl" },
     { name = "optuna" },
-    { name = "orjson" },
-    { name = "pandas" },
+    { name = "pandas", extra = ["excel", "feather", "parquet"] },
     { name = "plotly" },
-    { name = "polars" },
+    { name = "polars", extra = ["calamine"] },
     { name = "prophet" },
-    { name = "pyarrow" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyod" },
@@ -2039,9 +2028,7 @@ requires-dist = [
     { name = "catboost", specifier = ">=1.2.0,<2.0.0" },
     { name = "category-encoders", specifier = ">=2.6.0,<3.0.0" },
     { name = "connectorx", specifier = ">=0.3.0,<1.0.0" },
-    { name = "duckdb", specifier = ">=1.0.0,<2.0.0" },
     { name = "duckduckgo-search", specifier = ">=6.0.0,<7.0.0" },
-    { name = "fastexcel", specifier = ">=0.11.0,<1.0.0" },
     { name = "flax", marker = "extra == 'jax'", specifier = ">=0.8.0,<1.0.0" },
     { name = "httpx", specifier = ">=0.27.0,<1.0.0" },
     { name = "imbalanced-learn", specifier = ">=0.12.0,<1.0.0" },
@@ -2064,16 +2051,13 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13.0,<2.0.0" },
     { name = "networkx", specifier = ">=3.0.0,<4.0.0" },
     { name = "numpy", specifier = ">=1.26.0,<2.0.0" },
-    { name = "openpyxl", specifier = ">=3.1.0,<4.0.0" },
     { name = "optax", marker = "extra == 'jax'", specifier = ">=0.2.0,<1.0.0" },
     { name = "optuna", specifier = ">=3.6.0,<4.0.0" },
-    { name = "orjson", specifier = ">=3.9.0,<4.0.0" },
-    { name = "pandas", specifier = ">=2.0.0,<3.0.0" },
+    { name = "pandas", extras = ["excel", "parquet", "feather"], specifier = ">=2.0.0,<3.0.0" },
     { name = "pandas-stubs", marker = "extra == 'dev'", specifier = ">=2.0.0,<3.0.0" },
     { name = "plotly", specifier = ">=5.15.0,<6.0.0" },
-    { name = "polars", specifier = ">=1.0.0,<2.0.0" },
+    { name = "polars", extras = ["calamine"], specifier = ">=1.0.0,<2.0.0" },
     { name = "prophet", specifier = ">=1.1.0,<2.0.0" },
-    { name = "pyarrow", specifier = ">=14.0.0,<15.0.0" },
     { name = "pydantic", specifier = ">=2.0.0,<3.0.0" },
     { name = "pydantic-settings", specifier = ">=2.0.0,<3.0.0" },
     { name = "pyod", specifier = ">=2.0.0,<3.0.0" },
@@ -2283,6 +2267,22 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/29/d4/1244ab8edf173a10fd601f7e13b9566c1b525c4f365d6bee918e68381889/pandas-2.2.3-cp312-cp312-win_amd64.whl", hash = "sha256:59ef3764d0fe818125a5097d2ae867ca3fa64df032331b7e0917cf5d7bf66b13", size = 11504248, upload-time = "2024-09-20T13:09:23.137Z" },
 ]
 
+[package.optional-dependencies]
+excel = [
+    { name = "odfpy" },
+    { name = "openpyxl" },
+    { name = "python-calamine" },
+    { name = "pyxlsb" },
+    { name = "xlrd" },
+    { name = "xlsxwriter" },
+]
+feather = [
+    { name = "pyarrow" },
+]
+parquet = [
+    { name = "pyarrow" },
+]
+
 [[package]]
 name = "pandas-stubs"
 version = "2.3.3.260113"
@@ -2377,6 +2377,11 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ab/b8/3a6a5b85e34af7936620f331f04f8bed235625439f5bd80832f968648618/polars-1.39.0.tar.gz", hash = "sha256:e63a25fb7682ae660e36067915a7c71a653b17f82308a8eb67a190a80daf0710", size = 728783, upload-time = "2026-03-12T14:24:47.876Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a7/f8/fad8470d9701c1b208cc24919a661efdf565373e77e7d06400642a759285/polars-1.39.0-py3-none-any.whl", hash = "sha256:4d1198b41bc47561673d9f54d0f595125202a3f53e3502821802958d3e60efe9", size = 823938, upload-time = "2026-03-12T14:22:37.78Z" },
+]
+
+[package.optional-dependencies]
+calamine = [
+    { name = "fastexcel" },
 ]
 
 [[package]]
@@ -2722,6 +2727,28 @@ wheels = [
 ]
 
 [[package]]
+name = "python-calamine"
+version = "0.7.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ab/0b/81a04d6b50c6761906e5bbb3c23341540dfd072d1826de53f02a2b4e4fe0/python_calamine-0.7.0.tar.gz", hash = "sha256:761fc39ddc22736b261c46888d83649f1ab4207a4e2090f0066f0d09e1a0d691", size = 136922, upload-time = "2026-06-17T07:57:26.3Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/12/ef/9d5e11427d74f18ab276949500b9d1b684709383cefd74e5267b2766d006/python_calamine-0.7.0-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:215a69348eb661bfca4a921fd2435f5114f317bcca4a376c708eb7a5432b8c80", size = 873356, upload-time = "2026-06-17T07:55:38.397Z" },
+    { url = "https://files.pythonhosted.org/packages/58/c4/8ec10f6cacd42eeadb046c9d1269f3dd9b8c539f2bbd57ccc53e1159c181/python_calamine-0.7.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:691beff5eb29350365e08dce786a0b234aab1ebcaa9f4e71ad80bfe20c555b4e", size = 861440, upload-time = "2026-06-17T07:55:40.202Z" },
+    { url = "https://files.pythonhosted.org/packages/82/f8/d270e4463a60c038930e8db583e919f0a6bc795f67c40a8ea96de0b27212/python_calamine-0.7.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:5428babe897ff1bd3663a1667a1730972f73db7781b6c3e1dd757f036c6d2569", size = 929399, upload-time = "2026-06-17T07:55:42.365Z" },
+    { url = "https://files.pythonhosted.org/packages/9b/e2/fc63eee397751d7d0174366d870f441b6a1f9089d2eb278046f6656132cc/python_calamine-0.7.0-cp312-cp312-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:30e77c1c6c96b9f19022de76d9b241fd1b0cf4a409ce8cdc59e84e66d3065d02", size = 913259, upload-time = "2026-06-17T07:55:44Z" },
+    { url = "https://files.pythonhosted.org/packages/29/a1/a2a294ab7cdd1b29fc04f47c2fb6d599357914002f6692f08a8b081a9499/python_calamine-0.7.0-cp312-cp312-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:a7c5791803c97826995fec968625dd9456918cdda969a77296c0f1ea2f87aa58", size = 1084348, upload-time = "2026-06-17T07:55:45.5Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/e6/e5cc567b18947d554e52fb5f2ec540b1ec271d5a303b0185c32cac587eb0/python_calamine-0.7.0-cp312-cp312-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:b95bee4df16c35f4442db7c7d795a124a611ea9665beb7ea709beff26dff8eab", size = 975506, upload-time = "2026-06-17T07:55:47.141Z" },
+    { url = "https://files.pythonhosted.org/packages/b7/c4/35b116c916b510bdfc2cf2b7a6ad511509a6de2e1f9630b86f0de8f816eb/python_calamine-0.7.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:581c3e7135bd30f689294efc174064bc5e6f2b580ac76541845678ffd8d7faf2", size = 952408, upload-time = "2026-06-17T07:55:48.806Z" },
+    { url = "https://files.pythonhosted.org/packages/7a/3b/378f720182a6d9dd9930db095afbc058fe2d8af59636205272fc49da9f24/python_calamine-0.7.0-cp312-cp312-manylinux_2_5_i686.manylinux1_i686.whl", hash = "sha256:98e141e7290f43e03583593ab0ad36723ec2460e8d3feaff430be3ba711526b3", size = 997443, upload-time = "2026-06-17T07:55:50.335Z" },
+    { url = "https://files.pythonhosted.org/packages/f0/c1/1011e3b6661e06c69e27a5cd6bc9078dd45fdb1ab38dbc65960d8e0a53ef/python_calamine-0.7.0-cp312-cp312-musllinux_1_1_aarch64.whl", hash = "sha256:13e3ed1634c71b4b14fbb0778a5ac6ea703f9298578c03a85d7cc0c4287b8f79", size = 1105758, upload-time = "2026-06-17T07:55:52.113Z" },
+    { url = "https://files.pythonhosted.org/packages/83/62/e991f60d768f54bd6170a0cacae44b10436bfc3791ff76db0403741038ed/python_calamine-0.7.0-cp312-cp312-musllinux_1_1_armv7l.whl", hash = "sha256:f184402af4e53a67471dcd928d843de4f29c1e9987c0c730d8ac3da7b11c28a5", size = 1186588, upload-time = "2026-06-17T07:55:53.662Z" },
+    { url = "https://files.pythonhosted.org/packages/82/a5/27e50519589e2421abfa7b65bcaec354a74c9226aff8562d628a70685a64/python_calamine-0.7.0-cp312-cp312-musllinux_1_1_x86_64.whl", hash = "sha256:60e921dc08cb92956ce63d81a2efcedce68f7a9e1f5842a05c9293a6f36785a0", size = 1163848, upload-time = "2026-06-17T07:55:55.38Z" },
+    { url = "https://files.pythonhosted.org/packages/cc/31/ac8bb30f6b3b4c1541b81e12cc469757b249d01d4ce43b0b0cf50e59a7f5/python_calamine-0.7.0-cp312-cp312-win32.whl", hash = "sha256:a489da3116f90cc4b5c590aa5fe1f5f305f86899ddaddb37f62cd3dfaa20dc32", size = 732098, upload-time = "2026-06-17T07:55:56.999Z" },
+    { url = "https://files.pythonhosted.org/packages/5b/c4/27c191f8d0b332a435af7b88caf653a7962da2df6cd64acb7e00ea66f1af/python_calamine-0.7.0-cp312-cp312-win_amd64.whl", hash = "sha256:49f11033d30155b8913c41c324a2199e3eb7a258e9df6713886fd59a7b91fe91", size = 769111, upload-time = "2026-06-17T07:55:58.841Z" },
+    { url = "https://files.pythonhosted.org/packages/38/9a/706b90e5ad8a91da6ff168294027e4efe05c39a4c73d37ee961cbb8661a1/python_calamine-0.7.0-cp312-cp312-win_arm64.whl", hash = "sha256:a12bd449f261941744346aa4517ea3eb39801d412a13be0424694a4134425899", size = 751353, upload-time = "2026-06-17T07:56:00.539Z" },
+]
+
+[[package]]
 name = "python-dateutil"
 version = "2.9.0.post0"
 source = { registry = "https://pypi.org/simple" }
@@ -2761,6 +2788,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/56/db/b8721d71d945e6a8ac63c0fc900b2067181dbb50805958d4d4661cf7d277/pytz-2026.1.post1.tar.gz", hash = "sha256:3378dde6a0c3d26719182142c56e60c7f9af7e968076f31aae569d72a0358ee1", size = 321088, upload-time = "2026-03-03T07:47:50.683Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/10/99/781fe0c827be2742bcc775efefccb3b048a3a9c6ce9aec0cbf4a101677e5/pytz-2026.1.post1-py2.py3-none-any.whl", hash = "sha256:f2fd16142fda348286a75e1a524be810bb05d444e5a081f37f7affc635035f7a", size = 510489, upload-time = "2026-03-03T07:47:49.167Z" },
+]
+
+[[package]]
+name = "pyxlsb"
+version = "1.0.10"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3f/13/eebaeb7a40b062d1c6f7f91d09e73d30a69e33e4baa7cbe4b7658548b1cd/pyxlsb-1.0.10.tar.gz", hash = "sha256:8062d1ea8626d3f1980e8b1cfe91a4483747449242ecb61013bc2df85435f685", size = 22424, upload-time = "2022-10-14T19:17:47.308Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7e/92/345823838ae367c59b63e03aef9c331f485370f9df6d049256a61a28f06d/pyxlsb-1.0.10-py2.py3-none-any.whl", hash = "sha256:87c122a9a622e35ca5e741d2e541201d28af00fb46bec492cfa9586890b120b4", size = 23849, upload-time = "2022-10-14T19:17:46.079Z" },
 ]
 
 [[package]]
@@ -3408,6 +3444,24 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/b1/53/37032dca20dae7a88ad1907f817a81f232ca6e935f0c28c98db3c0a0bd22/xgboost-2.1.4-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:d366097d0db047315736f46af852feaa907f6d7371716af741cdce488ae36d20", size = 4206715, upload-time = "2025-02-06T18:17:08.448Z" },
     { url = "https://files.pythonhosted.org/packages/e4/3c/e3a93bfa7e8693c825df5ec02a40f7ff5f0950e02198b1e85da9315a8d47/xgboost-2.1.4-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:8df6da72963969ab2bf49a520c3e147b1e15cbeddd3aa0e3e039b3532c739339", size = 223642416, upload-time = "2025-02-06T18:17:25.08Z" },
     { url = "https://files.pythonhosted.org/packages/43/80/0b5a2dfcf5b4da27b0b68d2833f05d77e1a374d43db951fca200a1f12a52/xgboost-2.1.4-py3-none-win_amd64.whl", hash = "sha256:8bbfe4fedc151b83a52edbf0de945fd94358b09a81998f2945ad330fd5f20cd6", size = 124910381, upload-time = "2025-02-06T18:17:43.202Z" },
+]
+
+[[package]]
+name = "xlrd"
+version = "2.0.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/07/5a/377161c2d3538d1990d7af382c79f3b2372e880b65de21b01b1a2b78691e/xlrd-2.0.2.tar.gz", hash = "sha256:08b5e25de58f21ce71dc7db3b3b8106c1fa776f3024c54e45b45b374e89234c9", size = 100167, upload-time = "2025-06-14T08:46:39.039Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1a/62/c8d562e7766786ba6587d09c5a8ba9f718ed3fa8af7f4553e8f91c36f302/xlrd-2.0.2-py2.py3-none-any.whl", hash = "sha256:ea762c3d29f4cca48d82df517b6d89fbce4db3107f9d78713e48cd321d5c9aa9", size = 96555, upload-time = "2025-06-14T08:46:37.766Z" },
+]
+
+[[package]]
+name = "xlsxwriter"
+version = "3.2.9"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/46/2c/c06ef49dc36e7954e55b802a8b231770d286a9758b3d936bd1e04ce5ba88/xlsxwriter-3.2.9.tar.gz", hash = "sha256:254b1c37a368c444eac6e2f867405cc9e461b0ed97a3233b2ac1e574efb4140c", size = 215940, upload-time = "2025-09-16T00:16:21.63Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3a/0c/3662f4a66880196a590b202f0db82d919dd2f89e99a27fadef91c4a33d41/xlsxwriter-3.2.9-py3-none-any.whl", hash = "sha256:9a5db42bc5dff014806c58a20b9eae7322a134abb6fce3c92c181bfb275ec5b3", size = 175315, upload-time = "2025-09-16T00:16:20.108Z" },
 ]
 
 [[package]]
