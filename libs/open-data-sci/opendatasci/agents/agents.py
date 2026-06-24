@@ -213,7 +213,7 @@ class Agent(BaseOpenDataSciAgent):
             midturn_compaction_threshold=self._config.midturn_compaction_threshold,
         )
 
-        self._graph: CompiledStateGraph = self._build_graph(checkpointer)
+        self._graph: CompiledStateGraph[AgentState, AgentState] = self._build_graph(checkpointer)
         return self
 
     async def __aexit__(self, *exc_info: Any) -> None:
@@ -224,7 +224,7 @@ class Agent(BaseOpenDataSciAgent):
         return {"configurable": {"thread_id": self._session_id}}
 
     @property
-    def graph(self) -> CompiledStateGraph:
+    def graph(self) -> CompiledStateGraph[AgentState, AgentState]:
         """Return the underlying compiled state graph."""
         return self._graph
 
@@ -246,7 +246,7 @@ class Agent(BaseOpenDataSciAgent):
             memory_text=memory_text,
         )
 
-    def _build_graph(self, checkpointer: BaseCheckpointSaver[Any] | None) -> CompiledStateGraph:
+    def _build_graph(self, checkpointer: BaseCheckpointSaver[Any] | None) -> CompiledStateGraph[AgentState, AgentState]:
         return AgentGraphFactory(
             get_llm_with_tools=self._get_active_llm_with_tools,
             tools=self._tools,  # type: ignore[arg-type]
