@@ -85,6 +85,8 @@ Type `/` and press **Tab** to autocomplete. All commands take effect immediately
 
 | Command | What it does |
 |---------|--------------|
+| `/cancel-all-messages` | Cancels all messages queued while the agent was busy |
+| `/cancel-message` | Cancels the most recently queued message |
 | `/compact` | Summarises the conversation and replaces it with a compressed version — use this when sessions get long instead of losing context |
 | `/reset` | Clears sandbox state and conversation; data is reloaded fresh from disk |
 | `/clear` | Clears conversation history but keeps sandbox variables (DataFrames, models, etc.) |
@@ -94,6 +96,8 @@ Type `/` and press **Tab** to autocomplete. All commands take effect immediately
 | `/help` | Prints all available commands with descriptions |
 | `/stop` | Interrupts a running agent turn |
 | `/exit` | Quit |
+
+Sending a message while the agent is busy doesn't get rejected — it's pinned above the input box and runs automatically once the agent is free (unless it's waiting on your answer to a question). Use `/cancel-message` or `/cancel-all-messages` to drop queued messages instead.
 
 **When to use `/compact` vs `/reset`:** Use `/compact` to free up context while
 keeping the thread going — OpenDataSci summarises what happened and continues. Use `/reset`

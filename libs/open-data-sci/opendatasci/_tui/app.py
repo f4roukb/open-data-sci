@@ -24,6 +24,7 @@ from .widgets import (
     ChatPane,
     CompletionPopup,
     MessageBubble,
+    PendingMessageBubble,
     SmartInput,
     ThinkingBlock,
     ToolCallBlock,
@@ -113,6 +114,9 @@ class OpenDataSciApp(App[None]):
 
     def add_turn_status_bar(self) -> TurnStatusBar:
         return self.query_one(ChatPane).add_turn_status_bar()
+
+    def add_pending_message(self, text: str) -> PendingMessageBubble:
+        return self.query_one(ChatPane).add_pending_message(text)
 
     def add_ephemeral_block(self, communication: str, label: str, summary: str) -> ToolCallBlock:
         return self.query_one(ChatPane).add_ephemeral_block(communication, label, summary)

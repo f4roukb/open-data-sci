@@ -1,6 +1,7 @@
 """File-based context stores backed by the workspace's ``.opendatasci`` directory."""
 
 import datetime
+import json
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime as _datetime
@@ -10,6 +11,7 @@ from typing import AsyncGenerator, Self
 
 from opendatasci._utils.hash_utils import hash_path
 from opendatasci.context.base import BaseContextStore
+from opendatasci.context.plans import Plan
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +37,6 @@ class LocalContextStore(BaseContextStore):
     def __init__(self, workspace_path: Path) -> None:
         self._workspace_path = workspace_path
         self._root = workspace_path / OPENDATASCI_DIRNAME
-        self._current_plan: str | None = None
 
     # ── BaseContextStore: session ────────────────────────────────────
 
@@ -184,34 +185,28 @@ class LocalContextStore(BaseContextStore):
 
     # ── BaseContextStore: plans ───────────────────────────────────────────────
 
-    def current_plan(self, session_id: str) -> str | None:
-        """Return the most recent plan for this session.
-
-        Resolves the plan by reading the latest ``{session_id}_*.txt`` file from
-        disk so the plan survives process restarts.  Falls back to the in-memory
-        cache when no file exists yet or a disk read fails.
-        """
+    def get_current_plan(self, session_id: str) -> Plan | None:
+        """Return the most recent plan for this session if it exists, and otherwise None."""
         if self._plans_root.exists():
-            files = sorted(self._plans_root.glob(f"{session_id}_*.txt"))
+            files = sorted(self._plans_root.glob(f"{session_id}_*.json"))
             if files:
                 try:
-                    return files[-1].read_text(encoding="utf-8")
-                except OSError:
+                    data = json.loads(files[-1].read_text(encoding="utf-8"))
+                    return Plan(content=data["content"], metadata=data.get("metadata", {}))
+                except (OSError, ValueError, KeyError):
                     logger.warning("Could not read plan file: %s", files[-1], exc_info=True)
-        return self._current_plan
+        return None
 
-    def save_plan(self, session_id: str, plan: str) -> None:
-        """Persist *plan* to disk and prune stale files.
-
-        Also updates the in-memory cache used as a fallback when no plan file
-        can be read back.
-        """
-        self._current_plan = plan
+    def save_plan(self, session_id: str, plan: Plan) -> None:
+        """Persist *plan* to disk verbatim (content + metadata) and prune stale files."""
         self._plans_root.mkdir(parents=True, exist_ok=True)
-        stamp = _datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        path = self._plans_root / f"{session_id}_{stamp}.txt"
+        stamp = _datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        path = self._plans_root / f"{session_id}_{stamp}.json"
         try:
-            path.write_text(plan, encoding="utf-8")
+            path.write_text(
+                json.dumps({"content": plan.content, "metadata": plan.metadata}),
+                encoding="utf-8",
+            )
         except OSError:
             logger.warning("Could not write plan file: %s", path, exc_info=True)
             return
@@ -222,7 +217,7 @@ class LocalContextStore(BaseContextStore):
         if not self._plans_root.exists():
             return
         by_session: dict[str, list[Path]] = {}
-        for p in self._plans_root.glob("*.txt"):
+        for p in self._plans_root.glob("*.json"):
             sid = p.stem.partition("_")[0]
             if not sid:
                 continue

@@ -5,6 +5,10 @@ from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from typing import Self
 
+from opendatasci.context.plans import Plan
+
+__all__ = ["BaseContextStore", "Plan"]
+
 
 class BaseContextStore(ABC):
     """Context store for dataset notes, profile cards, and session plans.
@@ -48,9 +52,13 @@ class BaseContextStore(ABC):
         """Persist a completed profile card for *hash_hex*."""
 
     @abstractmethod
-    def current_plan(self, session_id: str) -> str | None:
-        """Return the most recent plan for *session_id*, or ``None``."""
+    def get_current_plan(self, session_id: str) -> Plan | None:
+        """Return the most recent plan for *session_id*, or ``None``.
+
+        Always resolved fresh from durable storage — implementations must not
+        cache the current plan in an instance attribute.
+        """
 
     @abstractmethod
-    def save_plan(self, session_id: str, plan: str) -> None:
+    def save_plan(self, session_id: str, plan: Plan) -> None:
         """Persist *plan* for *session_id*."""

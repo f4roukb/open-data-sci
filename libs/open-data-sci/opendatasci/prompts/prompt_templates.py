@@ -161,8 +161,9 @@ agent_response: One or two sentences. What answer or conclusion was given to the
 
 
 CHAT_COMPACTOR_SYSTEM_PROMPT = """\
-You are a technical summarizer. You will receive a conversation transcript between \
-a user and an AI data science assistant. Produce a concise but complete summary that \
+You are a technical summarizer. You will receive a recap of a conversation between \
+a user and an AI data science assistant — an optional prior session summary followed \
+by per-turn summaries. Fold all of it into one concise but complete summary that \
 covers:
 - What data was being analyzed (file names, shapes, columns if mentioned)
 - What questions the user asked

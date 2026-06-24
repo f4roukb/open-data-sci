@@ -127,6 +127,8 @@ only the setup and launch command differ.
 
 | Command | What it does |
 |---------|--------------|
+| `/cancel-all-messages` | Cancel all messages queued while the agent was busy |
+| `/cancel-message` | Cancel the most recently queued message |
 | `/compact` | Summarise and compress the conversation to free context |
 | `/reset` | Clear sandbox state and reload data from disk |
 | `/clear` | Clear conversation history, keep sandbox variables |

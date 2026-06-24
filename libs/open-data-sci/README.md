@@ -194,6 +194,8 @@ Type `/` in the input box to trigger autocomplete. All commands are available at
 
 | Command | Description |
 |---------|-------------|
+| `/cancel-all-messages` | Cancel all messages queued while the agent was busy |
+| `/cancel-message` | Cancel the most recently queued message |
 | `/clear` | Clear conversation context (preserves session variables and loaded data) |
 | `/compact` | Summarise and compress conversation history to free up context |
 | `/help` | Show all available commands |
@@ -203,6 +205,8 @@ Type `/` in the input box to trigger autocomplete. All commands are available at
 | `/stop` | Stop the currently running agent turn (future messages resume from where it left off) |
 | `/themes` | List available colour themes with descriptions |
 | `/exit` | Quit OpenDataSci |
+
+Sending a message while the agent is still working doesn't reject it — it's pinned above the input box as a queued message and run automatically, in order, once the agent finishes (unless the agent is waiting on your answer to a question). Use `/cancel-message` or `/cancel-all-messages` to discard queued messages instead of waiting for them to run.
 
 ---
 

@@ -1,6 +1,6 @@
 # OpenDataSciConfig
 
-`OpenDataSciConfig` is the single configuration object accepted by `create_agent` and `Agent`. It extends Pydantic's `BaseSettings`, so every field can be set via:
+`OpenDataSciConfig` is the single configuration object accepted by `create_agent` and `Agent`. Every field can be set via:
 
 1. Direct constructor argument
 2. Environment variable (see the alias column below)
@@ -80,7 +80,7 @@ config = OpenDataSciConfig.from_yaml("opendatasci_config.yaml")
 | Field | Env var | Default | Description |
 |-------|---------|---------|-------------|
 | `name` | `NAME` | `"Sai"` | Agent display name, injected into all system prompts |
-| `midturn_compaction_threshold` | `MIDTURN_COMPACTION_THRESHOLD` | `80000` | Token count after which the agent's context is compacted mid-turn |
+| `midturn_compaction_threshold` | `MIDTURN_COMPACTION_THRESHOLD` | `96000` | Token count after which the agent's context is compacted mid-turn |
 | `worker_timeout_seconds` | `WORKER_TIMEOUT_SECONDS` | `300.0` | Max seconds for all spawned workers to finish (`null` = no timeout) |
 
 ### Web access

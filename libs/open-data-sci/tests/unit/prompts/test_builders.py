@@ -1,20 +1,17 @@
 """Unit tests for opendatasci.prompts.builders (SystemPromptBuilder).
 
-Conversation memory is no longer assembled here — it is recalled by
-ChatMemoryBuilder and prepended to the chat history (see
-tests/unit/agents/test_chat_memory.py). These tests cover prompt selection,
-provider caching markers, skills, and plan injection only.
+Conversation memory and the current plan are no longer assembled here — they
+are recalled by ChatHistoryBuilder and rendered as standalone HumanMessages
+(see tests/unit/agents/test_chat_memory.py). These tests cover prompt
+selection, provider caching markers, and skills only.
 """
 
 
 from functools import partial
-from unittest.mock import MagicMock
 
 import pytest
 from langchain_core.messages import SystemMessage
 
-from opendatasci.context.base import BaseContextStore
-from opendatasci.prompts.message_templates import PLAN_SYSTEM_MESSAGE_TEMPLATE
 from opendatasci.prompts.prompt_templates import PLAN_MODE_SYSTEM_PROMPT, MAIN_SYSTEM_PROMPT
 from opendatasci.prompts.builders import SystemContextBuilder as SystemPromptBuilder
 from opendatasci.configs import OpenDataSciConfig
@@ -48,17 +45,9 @@ class TestSystemPromptBuilderBuild:
         provider: str = "openai",
         is_plan_mode: bool = False,
         skill_prompt: str | None = None,
-        plan: str | None = None,
     ) -> SystemPromptBuilder:
         config = OpenDataSciConfig(provider=provider)
-        plan_store = MagicMock(spec=BaseContextStore)
-        plan_store.current_plan.return_value = plan
-
-        builder = SystemPromptBuilder(
-            config=config,
-            context_store=plan_store,
-            session_id="testsession",
-        )
+        builder = SystemPromptBuilder(config=config)
         active_skills = _make_active_skills(skill_prompt)
         builder.build = partial(builder.build, active_skills=active_skills, is_plan_mode=is_plan_mode)
         return builder
@@ -132,7 +121,7 @@ class TestSystemPromptBuilderBuild:
             text = _all_text(builder.build())
             assert MAIN_SYSTEM_PROMPT.format(name="Sai") in text, provider
 
-    def test_only_base_message_when_nothing_dynamic(self) -> None:
+    def test_only_base_message_when_no_skill(self) -> None:
         builder = self._make()
         assert len(builder.build()) == 1
 
@@ -145,62 +134,14 @@ class TestSystemPromptBuilderBuild:
 
     def test_no_skill_message_when_none(self) -> None:
         builder = self._make(skill_prompt=None)
-        # With no skill or plan — only the base message is present
         assert len(builder.build()) == 1
-
-    # --- Plan ---
-
-    def test_includes_plan_when_set(self) -> None:
-        plan_text = "Step 1: do X\nStep 2: do Y"
-        builder = self._make(plan=plan_text)
-        messages = builder.build()
-        # Locate the plan message (must be a separate message, not the base prompt)
-        plan_messages = [
-            m for m in messages[1:] if "last plan you've come up with" in _extract_text(m.content)
-        ]
-        assert len(plan_messages) == 1
-        content = _extract_text(plan_messages[0].content)
-        assert "Step 1: do X" in content
-        assert "Step 2: do Y" in content
-
-    def test_no_plan_message_when_none(self) -> None:
-        builder = self._make(plan=None)
-        messages = builder.build()
-        assert len(messages) == 1  # Only base message
-        assert "last plan you've come up with" not in _all_text(messages)
-
-    def test_plan_message_matches_template(self) -> None:
-        plan_text = "my plan"
-        builder = self._make(plan=plan_text)
-        messages = builder.build()
-        plan_messages = [
-            m for m in messages[1:] if "last plan you've come up with" in _extract_text(m.content)
-        ]
-        assert len(plan_messages) == 1
-        assert _extract_text(plan_messages[0].content) == PLAN_SYSTEM_MESSAGE_TEMPLATE.format(plan=plan_text)
-
-    def test_plan_is_a_separate_system_message(self) -> None:
-        # The plan must not bleed into the base system prompt message.
-        builder = self._make(plan="my plan")
-        messages = builder.build()
-        base_text = _extract_text(messages[0].content)
-        assert "last plan you've come up with" not in base_text
-
-    def test_plan_store_current_plan_is_called(self) -> None:
-        builder = self._make(plan="my plan")
-        builder.build()
-        builder._context_store.current_plan.assert_called_once_with("testsession")
 
     # --- Combined ---
 
-    def test_all_sections_present_when_all_populated(self) -> None:
-        builder = self._make(
-            skill_prompt="skill instructions",
-            plan="my plan",
-        )
+    def test_base_and_skill_present_when_skill_loaded(self) -> None:
+        builder = self._make(skill_prompt="skill instructions")
         messages = builder.build()
-        # base + skill + plan
-        assert len(messages) == 3
+        assert len(messages) == 2
 
 
 def _has_cache_marker(content: object) -> bool:
@@ -228,26 +169,16 @@ class TestSystemPromptCachingAndOrder:
     - The base system prompt always carries a cache marker.
     - When a skill is loaded, it sits IMMEDIATELY after the base prompt and
       also carries a cache marker.
-    - Dynamic content (plan) appears AFTER the cached prefix and never carries
-      a cache marker.
-    - Total cache markers: exactly 1 with no skill, exactly 2 with a skill —
-      regardless of how much dynamic content is present.
+    - Total cache markers: exactly 1 with no skill, exactly 2 with a skill.
     """
 
     def _make(
         self,
         provider: str = "anthropic",
         skill_prompt: str | None = None,
-        plan: str | None = None,
     ) -> SystemPromptBuilder:
         config = OpenDataSciConfig(provider=provider)  # type: ignore[arg-type]
-        plan_store = MagicMock(spec=BaseContextStore)
-        plan_store.current_plan.return_value = plan
-        builder = SystemPromptBuilder(
-            config=config,
-            context_store=plan_store,
-            session_id="testsession",
-        )
+        builder = SystemPromptBuilder(config=config)
         active_skills = _make_active_skills(skill_prompt)
         builder.build = partial(builder.build, active_skills=active_skills)
         return builder
@@ -256,14 +187,14 @@ class TestSystemPromptCachingAndOrder:
 
     @pytest.mark.parametrize("provider", ["anthropic", "bedrock"])
     def test_exactly_one_cache_marker_when_no_skill(self, provider: str) -> None:
-        builder = self._make(provider=provider, skill_prompt=None, plan="some plan")
+        builder = self._make(provider=provider, skill_prompt=None)
         messages = builder.build()
         marked = [m for m in messages if _has_cache_marker(m.content)]
         assert len(marked) == 1
 
     @pytest.mark.parametrize("provider", ["anthropic", "bedrock"])
     def test_exactly_two_cache_markers_when_skill_loaded(self, provider: str) -> None:
-        builder = self._make(provider=provider, skill_prompt="skill body", plan="some plan")
+        builder = self._make(provider=provider, skill_prompt="skill body")
         messages = builder.build()
         marked = [m for m in messages if _has_cache_marker(m.content)]
         assert len(marked) == 2
@@ -272,7 +203,6 @@ class TestSystemPromptCachingAndOrder:
 
     @pytest.mark.parametrize("provider", ["anthropic", "bedrock"])
     def test_base_prompt_always_carries_cache_marker(self, provider: str) -> None:
-        # No skill, no plan — just the base message.
         builder = self._make(provider=provider)
         messages = builder.build()
         assert _has_cache_marker(messages[0].content)
@@ -289,39 +219,10 @@ class TestSystemPromptCachingAndOrder:
     # --- Order: skill immediately after base ---
 
     def test_skill_is_immediately_after_base_when_loaded(self) -> None:
-        builder = self._make(skill_prompt="skill body", plan="some plan")
+        builder = self._make(skill_prompt="skill body")
         messages = builder.build()
         # messages[0] is the base prompt; messages[1] must be the skill.
         assert "skill body" in _extract_text(messages[1].content)
-
-    def test_skill_precedes_dynamic_content(self) -> None:
-        """No dynamic content (plan) may sit between the base prompt and the
-        skill, since that would invalidate the cached prefix every turn."""
-        builder = self._make(skill_prompt="skill body", plan="step 1")
-        messages = builder.build()
-        skill_idx = next(
-            i for i, m in enumerate(messages) if "skill body" in _extract_text(m.content)
-        )
-        # Everything between base (index 0) and skill is forbidden.
-        assert skill_idx == 1
-        # And dynamic content must come strictly after the skill.
-        for i, m in enumerate(messages):
-            text = _extract_text(m.content)
-            if "step 1" in text and "skill" not in text:  # plan
-                assert i > skill_idx
-
-    # --- Dynamic content is never cached ---
-
-    @pytest.mark.parametrize("provider", ["anthropic", "bedrock"])
-    def test_plan_message_has_no_cache_marker(self, provider: str) -> None:
-        builder = self._make(provider=provider, plan="some plan")
-        messages = builder.build()
-        plan_msgs = [
-            m for m in messages if "last plan you've come up with" in _extract_text(m.content)
-        ]
-        assert plan_msgs
-        for m in plan_msgs:
-            assert not _has_cache_marker(m.content)
 
     # --- Non-breakpoint providers degrade gracefully ---
 

@@ -28,7 +28,7 @@ dependencies = [
     # DataFrame libraries
     "polars[calamine]>=1.0.0,<2.0.0",
     "pandas[excel,parquet,feather]>=2.0.0,<3.0.0",
-    "connectorx>=0.3.0,<1.0.0",
+    "duckdb>=1.0.0,<2.0.0",
     # XML
     "lxml>=6.1.0,<7.0.0",
     # LLM / agent stack (only the sub-packages we actually import)
@@ -134,7 +134,7 @@ opendatasci_agent_libs = [
     # DataFrame
     "polars[calamine]>=1.0.0,<2.0.0",
     "pandas[excel,parquet,feather]>=2.0.0,<3.0.0",
-    "connectorx>=0.3.0,<1.0.0",
+    "duckdb>=1.0.0,<2.0.0",
     # XML
     "lxml>=6.1.0,<7.0.0",
     # Numerics
@@ -200,7 +200,7 @@ module = [
     "scipy.*", "statsmodels.*",
     "plotly.*", "seaborn.*",
     "rich.*",
-    "polars.*", "connectorx.*",
+    "polars.*",
     "numba.*", "modin.*",
     "shap.*",
     "catboost.*",

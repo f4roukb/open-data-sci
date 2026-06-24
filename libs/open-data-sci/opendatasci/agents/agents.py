@@ -26,17 +26,18 @@ from opendatasci._utils.langchain_utils import (
     is_interrupt_state_snapshot,
 )
 from opendatasci._utils.streaming_utils import format_stream_error
+from opendatasci.agents._chat_messages import ChatMessageOrigin, HumanMessageMetadata
 from opendatasci.agents.chat_memory import (
     ChatHistoryBuilder,
     ChatHistoryCompactor,
-    TurnSummarizer,
     extract_thinking_and_text,
+    stamp_chat_message_metadata,
 )
 from opendatasci.agents.graphs import AgentGraphFactory, WorkerGraphFactory
 from opendatasci.agents.states import AgentState
-from opendatasci.agents.turn_memory import AgentLoopCompactor, TurnRewinder
+from opendatasci.agents.turn_memory import TurnRewinder
 from opendatasci.configs import OpenDataSciConfig
-from opendatasci.context.base import BaseContextStore
+from opendatasci.context.base import BaseContextStore, Plan
 from opendatasci.context.local import LocalContextStore
 from opendatasci.models.factory import (
     _RetryRunnable,
@@ -185,7 +186,10 @@ class Agent(BaseOpenDataSciAgent):
                 self._sandbox_factory,
                 store=self._skill_store,
                 datasci_config=self._config,
-                save_plan=lambda plan: self._context_store.save_plan(self._session_id, plan),  # type: ignore[union-attr]
+                save_plan=lambda plan: self._context_store.save_plan(  # type: ignore[union-attr]
+                    self._session_id,
+                    Plan(content=plan, metadata={"created_at": datetime.now(timezone.utc).isoformat()}),
+                ),
             )
 
         tools_restricted = [t for t in self._tools if t.name != ToolName.SPAWN_WORKERS]
@@ -200,17 +204,12 @@ class Agent(BaseOpenDataSciAgent):
             self._llm.bind_tools(self._tools_in_self_review_mode)
         )
 
-        self._system_context_builder = SystemContextBuilder(
-            config=self._config,
-            context_store=self._context_store,
-            session_id=self._session_id,
-        )
-        summarizer = TurnSummarizer(summarizer_llm=self._summarizer_llm)
-        loop_compactor = AgentLoopCompactor(llm=self._llm)
+        self._system_context_builder = SystemContextBuilder(config=self._config)
         self._chat_history_builder = ChatHistoryBuilder(
-            summarizer=summarizer,
-            loop_compactor=loop_compactor,
+            summarizer_llm=self._summarizer_llm,
+            loop_compactor_llm=self._llm,
             midturn_compaction_threshold=self._config.midturn_compaction_threshold,
+            get_current_plan=lambda: self._context_store.get_current_plan(self._session_id),  # type: ignore[union-attr]
         )
 
         self._graph: CompiledStateGraph = self._build_graph(checkpointer)
@@ -236,14 +235,11 @@ class Agent(BaseOpenDataSciAgent):
             return self._llm_with_tools_plan
         return self._llm_with_tools
 
-    def _build_system_context(
-        self, state: AgentState, memory_text: str | None
-    ) -> list[SystemMessage]:
+    def _build_system_context(self, state: AgentState) -> list[SystemMessage]:
         return self._system_context_builder.build(
             active_skills=state.active_skills,
             is_plan_mode=state.is_plan_mode,
             is_self_review_mode=state.is_self_review_mode,
-            memory_text=memory_text,
         )
 
     def _build_graph(self, checkpointer: BaseCheckpointSaver[Any] | None) -> CompiledStateGraph:
@@ -259,18 +255,17 @@ class Agent(BaseOpenDataSciAgent):
     def _prepare_user_message(cls, query: str) -> HumanMessage:
         """Build the turn-opening HumanMessage.
 
-        The start timestamp and an ``is_input_on_interrupt`` flag are stored in
-        ``additional_kwargs`` so the turn's start time and boundary can be
-        recovered later from the message history (see ``get_last_turn_messages``),
-        instead of being held as per-turn agent state.
+        ``is_input_on_interrupt`` is recorded so the turn's boundary can be
+        recovered later from the message (see ``is_ongoing_turn``), instead of
+        being held as per-turn agent state. Origin (``USER``) and timestamp are
+        stamped once here too — all via :class:`HumanMessageMetadata`.
         """
-        return HumanMessage(
-            content=query,
-            additional_kwargs={
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "is_input_on_interrupt": False,
-            },
+        metadata = HumanMessageMetadata(
+            origin=ChatMessageOrigin.USER,
+            created_at=datetime.now(timezone.utc),
+            is_input_on_interrupt=False,
         )
+        return metadata.attach_to(HumanMessage(content=query))
 
     # ------------------------------------------------------------------
     # Public API
@@ -321,24 +316,24 @@ class Agent(BaseOpenDataSciAgent):
             )
             return
 
-        messages = graph_state.values["messages"]
-        final_ai_msg = get_final_ai_message(messages)
+        completed_turn_messages = graph_state.values["messages"]
+        final_ai_msg = get_final_ai_message(completed_turn_messages)
         final_response = get_message_text_content(final_ai_msg).strip()
 
-        self._chat_history_builder.schedule_turn_summarization(messages)
+        self._chat_history_builder.schedule_turn_summarization(completed_turn_messages)
 
         yield ResponseEvent(content=final_response)
 
     async def rewind_turn(self) -> None:
         """Remove the last turn from the conversation history."""
         snapshot = await self._graph.aget_state(self._graph_config)
-        messages = snapshot.values.get("messages", [])
-        if not messages:
+        ongoing_turn_messages = snapshot.values.get("messages", [])
+        if not ongoing_turn_messages:
             return
         self._chat_history_builder.cancel_pending()
         rewinder = TurnRewinder()
-        new_messages = rewinder.rewind_last_turn(messages)
-        removed = messages[len(new_messages) :]
+        kept_messages = rewinder.rewind_last_turn(ongoing_turn_messages)
+        removed = ongoing_turn_messages[len(kept_messages) :]
         if removed:
             self._graph.update_state(
                 self._graph_config,
@@ -348,65 +343,39 @@ class Agent(BaseOpenDataSciAgent):
     async def clear_chat_history(self) -> None:
         """Clear conversation history and rolling memory (preserves session state)."""
         snapshot = await self._graph.aget_state(self._graph_config)
-        messages = snapshot.values.get("messages", [])
+        ongoing_turn_messages = snapshot.values.get("messages", [])
         self._chat_history_builder.cancel_pending()
-        updates: dict[str, Any] = {"turn_summaries": [], "session_preamble": None}
-        if messages:
-            updates["messages"] = [RemoveMessage(id=msg.id) for msg in messages]
+        updates: dict[str, Any] = {"turn_summaries": []}
+        if ongoing_turn_messages:
+            updates["messages"] = [RemoveMessage(id=msg.id) for msg in ongoing_turn_messages]
         self._graph.update_state(self._graph_config, updates)
 
     async def compact_chat_history(self) -> str:
-        """Compact the conversation history using the LLM.
+        """Fold the rolling turn summaries into a single compaction summary.
 
-        Older turns are summarised and discarded; the most recent turn is kept
-        verbatim.  Returns the summary text, or a placeholder when there is not
-        enough history to compact.
+        Has the same effect on the conversation as :meth:`clear_chat_history`
+        (the ongoing turn's raw messages are wiped), except ``turn_summaries``
+        ends up holding one compaction record instead of being emptied — it
+        then ages out of the rolling window exactly like any other summary, via
+        the usual FIFO eviction. Returns the compaction summary's text, or a
+        placeholder when there is nothing to compact.
         """
         snapshot = self._graph.get_state(self._graph_config)
-        messages = snapshot.values.get("messages", [])
-        if not messages:
-            return "(no conversation to compact)"
+        turn_summaries = snapshot.values.get("turn_summaries", [])
 
         compactor = ChatHistoryCompactor(self._llm)
         try:
-            new_messages = await compactor.compact(messages)
+            compaction_summary = await compactor.compact(turn_summaries)
         except ValueError:
             return "(no conversation to compact)"
 
-        if len(new_messages) == len(messages):
-            return "(no conversation to compact)"
-
-        # Extract the raw LLM summary from the leading compaction SystemMessage, stripping
-        # the <compacted_history> wrapper added by ChatHistoryCompactor, then discard the
-        # SystemMessage so it never accumulates in graph state.
-        compaction_msg = new_messages[0]
-        raw = (
-            compaction_msg.content
-            if isinstance(compaction_msg.content, str)
-            else str(compaction_msg.content)
-        )
-        _prefix, _suffix = "<compacted_history>\n", "\n</compacted_history>"
-        summary = (
-            raw[len(_prefix) : -len(_suffix)]
-            if raw.startswith(_prefix) and raw.endswith(_suffix)
-            else raw
-        )
-        kept_messages = [m for m in new_messages if not isinstance(m, SystemMessage)]
-
-        # The compacted summary becomes the session preamble so the agent retains
-        # the older context, and the rolling per-turn summaries (now folded into
-        # that summary) are reset.
+        ongoing_turn_messages = snapshot.values.get("messages", [])
         self._chat_history_builder.cancel_pending()
-        message_updates: list[Any] = [RemoveMessage(id=msg.id) for msg in messages] + kept_messages
-        self._graph.update_state(
-            self._graph_config,
-            {
-                "messages": message_updates,
-                "session_preamble": summary,
-                "turn_summaries": [],
-            },
-        )
-        return summary
+        updates: dict[str, Any] = {"turn_summaries": [compaction_summary]}
+        if ongoing_turn_messages:
+            updates["messages"] = [RemoveMessage(id=msg.id) for msg in ongoing_turn_messages]
+        self._graph.update_state(self._graph_config, updates)
+        return compaction_summary.agent
 
 
 class ConcurrentWorkerAgent:
@@ -429,9 +398,7 @@ class ConcurrentWorkerAgent:
             build_system_context=self._build_system_context,
         ).build()
 
-    def _build_system_context(
-        self, state: AgentState, memory_text: str | None
-    ) -> list[SystemMessage]:
+    def _build_system_context(self, state: AgentState) -> list[SystemMessage]:
         messages: list[SystemMessage] = [
             SystemMessage(
                 content=cached_system_prompt(self._current_system_prompt, self._config.provider)  # type: ignore[arg-type]
@@ -455,8 +422,11 @@ class ConcurrentWorkerAgent:
     ) -> str:
         """Execute *task* to completion and return the final text response."""
         self._current_system_prompt = system_prompt
+        task_message = stamp_chat_message_metadata(
+            HumanMessage(content=task), ChatMessageOrigin.HARNESS
+        )
         initial_state = AgentState(
-            messages=[HumanMessage(content=task)],
+            messages=[task_message],
             active_skills=list(initial_active_skills or []),
         )
         invoke_config: RunnableConfig = {
@@ -501,7 +471,7 @@ class ConcurrentWorkerAgent:
             final_messages = final_state.get("messages", [])
             final_active_skills: list[Skill] = final_state.get("active_skills", [])
             dummy_state = AgentState(messages=[], active_skills=final_active_skills)
-            sys_messages = self._build_system_context(dummy_state, None)
+            sys_messages = self._build_system_context(dummy_state)
             messages_out.extend([*sys_messages, *final_messages])
 
         if final_state is None:

@@ -15,7 +15,7 @@ def _make_builder(**kwargs) -> AgentGraphFactory:
     defaults = {
         "get_llm_with_tools": lambda state: _default_llm,
         "tools": [],
-        "build_system_context": lambda state, memory_text: [],
+        "build_system_context": lambda state: [],
     }
     defaults.update(kwargs)
     return AgentGraphFactory(**defaults)
@@ -49,8 +49,8 @@ class TestAgentGraphFactory:
     def test_build_system_context_callable_accepted(self) -> None:
         called: list = []
 
-        def build_system_context(state, memory_text) -> list:
-            called.append((state, memory_text))
+        def build_system_context(state) -> list:
+            called.append(state)
             return []
 
         graph = _make_builder(build_system_context=build_system_context).build()

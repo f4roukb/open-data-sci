@@ -56,6 +56,13 @@ class TurnStatusHandle(ABC):
     def update_context(self, context_tokens: int | None, cached_tokens: int | None) -> None: ...
 
 
+class PendingMessageHandle(ABC):
+    """A pinned indicator for a message queued while the agent was busy."""
+
+    @abstractmethod
+    def remove(self) -> None: ...
+
+
 class UIAdapter(ABC):
     @abstractmethod
     def add_message(self, role: str, content: str = "") -> MessageHandle: ...
@@ -63,6 +70,8 @@ class UIAdapter(ABC):
     def add_divider(self) -> None: ...
     @abstractmethod
     def add_turn_status_bar(self) -> TurnStatusHandle: ...
+    @abstractmethod
+    def add_pending_message(self, text: str) -> PendingMessageHandle: ...
     @abstractmethod
     def add_ephemeral_block(
         self, communication: str, label: str, summary: str
