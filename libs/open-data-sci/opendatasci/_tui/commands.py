@@ -5,6 +5,8 @@ import re
 from opendatasci.models.providers import Provider
 
 SLASH_COMMANDS: list[str] = [
+    "/cancel-all-messages",
+    "/cancel-message",
     "/clear",
     "/compact",
     "/exit",
@@ -17,6 +19,8 @@ SLASH_COMMANDS: list[str] = [
 ]
 
 SLASH_COMMAND_DESCRIPTIONS: dict[str, str] = {
+    "/cancel-all-messages": "Cancel all queued messages",
+    "/cancel-message": "Cancel the most recently queued message",
     "/clear": "Clear conversation context",
     "/compact": "Summarize conversation history",
     "/exit": "Exit OpenDataSci",
@@ -68,6 +72,8 @@ def format_help_message() -> str:
     """Return the Markdown text shown by the /help command."""
     lines = [
         "## Available Commands\n",
+        "- **/cancel-all-messages** — Cancel all messages queued while the agent was busy",
+        "- **/cancel-message** — Cancel the most recently queued message",
         "- **/clear** — Clear the conversation (preserves session variables)",
         "- **/compact** — Summarize and compress the conversation history",
         "- **/exit** — Exit OpenDataSci",

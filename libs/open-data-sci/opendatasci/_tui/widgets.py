@@ -25,7 +25,13 @@ try:
 except ImportError:
     _TUIImage = None
 
-from .adapter import EphemeralHandle, MessageHandle, ThinkingHandle, TurnStatusHandle
+from .adapter import (
+    EphemeralHandle,
+    MessageHandle,
+    PendingMessageHandle,
+    ThinkingHandle,
+    TurnStatusHandle,
+)
 from .commands import SLASH_COMMANDS, _fmt_model
 from .models import SPINNER, SPINNER_INTERVAL
 from .theme import active as theme
@@ -766,11 +772,62 @@ class ThinkingBlock(Static):
             self._spin_timer = None
 
 
+class PendingMessageBubble(Static):
+    """Pinned indicator for a user message queued while the agent is busy.
+
+    Stays visible (and unprocessed-looking) until the agent picks it up or
+    the user cancels it via /cancel-all-messages or /cancel-message.
+    """
+
+    DEFAULT_CSS = """
+    PendingMessageBubble {
+        height: auto;
+        padding: 0 2;
+        margin-bottom: 1;
+        background: #1c1408;
+        border-left: thick #c9963a;
+    }
+    """
+
+    def __init__(self, text: str) -> None:
+        super().__init__("")
+        self._text = text
+
+    def on_mount(self) -> None:
+        self.update(
+            Text.from_markup(
+                f"[bold {theme['warning']}]⏳ Queued[/bold {theme['warning']}]  {self._text}"
+            )
+        )
+
+
+class PendingMessagePanel(Vertical):
+    """Holds pinned PendingMessageBubble widgets between the chat and input bar.
+
+    New bubbles are mounted at the top of the stack, closest to the live
+    conversation, so the most recently queued message is the most visible.
+    """
+
+    DEFAULT_CSS = """
+    PendingMessagePanel {
+        height: auto;
+        max-height: 8;
+        overflow-y: auto;
+    }
+    """
+
+    def add_pending(self, text: str) -> "PendingMessageBubble":
+        bubble = PendingMessageBubble(text)
+        self.mount(bubble, before=0)
+        return bubble
+
+
 class ChatPane(Widget):
     """Left pane: scrollable message history + input bar."""
 
     def compose(self) -> ComposeResult:
         yield ScrollableContainer(id="messages")
+        yield PendingMessagePanel(id="pending-panel")
         with Vertical(id="input-bar"):
             yield CompletionPopup(id="completion-popup")
             yield AttachmentBar(id="attachment-bar")
@@ -796,6 +853,9 @@ class ChatPane(Widget):
         timer = TurnStatusBar()
         self.mount(timer, after=self.query_one("#input-bar"))
         return timer
+
+    def add_pending_message(self, text: str) -> "PendingMessageBubble":
+        return self.query_one("#pending-panel", PendingMessagePanel).add_pending(text)
 
     def add_thinking_block(self) -> "ThinkingBlock":
         block = ThinkingBlock()
@@ -999,3 +1059,4 @@ MessageHandle.register(MessageBubble)
 EphemeralHandle.register(ToolCallBlock)
 TurnStatusHandle.register(TurnStatusBar)
 ThinkingHandle.register(ThinkingBlock)
+PendingMessageHandle.register(PendingMessageBubble)

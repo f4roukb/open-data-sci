@@ -1,6 +1,7 @@
 """File-based context stores backed by the workspace's ``.opendatasci`` directory."""
 
 import datetime
+import json
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime as _datetime
@@ -10,6 +11,7 @@ from typing import AsyncGenerator, Self
 
 from opendatasci._utils.hash_utils import hash_path
 from opendatasci.context.base import BaseContextStore
+from opendatasci.context.plans import Plan
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +37,6 @@ class LocalContextStore(BaseContextStore):
     def __init__(self, workspace_path: Path) -> None:
         self._workspace_path = workspace_path
         self._root = workspace_path / OPENDATASCI_DIRNAME
-        self._current_plan: str | None = None
 
     # ── BaseContextStore: session ────────────────────────────────────
 
@@ -67,14 +68,12 @@ class LocalContextStore(BaseContextStore):
     # ── Internal notes storage ────────────────────────────────────────────────
 
     def _find(self, hash_hex: str) -> Path | None:
-        """Locate an existing notes file for *hash_hex* under any date prefix."""
         if self._notes_root.exists():
             for p in self._notes_root.rglob(f"{hash_hex}.md"):
                 return p
         return None
 
     def _resolve_notes_path(self, hash_hex: str) -> Path:
-        """Reuse an existing file for *hash_hex*, or build a new date-keyed path."""
         existing = self._find(hash_hex)
         if existing is not None:
             return existing
@@ -108,16 +107,7 @@ class LocalContextStore(BaseContextStore):
     # ── BaseContextStore interface ──────────────────────────────────
 
     async def read_dataset_info(self, dataset_path: str) -> str:
-        """Return combined dataset info: profile card (if any) + session notes.
-
-        The returned Markdown string has clearly labelled sections:
-
-        ``# DATASET PROFILING`` — auto-generated stats (shape, dtypes, etc.)
-        ``# DATASET NOTES``     — persistent notes written by the agent
-
-        If no profile exists, only the notes section is included.
-        If no notes exist yet, a placeholder scaffold is returned.
-        """
+        """Return combined dataset info for *dataset_path*: profile card (if any) and session notes."""
         path = self._resolve_dataset_path(dataset_path)
         hash_hex = await hash_path(path)
 
@@ -138,10 +128,7 @@ class LocalContextStore(BaseContextStore):
         update: str,
         merge: bool = True,
     ) -> str:
-        """Persist dataset notes and return the path to the stored notes file.
-
-        Only notes are modified — the profile card (if any) is never touched.
-        """
+        """Persist dataset notes for *dataset_path* and return the path to the stored notes file."""
         path = self._resolve_dataset_path(dataset_path)
         hash_hex = await hash_path(path)
 
@@ -159,11 +146,7 @@ class LocalContextStore(BaseContextStore):
         return self._notes_file_path(hash_hex)
 
     async def get_profile_info(self, dataset_path: str) -> tuple[str, str, str | None]:
-        """Return ``(resolved_path_str, hash_hex, existing_profile_or_None)``.
-
-        Used by the ``profile_dataset`` tool to check for a cached card before
-        running the profiling sandbox pass.
-        """
+        """Return ``(resolved_path, content_hash, existing_profile_or_None)`` for *dataset_path*."""
         path = self._resolve_dataset_path(dataset_path)
         hash_hex = await hash_path(path)
         return str(path), hash_hex, self._load_profile(hash_hex)
@@ -184,45 +167,40 @@ class LocalContextStore(BaseContextStore):
 
     # ── BaseContextStore: plans ───────────────────────────────────────────────
 
-    def current_plan(self, session_id: str) -> str | None:
-        """Return the most recent plan for this session.
-
-        Resolves the plan by reading the latest ``{session_id}_*.txt`` file from
-        disk so the plan survives process restarts.  Falls back to the in-memory
-        cache when no file exists yet or a disk read fails.
-        """
+    def get_current_plan(self, session_id: str) -> Plan | None:
+        """Return the most recent plan for this session if it exists, and otherwise None."""
         if self._plans_root.exists():
-            files = sorted(self._plans_root.glob(f"{session_id}_*.txt"))
+            files = sorted(self._plans_root.glob(f"{session_id}_*.json"))
             if files:
                 try:
-                    return files[-1].read_text(encoding="utf-8")
-                except OSError:
+                    data = json.loads(files[-1].read_text(encoding="utf-8"))
+                    return Plan(content=data["content"], metadata=data.get("metadata", {}))
+                except (OSError, ValueError, KeyError):
                     logger.warning("Could not read plan file: %s", files[-1], exc_info=True)
-        return self._current_plan
+        return None
 
-    def save_plan(self, session_id: str, plan: str) -> None:
-        """Persist *plan* to disk and prune stale files.
-
-        Also updates the in-memory cache used as a fallback when no plan file
-        can be read back.
-        """
-        self._current_plan = plan
+    def save_plan(self, session_id: str, content: str) -> None:
+        """Persist a new plan for *session_id*."""
         self._plans_root.mkdir(parents=True, exist_ok=True)
-        stamp = _datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        path = self._plans_root / f"{session_id}_{stamp}.txt"
+        now = _datetime.now(timezone.utc)
+        stamp = now.strftime("%Y%m%dT%H%M%S%fZ")
+        path = self._plans_root / f"{session_id}_{stamp}.json"
+        plan = Plan(content=content, metadata={"created_at": now.isoformat()})
         try:
-            path.write_text(plan, encoding="utf-8")
+            path.write_text(
+                json.dumps({"content": plan.content, "metadata": plan.metadata}),
+                encoding="utf-8",
+            )
         except OSError:
             logger.warning("Could not write plan file: %s", path, exc_info=True)
             return
         self.prune()
 
     def prune(self) -> None:
-        """Keep only the most recent plan file per session_id."""
         if not self._plans_root.exists():
             return
         by_session: dict[str, list[Path]] = {}
-        for p in self._plans_root.glob("*.txt"):
+        for p in self._plans_root.glob("*.json"):
             sid = p.stem.partition("_")[0]
             if not sid:
                 continue

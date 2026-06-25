@@ -522,13 +522,21 @@ class TestOnSubmit:
         call_args = mock_ui.add_message.call_args
         assert "Unknown command" in call_args[0][1]
 
-    async def test_agent_running_shows_busy(
+    async def test_agent_running_queues_message_instead_of_running(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         controller._agent_running = True
         action, _ = await controller.on_submit("do something")
         assert action == ""
         mock_ui.set_input_placeholder.assert_not_called()
+
+    async def test_agent_running_pins_message_in_ui(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        controller._agent_running = True
+        await controller.on_submit("do something")
+        mock_ui.add_pending_message.assert_called_once_with("do something")
+        assert len(controller._pending_queue) == 1
 
     async def test_normal_query_returns_run(
         self, controller: CLIController, mock_ui: MagicMock
@@ -628,13 +636,14 @@ class TestCompact:
         await controller.compact()
         mock_ui.add_message.assert_called_with("agent", "Not loaded yet.")
 
-    async def test_compact_success_shows_summary(
+    async def test_compact_success_shows_confirmation_without_summary(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
         mock_service.compact_chat_history = AsyncMock(return_value="key findings")
         await loaded_controller.compact()
         msg_calls = [c[0][1] for c in mock_ui.add_message.call_args_list]
-        assert any("key findings" in m for m in msg_calls)
+        assert not any("key findings" in m for m in msg_calls)
+        assert any("Compaction done" in m for m in msg_calls)
 
     async def test_compact_failure_shows_error(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock

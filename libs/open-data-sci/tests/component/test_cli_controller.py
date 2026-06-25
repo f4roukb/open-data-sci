@@ -35,6 +35,7 @@ from opendatasci.streaming.events import (
 from opendatasci._tui.adapter import (
     EphemeralHandle,
     MessageHandle,
+    PendingMessageHandle,
     ThinkingHandle,
     TurnStatusHandle,
     UIAdapter,
@@ -133,6 +134,15 @@ class _RecordingTurnStatus(TurnStatusHandle):
         self.last_context = (context_tokens, cached_tokens)
 
 
+class _RecordingPendingMessage(PendingMessageHandle):
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.removed = False
+
+    def remove(self) -> None:
+        self.removed = True
+
+
 class _RecordingUI(UIAdapter):
     """In-memory UIAdapter that records every call for assertion."""
 
@@ -149,6 +159,7 @@ class _RecordingUI(UIAdapter):
         self.cleared = 0
         self.stop_agent_calls = 0
         self.input_values: list[tuple[str, int | None]] = []
+        self.pending_messages: list[_RecordingPendingMessage] = []
 
     def add_message(self, role: str, content: str = "") -> MessageHandle:
         h = _RecordingMessageHandle(role, content)
@@ -160,6 +171,11 @@ class _RecordingUI(UIAdapter):
 
     def add_turn_status_bar(self) -> TurnStatusHandle:
         return _RecordingTurnStatus()
+
+    def add_pending_message(self, text: str) -> PendingMessageHandle:
+        h = _RecordingPendingMessage(text)
+        self.pending_messages.append(h)
+        return h
 
     def add_ephemeral_block(self, communication: str, label: str, summary: str) -> EphemeralHandle:
         return _RecordingEphemeral()
@@ -286,13 +302,16 @@ class TestOnSubmit:
         # The user bubble must have been added.
         assert any(m.role == "user" for m in ui.messages)
 
-    async def test_busy_agent_rejects_input(self):
+    async def test_busy_agent_queues_input_instead_of_running(self):
         ctrl, ui = _make_controller(service=_make_service_stub())
         ctrl._agent_running = True
         action, _ = await ctrl.on_submit("Another question")
         assert action == ""
-        # Last message should warn the user.
-        assert any("busy" in m.text.lower() for m in ui.messages)
+        # No new chat message — the input is pinned instead.
+        assert ui.messages == []
+        assert len(ui.pending_messages) == 1
+        assert ui.pending_messages[0].text == "Another question"
+        assert len(ctrl._pending_queue) == 1
 
     async def test_slash_command_quit(self):
         ctrl, _ = _make_controller(service=_make_service_stub())
@@ -345,7 +364,7 @@ class TestSlashCommands:
         ctrl, ui = _make_controller(service=svc)
         await ctrl.on_submit("/compact")
         svc.compact_chat_history.assert_awaited_once()
-        assert any("condensed history" in m.text for m in ui.messages)
+        assert any("Compaction done" in m.text for m in ui.messages)
 
     async def test_compact_reports_failure(self):
         svc = _make_service_stub(compact_raises=RuntimeError("nope"))

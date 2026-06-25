@@ -204,20 +204,35 @@ class TestCreateMainAgentTools:
         assert "web_search" in names
         assert "fetch_url" in names
 
-    def test_includes_planning_tools_when_save_plan_provided(self) -> None:
+    def test_includes_planning_tools_when_context_and_session_id_provided(self) -> None:
         tools = create_agent_tools(
             _make_workspace(),
             _make_sandbox(),
-            None,
+            MagicMock(),
             sandbox_factory=_make_sandbox_factory(),
-            save_plan=lambda p: None,
+            session_id="sess1",
+            store=MagicMock(),
         )
         names = {t.name for t in tools}
         assert "enter_plan_mode" in names
         assert "exit_plan_mode" in names
 
-    def test_excludes_planning_tools_when_no_save_plan(self) -> None:
-        tools = create_agent_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())
+    def test_excludes_planning_tools_when_no_context(self) -> None:
+        tools = create_agent_tools(
+            _make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory(), session_id="sess1"
+        )
+        names = {t.name for t in tools}
+        assert "enter_plan_mode" not in names
+        assert "exit_plan_mode" not in names
+
+    def test_excludes_planning_tools_when_no_session_id(self) -> None:
+        tools = create_agent_tools(
+            _make_workspace(),
+            _make_sandbox(),
+            MagicMock(),
+            sandbox_factory=_make_sandbox_factory(),
+            store=MagicMock(),
+        )
         names = {t.name for t in tools}
         assert "enter_plan_mode" not in names
         assert "exit_plan_mode" not in names

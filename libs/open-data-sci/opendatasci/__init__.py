@@ -25,7 +25,7 @@ Package layout::
 
 from opendatasci.agents.agents import Agent
 from opendatasci.agents.agents_factory import create_agent
-from opendatasci.agents.chat_memory import PreparedHistory
+from opendatasci.agents.chat_memory import ChatTurnContext
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.sandbox.base import SandboxExecResult
 from opendatasci.streaming.events import AgentStreamEvent
@@ -41,7 +41,7 @@ __all__ = [
     "AgentStreamEvent",
     "SandboxExecResult",
     "create_agent",
-    "PreparedHistory",
+    "ChatTurnContext",
     # Configuration
     "OpenDataSciConfig",
 ]

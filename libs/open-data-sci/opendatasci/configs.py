@@ -188,7 +188,7 @@ class OpenDataSciConfig(BaseSettings):
 
     # ── Context management ───────────────────────────────────────────────────────
     midturn_compaction_threshold: int = Field(
-        default=64000,
+        default=96000,
         alias="MIDTURN_COMPACTION_THRESHOLD",
         gt=0,
         description="Token count after which the agent's context is compacted mid-turn. Only applies in execution mode.",

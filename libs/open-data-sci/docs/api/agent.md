@@ -1,6 +1,6 @@
 # Agent
 
-`Agent` is the core conversational AI agent. It wraps a LangGraph state machine that orchestrates LLM calls, tool execution, concurrent workers, and rolling memory.
+`Agent` is the core conversational AI agent. It orchestrates LLM calls, tool execution, concurrent workers, and rolling memory automatically, so you only need to send queries and consume the resulting stream.
 
 ## Lifecycle
 
@@ -55,7 +55,7 @@ async for event in agent.astream(query):
 | Method | Description |
 |--------|-------------|
 | `clear_chat_history()` | Remove all messages and rolling memory summaries. Preserves sandbox state. |
-| `rewind_turn()` | Remove only the last turn (user message + agent response) from the graph state. |
+| `rewind_turn()` | Remove only the last turn (user message + agent response) from the conversation. |
 | `compact_chat_history()` | Use the LLM to summarise old turns, then discard them. Returns the summary text. Use this instead of `clear_chat_history` when you want to keep context across a long session without blowing up the context window. |
 
 ```python
@@ -72,11 +72,9 @@ print("Compacted:", summary)
       show_source: false
       members:
         - astream
-        - resume_with_input
         - rewind_turn
         - clear_chat_history
         - compact_chat_history
-        - graph
 
 ---
 
@@ -89,4 +87,4 @@ print("Compacted:", summary)
       show_root_heading: true
       show_source: false
       members:
-        - run
+        - ainvoke

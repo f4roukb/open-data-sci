@@ -3,7 +3,7 @@
 
 from unittest.mock import AsyncMock, MagicMock
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from opendatasci.agents.nodes import AgentNode
 from opendatasci.agents.states import AgentState
@@ -13,11 +13,11 @@ def _make_state(messages: list | None = None) -> AgentState:
     return AgentState(messages=messages or [HumanMessage(content="question")])
 
 
-def _no_system(state, memory_text):
+def _no_system(state):
     return []
 
 
-def _one_system(state, memory_text):
+def _one_system(state):
     return [SystemMessage(content="system")]
 
 
@@ -70,21 +70,47 @@ class TestAgentNode:
         )
         await node.ainvoke(_make_state([human]))
         call_args = llm.ainvoke.call_args[0][0]
-        assert call_args[-1] is human
+        # The no-builder branch renders HumanMessages too — same message, new object.
+        assert "hello" in call_args[-1].content
 
-    async def test_memory_text_passed_to_build_system_context(self) -> None:
-        from opendatasci.agents.chat_memory import ChatHistoryBuilder, PreparedHistory, TurnSummarizer
+    async def test_recap_messages_precede_ongoing_turn_messages(self) -> None:
+        from opendatasci.agents.chat_memory import ChatHistoryBuilder, ChatTurnContext
 
-        received_memory: list[str | None] = []
+        recap_message = HumanMessage(content="[Earlier session summary]\nold stuff")
+        mock_builder = MagicMock(spec=ChatHistoryBuilder)
+        mock_builder.build = AsyncMock(return_value=ChatTurnContext(
+            messages=[recap_message, HumanMessage(content="q")],
+            turn_summaries=[],
+        ))
 
-        def capture_system(state, memory_text):
-            received_memory.append(memory_text)
+        llm = AsyncMock()
+        llm.ainvoke = AsyncMock(return_value=AIMessage(content="ok"))
+        node = AgentNode(
+            get_llm_with_tools=lambda state: llm,
+            build_system_context=_one_system,
+            chat_history_builder=mock_builder,
+        )
+
+        await node.ainvoke(_make_state())
+        sent = llm.ainvoke.call_args[0][0]
+        assert sent == [
+            SystemMessage(content="system"),
+            recap_message,
+            HumanMessage(content="q"),
+        ]
+
+    async def test_build_system_context_called_without_recap_param(self) -> None:
+        from opendatasci.agents.chat_memory import ChatHistoryBuilder, ChatTurnContext
+
+        received_states: list[AgentState] = []
+
+        def capture_system(state):
+            received_states.append(state)
             return []
 
         mock_builder = MagicMock(spec=ChatHistoryBuilder)
-        mock_builder.build = AsyncMock(return_value=PreparedHistory(
+        mock_builder.build = AsyncMock(return_value=ChatTurnContext(
             messages=[HumanMessage(content="q")],
-            memory_text="## Recent Conversation History\nTurn 1: ...",
             turn_summaries=[],
         ))
 
@@ -97,46 +123,15 @@ class TestAgentNode:
         )
 
         await node.ainvoke(_make_state())
-        assert received_memory == ["## Recent Conversation History\nTurn 1: ..."]
-
-    async def test_memory_text_survives_to_llm_as_system_message(self) -> None:
-        from opendatasci.agents.chat_memory import ChatHistoryBuilder, PreparedHistory
-
-        mock_builder = MagicMock(spec=ChatHistoryBuilder)
-        mock_builder.build = AsyncMock(return_value=PreparedHistory(
-            messages=[HumanMessage(content="what is the mean?")],
-            memory_text="## Recent Conversation History\nTurn 1: ...",
-            turn_summaries=[],
-        ))
-
-        def build_system(state, memory_text):
-            msgs = [SystemMessage(content="MAIN SYSTEM PROMPT")]
-            if memory_text:
-                msgs.append(SystemMessage(content=memory_text))
-            return msgs
-
-        llm = AsyncMock()
-        llm.ainvoke = AsyncMock(return_value=AIMessage(content="ok"))
-        node = AgentNode(
-            get_llm_with_tools=lambda state: llm,
-            build_system_context=build_system,
-            chat_history_builder=mock_builder,
-        )
-
-        await node.ainvoke(_make_state())
-        sent = llm.ainvoke.call_args[0][0]
-        contents = [m.content for m in sent if isinstance(m, SystemMessage)]
-        assert any("MAIN SYSTEM PROMPT" in c for c in contents)
-        assert any("Recent Conversation History" in c for c in contents)
+        assert len(received_states) == 1
 
     async def test_turn_summaries_written_back_when_builder_present(self) -> None:
-        from opendatasci.agents.chat_memory import ChatHistoryBuilder, PreparedHistory, TurnSummaryRecord
+        from opendatasci.agents.chat_memory import ChatHistoryBuilder, ChatTurnContext, ChatTurnSummary
 
-        record = TurnSummaryRecord(turn=1, user="q", actions="", agent="a", timestamp="")
+        record = ChatTurnSummary(turn=1, user="q", actions="", agent="a", timestamp="")
         mock_builder = MagicMock(spec=ChatHistoryBuilder)
-        mock_builder.build = AsyncMock(return_value=PreparedHistory(
+        mock_builder.build = AsyncMock(return_value=ChatTurnContext(
             messages=[HumanMessage(content="q")],
-            memory_text=None,
             turn_summaries=[record],
         ))
 
@@ -221,7 +216,7 @@ class TestAgentNode:
 
 # ---------------------------------------------------------------------------
 # Compaction — now lives in ChatHistoryBuilder; AgentNode tests verify the
-# node honours whatever PreparedHistory.messages the builder returns.
+# node honours whatever ChatTurnContext.messages the builder returns.
 # ---------------------------------------------------------------------------
 
 
@@ -229,13 +224,12 @@ class TestAgentNodeWithCompaction:
     """AgentNode passes builder output straight to the LLM — no compaction logic of its own."""
 
     async def test_node_uses_compacted_messages_from_builder(self) -> None:
-        from opendatasci.agents.chat_memory import ChatHistoryBuilder, PreparedHistory
+        from opendatasci.agents.chat_memory import ChatHistoryBuilder, ChatTurnContext
 
         compacted = [HumanMessage(content="compacted summary")]
         mock_builder = MagicMock(spec=ChatHistoryBuilder)
-        mock_builder.build = AsyncMock(return_value=PreparedHistory(
+        mock_builder.build = AsyncMock(return_value=ChatTurnContext(
             messages=compacted,
-            memory_text=None,
             turn_summaries=[],
         ))
 

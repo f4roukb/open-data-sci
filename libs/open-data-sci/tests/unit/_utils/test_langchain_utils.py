@@ -1,10 +1,9 @@
 """Unit tests for opendatasci._utils.langchain_utils."""
 
 
-import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
-from opendatasci._utils.langchain_utils import get_last_turn_messages, get_ongoing_turn_messages, is_ongoing_turn, prepend_messages, render_turn, render_turns
+from opendatasci._utils.langchain_utils import is_ongoing_turn, prepend_messages, render_turn
 
 
 # ---------------------------------------------------------------------------
@@ -50,116 +49,6 @@ class TestPrependMessages:
         sys = SystemMessage(content="sys")
         result = prepend_messages([h1, h2], [sys])
         assert result == [sys, h1, h2]
-
-
-# ---------------------------------------------------------------------------
-# get_last_turn_messages
-# ---------------------------------------------------------------------------
-
-
-class TestExtractLastTurn:
-    def test_empty_returns_empty(self) -> None:
-        assert get_last_turn_messages([]) == []
-
-    def test_no_human_message_returns_empty(self) -> None:
-        assert get_last_turn_messages([AIMessage(content="hi")]) == []
-
-    def test_returns_from_last_turn_opener(self) -> None:
-        messages = [
-            HumanMessage(content="q1"),
-            AIMessage(content="a1"),
-            HumanMessage(content="q2"),
-            AIMessage(content="a2"),
-        ]
-        turn = get_last_turn_messages(messages)
-        assert [m.content for m in turn] == ["q2", "a2"]
-
-    def test_single_turn_returned_whole(self) -> None:
-        messages = [HumanMessage(content="q"), AIMessage(content="a")]
-        assert get_last_turn_messages(messages) == messages
-
-    def test_skips_interrupt_reply_human_messages(self) -> None:
-        opener = HumanMessage(
-            content="start", additional_kwargs={"is_input_on_interrupt": False}
-        )
-        reply = HumanMessage(
-            content="my answer", additional_kwargs={"is_input_on_interrupt": True}
-        )
-        messages = [
-            opener,
-            AIMessage(content="", tool_calls=[{"name": "ask", "args": {}, "id": "1"}]),
-            reply,
-            AIMessage(content="done"),
-        ]
-        turn = get_last_turn_messages(messages)
-        # The turn starts at the opener, not at the interrupt reply.
-        assert turn[0] is opener
-        assert len(turn) == 4
-
-    def test_absent_flag_treated_as_turn_opener(self) -> None:
-        msg = HumanMessage(content="q")  # no additional_kwargs flag
-        assert get_last_turn_messages([msg]) == [msg]
-
-
-# ---------------------------------------------------------------------------
-# get_ongoing_turn_messages
-# ---------------------------------------------------------------------------
-
-
-class TestGetOngoingTurnMessages:
-    def test_returns_empty_when_no_turn_opener(self) -> None:
-        assert get_ongoing_turn_messages([AIMessage(content="hi")]) == []
-
-    def test_raises_when_turn_is_complete(self) -> None:
-        messages = [HumanMessage(content="q"), AIMessage(content="done")]
-        with pytest.raises(ValueError, match="already complete"):
-            get_ongoing_turn_messages(messages)
-
-    def test_returns_turn_ending_with_tool_message(self) -> None:
-        human = HumanMessage(content="q")
-        ai = AIMessage(content="", tool_calls=[{"name": "t", "args": {}, "id": "1"}])
-        tool = ToolMessage(content="result", tool_call_id="1")
-        messages = [human, ai, tool]
-        assert get_ongoing_turn_messages(messages) == messages
-
-    def test_returns_turn_ending_with_pending_tool_calls(self) -> None:
-        human = HumanMessage(content="q")
-        ai = AIMessage(content="", tool_calls=[{"name": "t", "args": {}, "id": "1"}])
-        assert get_ongoing_turn_messages([human, ai]) == [human, ai]
-
-    def test_skips_interrupt_reply_human_messages(self) -> None:
-        opener = HumanMessage(
-            content="start", additional_kwargs={"is_input_on_interrupt": False}
-        )
-        reply = HumanMessage(
-            content="answer", additional_kwargs={"is_input_on_interrupt": True}
-        )
-        ai_mid = AIMessage(content="", tool_calls=[{"name": "ask", "args": {}, "id": "1"}])
-        ai_ongoing = AIMessage(content="", tool_calls=[{"name": "t", "args": {}, "id": "2"}])
-        messages = [opener, ai_mid, reply, ai_ongoing]
-        turn = get_ongoing_turn_messages(messages)
-        assert turn[0] is opener
-        assert len(turn) == 4
-
-    def test_returns_turn_ending_with_interrupt_reply(self) -> None:
-        opener = HumanMessage(content="start")
-        ai_mid = AIMessage(content="", tool_calls=[{"name": "ask", "args": {}, "id": "1"}])
-        reply = HumanMessage(
-            content="answer", additional_kwargs={"is_input_on_interrupt": True}
-        )
-        messages = [opener, ai_mid, reply]
-        turn = get_ongoing_turn_messages(messages)
-        assert turn[0] is opener
-        assert len(turn) == 3
-
-    def test_raises_for_completed_turn_with_interrupt_replies(self) -> None:
-        opener = HumanMessage(content="start")
-        reply = HumanMessage(
-            content="answer", additional_kwargs={"is_input_on_interrupt": True}
-        )
-        messages = [opener, AIMessage(content=""), reply, AIMessage(content="done")]
-        with pytest.raises(ValueError, match="already complete"):
-            get_ongoing_turn_messages(messages)
 
 
 # ---------------------------------------------------------------------------
@@ -345,38 +234,3 @@ class TestRenderTurnComposite:
     def test_parts_separated_by_double_newline(self) -> None:
         turn = [HumanMessage(content="q"), AIMessage(content="a")]
         assert render_turn(turn) == "User: q\n\nAgent: a"
-
-
-# ---------------------------------------------------------------------------
-# render_turns
-# ---------------------------------------------------------------------------
-
-
-class TestRenderTurns:
-    def test_empty_list_returns_sentinel(self) -> None:
-        assert render_turns([]) == "(no conversation to render)"
-
-    def test_single_turn_equals_render_turn(self) -> None:
-        turn = [HumanMessage(content="q"), AIMessage(content="a")]
-        assert render_turns([turn]) == render_turn(turn)
-
-    def test_multiple_turns_joined_by_double_newline(self) -> None:
-        t1 = [HumanMessage(content="q1"), AIMessage(content="a1")]
-        t2 = [HumanMessage(content="q2"), AIMessage(content="a2")]
-        result = render_turns([t1, t2])
-        assert result == render_turn(t1) + "\n\n" + render_turn(t2)
-
-    def test_empty_turn_filtered_out(self) -> None:
-        turn = [HumanMessage(content="q"), AIMessage(content="a")]
-        result = render_turns([[], turn])
-        assert result == render_turn(turn)
-
-    def test_three_turns_all_present(self) -> None:
-        turns = [
-            [HumanMessage(content=f"q{i}"), AIMessage(content=f"a{i}")]
-            for i in range(3)
-        ]
-        result = render_turns(turns)
-        for i in range(3):
-            assert f"q{i}" in result
-            assert f"a{i}" in result

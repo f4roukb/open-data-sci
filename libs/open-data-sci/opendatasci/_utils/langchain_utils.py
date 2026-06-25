@@ -54,16 +54,6 @@ def render_turn(messages: list[BaseMessage]) -> str:
     return "\n\n".join(parts) if parts else "(no messages)"
 
 
-def render_turns(turns: list[list[BaseMessage]]) -> str:
-    """Render a list of turns as a single readable string.
-
-    Each turn is rendered via :func:`render_turn` and separated by a blank line.
-    Returns ``"(no conversation to render)"`` when *turns* is empty.
-    """
-    rendered = [render_turn(t) for t in turns if t]
-    return "\n\n".join(rendered) if rendered else "(no conversation to render)"
-
-
 def prepend_messages(
     history: list[BaseMessage],
     messages: list[BaseMessage],
@@ -81,48 +71,6 @@ def is_interrupt_state_snapshot(state: StateSnapshot) -> bool:
 def is_final_ai_message(msg: BaseMessage) -> bool:
     """Return True if *msg* is an AIMessage with no pending tool calls."""
     return isinstance(msg, AIMessage) and not bool(getattr(msg, "tool_calls", None))
-
-
-def get_ongoing_turn_messages(messages: list[BaseMessage]) -> list[BaseMessage]:
-    """Return the messages of the current (still-in-progress) conversation turn.
-
-    Uses the same turn-boundary rules as ``get_last_turn_messages``: the turn
-    begins at the most recent turn-opening ``HumanMessage`` (one whose
-    ``additional_kwargs`` does **not** set ``is_input_on_interrupt`` to ``True``).
-
-    Raises:
-        ValueError: if the turn is already complete (not ongoing).
-    """
-    for i in range(len(messages) - 1, -1, -1):
-        msg = messages[i]
-        if isinstance(msg, HumanMessage) and not msg.additional_kwargs.get(
-            "is_input_on_interrupt", False
-        ):
-            turn = messages[i:]
-            if not is_ongoing_turn(turn):
-                raise ValueError("Current turn is already complete")
-            return turn
-    return []
-
-
-def get_last_turn_messages(messages: list[BaseMessage]) -> list[BaseMessage]:
-    """Return the messages of the most recent conversation turn.
-
-    A turn begins at the most recent *turn-opening* ``HumanMessage`` — one whose
-    ``additional_kwargs`` does **not** flag it as an interrupt reply
-    (``is_input_on_interrupt`` is ``False`` or absent) — and extends to the end of
-    *messages*. HumanMessages flagged as interrupt replies are skipped, so a turn
-    that paused to ask the user a question is still treated as a single turn.
-
-    Returns ``[]`` when no turn-opening HumanMessage exists.
-    """
-    for i in range(len(messages) - 1, -1, -1):
-        msg = messages[i]
-        if isinstance(msg, HumanMessage) and not msg.additional_kwargs.get(
-            "is_input_on_interrupt", False
-        ):
-            return messages[i:]
-    return []
 
 
 def get_final_ai_message(chat_history: list[BaseMessage]) -> AIMessage:

@@ -2,6 +2,7 @@
 
 
 import datetime
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -151,17 +152,27 @@ class TestSaveDatasetProfile:
 
 
 class TestLocalContextStorePlans:
-    def test_initial_current_plan_is_none(self, store: LocalContextStore) -> None:
-        assert store.current_plan("abc123") is None
+    def test_initial_get_current_plan_is_none(self, store: LocalContextStore) -> None:
+        assert store.get_current_plan("abc123") is None
 
-    def test_save_plan_then_current_plan_returns_it(self, store: LocalContextStore) -> None:
+    def test_save_plan_then_get_current_plan_returns_it(self, store: LocalContextStore) -> None:
         store.save_plan("abc123", "my plan")
-        assert store.current_plan("abc123") == "my plan"
+        plan = store.get_current_plan("abc123")
+        assert plan is not None
+        assert plan.content == "my plan"
 
     def test_save_plan_overwrites_previous(self, store: LocalContextStore) -> None:
         store.save_plan("abc123", "plan v1")
         store.save_plan("abc123", "plan v2")
-        assert store.current_plan("abc123") == "plan v2"
+        plan = store.get_current_plan("abc123")
+        assert plan is not None
+        assert plan.content == "plan v2"
+
+    def test_save_plan_stamps_created_at_metadata(self, store: LocalContextStore) -> None:
+        store.save_plan("abc123", "x")
+        plan = store.get_current_plan("abc123")
+        assert plan is not None
+        assert "created_at" in plan.metadata
 
     def test_prune_no_op_when_plans_dir_missing(self, store: LocalContextStore) -> None:
         store.prune()  # Must not raise
@@ -171,11 +182,12 @@ class TestLocalContextStorePlans:
         assert store._plans_root == tmp_path / OPENDATASCI_DIRNAME / "plans"
         assert store._plans_root.exists()
 
-    def test_save_plan_writes_file(self, store: LocalContextStore) -> None:
+    def test_save_plan_writes_json_file(self, store: LocalContextStore) -> None:
         store.save_plan("testsid", "my plan content")
-        files = list(store._plans_root.glob("*.txt"))
+        files = list(store._plans_root.glob("*.json"))
         assert len(files) == 1
-        assert files[0].read_text(encoding="utf-8") == "my plan content"
+        data = json.loads(files[0].read_text(encoding="utf-8"))
+        assert data["content"] == "my plan content"
 
     def test_save_plan_creates_directory(self, store: LocalContextStore) -> None:
         store.save_plan("s1", "plan")
@@ -183,80 +195,90 @@ class TestLocalContextStorePlans:
 
     def test_filename_starts_with_session_id(self, store: LocalContextStore) -> None:
         store.save_plan("myid1234", "x")
-        files = list(store._plans_root.glob("*.txt"))
+        files = list(store._plans_root.glob("*.json"))
         assert files[0].name.startswith("myid1234_")
 
     def test_prune_keeps_only_latest_per_session(self, store: LocalContextStore) -> None:
         plans = store._plans_root
         plans.mkdir(parents=True)
-        (plans / "sess01_20240101T000000Z.txt").write_text("plan v1")
-        (plans / "sess01_20240101T000001Z.txt").write_text("plan v2")
+        (plans / "sess01_20240101T000000Z.json").write_text(json.dumps({"content": "plan v1", "metadata": {}}))
+        (plans / "sess01_20240101T000001Z.json").write_text(json.dumps({"content": "plan v2", "metadata": {}}))
         store.prune()
-        files = list(plans.glob("sess01_*.txt"))
+        files = list(plans.glob("sess01_*.json"))
         assert len(files) == 1
-        assert files[0].read_text(encoding="utf-8") == "plan v2"
+        assert json.loads(files[0].read_text(encoding="utf-8"))["content"] == "plan v2"
 
     def test_prune_preserves_other_sessions(self, store: LocalContextStore) -> None:
         plans = store._plans_root
         plans.mkdir(parents=True)
-        (plans / "other123_20240101T000000Z.txt").write_text("other session plan")
+        (plans / "other123_20240101T000000Z.json").write_text(
+            json.dumps({"content": "other session plan", "metadata": {}})
+        )
         store.save_plan("sess01", "plan v1")
-        assert (plans / "other123_20240101T000000Z.txt").exists()
+        assert (plans / "other123_20240101T000000Z.json").exists()
 
     def test_explicit_prune_removes_stale_files(self, store: LocalContextStore) -> None:
         plans = store._plans_root
         plans.mkdir(parents=True)
-        (plans / "sess01_20240101T000000Z.txt").write_text("old")
-        (plans / "sess01_20240101T000001Z.txt").write_text("new")
+        (plans / "sess01_20240101T000000Z.json").write_text(json.dumps({"content": "old", "metadata": {}}))
+        (plans / "sess01_20240101T000001Z.json").write_text(json.dumps({"content": "new", "metadata": {}}))
         store.prune()
-        files = list(plans.glob("sess01_*.txt"))
+        files = list(plans.glob("sess01_*.json"))
         assert len(files) == 1
-        assert files[0].read_text() == "new"
+        assert json.loads(files[0].read_text())["content"] == "new"
 
-    def test_current_plan_reads_from_disk_not_memory(self, tmp_path: Path) -> None:
+    def test_get_current_plan_reads_from_disk_not_memory(self, tmp_path: Path) -> None:
         writer = LocalContextStore(tmp_path)
         writer.save_plan("s1", "persisted plan")
 
         fresh_store = LocalContextStore(tmp_path)
-        assert fresh_store._current_plan is None
-        assert fresh_store.current_plan("s1") == "persisted plan"
+        plan = fresh_store.get_current_plan("s1")
+        assert plan is not None
+        assert plan.content == "persisted plan"
 
-    def test_current_plan_loads_from_disk_after_restart(self, tmp_path: Path) -> None:
+    def test_get_current_plan_loads_from_disk_after_restart(self, tmp_path: Path) -> None:
         store = LocalContextStore(tmp_path)
         store.save_plan("s1", "persisted plan")
 
         fresh_store = LocalContextStore(tmp_path)
-        assert fresh_store.current_plan("s1") == "persisted plan"
+        plan = fresh_store.get_current_plan("s1")
+        assert plan is not None
+        assert plan.content == "persisted plan"
 
-    def test_current_plan_returns_latest_of_multiple_disk_files(self, store: LocalContextStore) -> None:
+    def test_get_current_plan_returns_latest_of_multiple_disk_files(self, store: LocalContextStore) -> None:
         plans = store._plans_root
         plans.mkdir(parents=True)
-        (plans / "s1_20240101T000000Z.txt").write_text("old plan")
-        (plans / "s1_20240101T000001Z.txt").write_text("new plan")
+        (plans / "s1_20240101T000000Z.json").write_text(json.dumps({"content": "old plan", "metadata": {}}))
+        (plans / "s1_20240101T000001Z.json").write_text(json.dumps({"content": "new plan", "metadata": {}}))
 
-        assert store.current_plan("s1") == "new plan"
+        plan = store.get_current_plan("s1")
+        assert plan is not None
+        assert plan.content == "new plan"
 
-    def test_current_plan_ignores_other_session_files(self, store: LocalContextStore) -> None:
+    def test_get_current_plan_ignores_other_session_files(self, store: LocalContextStore) -> None:
         plans = store._plans_root
         plans.mkdir(parents=True)
-        (plans / "othersid_20240101T000000Z.txt").write_text("other session plan")
+        (plans / "othersid_20240101T000000Z.json").write_text(
+            json.dumps({"content": "other session plan", "metadata": {}})
+        )
 
-        assert store.current_plan("mysessid") is None
+        assert store.get_current_plan("mysessid") is None
 
-    def test_current_plan_does_not_match_session_id_prefix(self, store: LocalContextStore) -> None:
+    def test_get_current_plan_does_not_match_session_id_prefix(self, store: LocalContextStore) -> None:
         plans = store._plans_root
         plans.mkdir(parents=True)
-        (plans / "s10_20240101T000000Z.txt").write_text("s10 plan")
+        (plans / "s10_20240101T000000Z.json").write_text(json.dumps({"content": "s10 plan", "metadata": {}}))
 
-        assert store.current_plan("s1") is None
+        assert store.get_current_plan("s1") is None
 
-    def test_current_plan_returns_none_when_dir_missing(self, store: LocalContextStore) -> None:
-        assert store.current_plan("s1") is None
+    def test_get_current_plan_returns_none_when_dir_missing(self, store: LocalContextStore) -> None:
+        assert store.get_current_plan("s1") is None
 
-    def test_current_plan_falls_back_to_memory_on_read_error(self, store: LocalContextStore) -> None:
+    def test_get_current_plan_returns_none_on_read_error(self, store: LocalContextStore) -> None:
         store.save_plan("s1", "cached plan")
 
         with patch("pathlib.Path.read_text", side_effect=OSError("disk error")):
-            result = store.current_plan("s1")
+            result = store.get_current_plan("s1")
 
-        assert result == "cached plan"
+        # No in-memory fallback — get_current_plan always resolves fresh from disk.
+        assert result is None

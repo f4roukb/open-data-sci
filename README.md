@@ -103,17 +103,19 @@ No setup friction. OpenDataSci ships with the complete stack a practitioner woul
 
 | Domain | Libraries |
 |--------|-----------|
-| DataFrames | Polars, Pandas, DuckDB, ConnectorX, PyArrow |
-| File formats | Excel (openpyxl, xlrd, fastexcel), Parquet, HDF5, JSON, XML |
+| DataFrames | Polars, Pandas |
+| Database connectivity | DuckDB |
+| File formats | Excel/Parquet/Feather (via Pandas), XML (lxml) |
+| Numerics | NumPy, SciPy |
 | Classical ML | scikit-learn, LightGBM, CatBoost, XGBoost, statsmodels |
-| Deep learning | JAX, Flax, Optax (optional) |
 | AutoML / tuning | Optuna |
-| Forecasting | Prophet, ARIMA, ETS |
+| Forecasting | Prophet |
 | Interpretability | SHAP |
 | Anomaly detection | PyOD |
 | Imbalanced data | imbalanced-learn |
 | Dimensionality reduction | UMAP |
-| Validation | pandera |
+| Graph analysis | NetworkX |
+| Feature engineering | category-encoders |
 | Visualisation | matplotlib, seaborn, plotly |
 
 ---

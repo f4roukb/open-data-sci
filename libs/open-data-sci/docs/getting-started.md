@@ -6,7 +6,28 @@
 pip install open-data-sci
 ```
 
-**Requirements:** Python 3.11
+**Requirements:**
+
+- Python 3.12
+- macOS or Linux (Windows is not supported)
+
+### System dependencies
+
+The sandbox that runs agent-generated code shells out to native binaries that `pip` cannot install. Install them with your OS package manager before using the agent:
+
+```bash
+# macOS
+brew install ripgrep
+
+# Linux (Debian/Ubuntu)
+sudo apt-get install -y bubblewrap socat ripgrep
+
+# Linux (Fedora)
+sudo dnf install -y bubblewrap socat ripgrep
+
+# Linux (Arch)
+sudo pacman -S --noconfirm bubblewrap socat ripgrep
+```
 
 ### Provider extras
 
@@ -152,6 +173,7 @@ opendatasci data.csv --config opendatasci_config.yaml
 | `--secondary-model` | *(provider default)* | Secondary model for lightweight tasks |
 | `--api-key` | *(env var)* | API key for the primary provider |
 | `--theme` | `default` | Colour theme: `default`, `accessible`, `light`, `solarized`, `dracula` |
+| `--debug` | `false` | Enable debug output — writes a detailed `opendatasci_debug.log` |
 | `--config` | | Path to a YAML config file |
 | `--list-providers` | | Print all providers and default models, then exit |
 | `--version` | | Print the installed version, then exit |

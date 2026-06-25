@@ -138,10 +138,9 @@ class TestPlanModeFlow:
         await asyncio.sleep(0)
 
         # The plan was persisted into the LocalContextStore.
-        assert (
-            agent._context_store.current_plan(agent._session_id)
-            == "1. Profile the data\n2. Compute revenue"
-        )
+        plan = agent._context_store.get_current_plan(agent._session_id)
+        assert plan is not None
+        assert plan.content == "1. Profile the data\n2. Compute revenue"
 
         # Two tool_call events fired (enter + exit).
         tool_calls = [e for e in events if e.type == "tool_call"]
@@ -163,17 +162,21 @@ class TestPlanModeFlow:
         from opendatasci.context.local import LocalContextStore
 
         store = LocalContextStore(tmp_path)
-        assert store.current_plan("abc12345") is None
+        assert store.get_current_plan("abc12345") is None
 
         store.save_plan("abc12345", "Step 1\nStep 2")
-        # Plan is readable from the in-memory cache and survives a re-read from disk.
-        assert store.current_plan("abc12345") == "Step 1\nStep 2"
+        # Plan is read back fresh from disk — no in-memory caching.
+        plan = store.get_current_plan("abc12345")
+        assert plan is not None
+        assert plan.content == "Step 1\nStep 2"
 
         # Save a newer plan — older one is pruned.
         store.save_plan("abc12345", "Step 1\nStep 2\nStep 3")
-        plan_files = list(store._plans_root.glob("abc12345_*.txt"))
+        plan_files = list(store._plans_root.glob("abc12345_*.json"))
         assert len(plan_files) == 1
-        assert plan_files[0].read_text() == "Step 1\nStep 2\nStep 3"
+        plan = store.get_current_plan("abc12345")
+        assert plan is not None
+        assert plan.content == "Step 1\nStep 2\nStep 3"
 
 
 # ---------------------------------------------------------------------------
@@ -247,12 +250,12 @@ class TestTurnSummarizerIntegration:
         agent = svc._agent
 
         # Inject a summarizer LLM whose with_structured_output returns an
-        # AsyncMock that yields a real TurnSummary on ainvoke. We patch the
-        # private _structured_llm attribute on the existing TurnSummarizer to
-        # avoid rewiring the whole turn finalizer.
-        from opendatasci.agents.chat_memory import TurnSummary
+        # AsyncMock that yields a real ChatTurnSummaryOutput on ainvoke. We patch
+        # the private _structured_llm attribute on the existing
+        # ChatTurnSummarizer to avoid rewiring the whole turn finalizer.
+        from opendatasci.agents.chat_memory import ChatTurnSummaryOutput
 
-        structured_summary = TurnSummary(
+        structured_summary = ChatTurnSummaryOutput(
             user_request="Asked to greet.",
             outcomes="No tools used.",
             agent_response="The agent said hello.",
@@ -267,11 +270,12 @@ class TestTurnSummarizerIntegration:
         record = await agent._chat_history_builder.flush()
 
         # The flushed summary carries the turn details.
-        from opendatasci.agents.chat_memory import render_memory
+        from opendatasci.agents.chat_memory import build_chat_recap_messages
 
         assert record is not None
-        formatted = render_memory(None, [record])
-        assert "Recent Conversation History" in formatted
+        recap = build_chat_recap_messages([record])
+        formatted = recap[0].content
+        assert "Turn" in formatted
         assert "Asked to greet" in formatted
         assert "The agent said hello" in formatted
 
@@ -289,9 +293,9 @@ class TestTurnSummarizerIntegration:
 
         # Even without a structured LLM, the fallback path still records the turn
         # using the raw query and explanation text.
-        from opendatasci.agents.chat_memory import render_memory
+        from opendatasci.agents.chat_memory import build_chat_recap_messages
 
         assert record is not None
-        formatted = render_memory(None, [record])
-        assert "Greet me!" in formatted
+        recap = build_chat_recap_messages([record])
+        assert "Greet me!" in recap[0].content
 

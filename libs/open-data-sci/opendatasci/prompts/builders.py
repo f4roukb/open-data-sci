@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from langchain_core.messages import SystemMessage
 
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.prompts.caching import cached_system_prompt
-from opendatasci.prompts.message_templates import PLAN_SYSTEM_MESSAGE_TEMPLATE
 from opendatasci.prompts.prompt_templates import (
     MAIN_SYSTEM_PROMPT,
     PLAN_MODE_SYSTEM_PROMPT,
@@ -18,9 +15,6 @@ __all__ = [
     "SystemContextBuilder",
 ]
 
-if TYPE_CHECKING:
-    from opendatasci.context.base import BaseContextStore
-
 
 class SystemContextBuilder:
     """Assembles the system prompt for each conversation turn.
@@ -28,26 +22,22 @@ class SystemContextBuilder:
     Emits system messages in this order:
     1. Base prompt (main, plan, or self-review depending on mode) — cached.
     2. One message per active skill — each cached.
-    3. Plan tail (dynamic, not cached) — when a plan exists for the session.
-    4. Memory tail (dynamic, not cached) — when recalled context is provided.
+
+    Conversation recall (rolling turn summaries) and the current plan are not
+    part of the system prompt — ``ChatHistoryBuilder`` renders them as
+    standalone ``HumanMessage``s instead (see
+    :func:`opendatasci.agents.chat_memory.build_chat_recap_messages` and
+    :func:`opendatasci.agents.chat_memory.build_plan_message`).
     """
 
-    def __init__(
-        self,
-        config: OpenDataSciConfig,
-        context_store: "BaseContextStore",
-        session_id: str,
-    ) -> None:
+    def __init__(self, config: OpenDataSciConfig) -> None:
         self._config = config
-        self._context_store = context_store
-        self._session_id = session_id
 
     def build(
         self,
         active_skills: list[Skill] | None = None,
         is_plan_mode: bool = False,
         is_self_review_mode: bool = False,
-        memory_text: str | None = None,
     ) -> list[SystemMessage]:
         """Build and return the system prompt messages for the current agent state."""
 
@@ -74,12 +64,5 @@ class SystemContextBuilder:
                     content=cached_system_prompt(skill.content, self._config.provider)  # type: ignore[arg-type]
                 )
             )
-
-        # Dynamic tails — change between turns, never wrapped with cache markers.
-        if self._context_store and (plan := self._context_store.current_plan(self._session_id)):
-            messages.append(SystemMessage(content=PLAN_SYSTEM_MESSAGE_TEMPLATE.format(plan=plan)))
-
-        if memory_text:
-            messages.append(SystemMessage(content=memory_text))
 
         return messages
