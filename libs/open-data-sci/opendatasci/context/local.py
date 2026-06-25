@@ -197,11 +197,13 @@ class LocalContextStore(BaseContextStore):
                     logger.warning("Could not read plan file: %s", files[-1], exc_info=True)
         return None
 
-    def save_plan(self, session_id: str, plan: Plan) -> None:
-        """Persist *plan* to disk verbatim (content + metadata) and prune stale files."""
+    def save_plan(self, session_id: str, content: str) -> None:
+        """Persist a new plan with *content* for *session_id* and prune stale files."""
         self._plans_root.mkdir(parents=True, exist_ok=True)
-        stamp = _datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        now = _datetime.now(timezone.utc)
+        stamp = now.strftime("%Y%m%dT%H%M%S%fZ")
         path = self._plans_root / f"{session_id}_{stamp}.json"
+        plan = Plan(content=content, metadata={"created_at": now.isoformat()})
         try:
             path.write_text(
                 json.dumps({"content": plan.content, "metadata": plan.metadata}),

@@ -9,7 +9,6 @@ from unittest.mock import patch
 import pytest
 
 from opendatasci.context.local import LocalContextStore, OPENDATASCI_DIRNAME, _NOTES_DIR, _PROFILES_DIR
-from opendatasci.context.plans import Plan
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -157,45 +156,45 @@ class TestLocalContextStorePlans:
         assert store.get_current_plan("abc123") is None
 
     def test_save_plan_then_get_current_plan_returns_it(self, store: LocalContextStore) -> None:
-        store.save_plan("abc123", Plan(content="my plan", metadata={}))
+        store.save_plan("abc123", "my plan")
         plan = store.get_current_plan("abc123")
         assert plan is not None
         assert plan.content == "my plan"
 
     def test_save_plan_overwrites_previous(self, store: LocalContextStore) -> None:
-        store.save_plan("abc123", Plan(content="plan v1", metadata={}))
-        store.save_plan("abc123", Plan(content="plan v2", metadata={}))
+        store.save_plan("abc123", "plan v1")
+        store.save_plan("abc123", "plan v2")
         plan = store.get_current_plan("abc123")
         assert plan is not None
         assert plan.content == "plan v2"
 
-    def test_save_plan_persists_metadata(self, store: LocalContextStore) -> None:
-        store.save_plan("abc123", Plan(content="x", metadata={"created_at": "2024-06-01T00:00:00+00:00"}))
+    def test_save_plan_stamps_created_at_metadata(self, store: LocalContextStore) -> None:
+        store.save_plan("abc123", "x")
         plan = store.get_current_plan("abc123")
         assert plan is not None
-        assert plan.metadata == {"created_at": "2024-06-01T00:00:00+00:00"}
+        assert "created_at" in plan.metadata
 
     def test_prune_no_op_when_plans_dir_missing(self, store: LocalContextStore) -> None:
         store.prune()  # Must not raise
 
     def test_plans_live_under_opendatasci_dir(self, store: LocalContextStore, tmp_path: Path) -> None:
-        store.save_plan("s1", Plan(content="plan", metadata={}))
+        store.save_plan("s1", "plan")
         assert store._plans_root == tmp_path / OPENDATASCI_DIRNAME / "plans"
         assert store._plans_root.exists()
 
     def test_save_plan_writes_json_file(self, store: LocalContextStore) -> None:
-        store.save_plan("testsid", Plan(content="my plan content", metadata={}))
+        store.save_plan("testsid", "my plan content")
         files = list(store._plans_root.glob("*.json"))
         assert len(files) == 1
         data = json.loads(files[0].read_text(encoding="utf-8"))
         assert data["content"] == "my plan content"
 
     def test_save_plan_creates_directory(self, store: LocalContextStore) -> None:
-        store.save_plan("s1", Plan(content="plan", metadata={}))
+        store.save_plan("s1", "plan")
         assert store._plans_root.exists()
 
     def test_filename_starts_with_session_id(self, store: LocalContextStore) -> None:
-        store.save_plan("myid1234", Plan(content="x", metadata={}))
+        store.save_plan("myid1234", "x")
         files = list(store._plans_root.glob("*.json"))
         assert files[0].name.startswith("myid1234_")
 
@@ -215,7 +214,7 @@ class TestLocalContextStorePlans:
         (plans / "other123_20240101T000000Z.json").write_text(
             json.dumps({"content": "other session plan", "metadata": {}})
         )
-        store.save_plan("sess01", Plan(content="plan v1", metadata={}))
+        store.save_plan("sess01", "plan v1")
         assert (plans / "other123_20240101T000000Z.json").exists()
 
     def test_explicit_prune_removes_stale_files(self, store: LocalContextStore) -> None:
@@ -230,7 +229,7 @@ class TestLocalContextStorePlans:
 
     def test_get_current_plan_reads_from_disk_not_memory(self, tmp_path: Path) -> None:
         writer = LocalContextStore(tmp_path)
-        writer.save_plan("s1", Plan(content="persisted plan", metadata={}))
+        writer.save_plan("s1", "persisted plan")
 
         fresh_store = LocalContextStore(tmp_path)
         plan = fresh_store.get_current_plan("s1")
@@ -239,7 +238,7 @@ class TestLocalContextStorePlans:
 
     def test_get_current_plan_loads_from_disk_after_restart(self, tmp_path: Path) -> None:
         store = LocalContextStore(tmp_path)
-        store.save_plan("s1", Plan(content="persisted plan", metadata={}))
+        store.save_plan("s1", "persisted plan")
 
         fresh_store = LocalContextStore(tmp_path)
         plan = fresh_store.get_current_plan("s1")
@@ -276,7 +275,7 @@ class TestLocalContextStorePlans:
         assert store.get_current_plan("s1") is None
 
     def test_get_current_plan_returns_none_on_read_error(self, store: LocalContextStore) -> None:
-        store.save_plan("s1", Plan(content="cached plan", metadata={}))
+        store.save_plan("s1", "cached plan")
 
         with patch("pathlib.Path.read_text", side_effect=OSError("disk error")):
             result = store.get_current_plan("s1")

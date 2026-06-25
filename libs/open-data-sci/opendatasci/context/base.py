@@ -60,5 +60,5 @@ class BaseContextStore(ABC):
         """
 
     @abstractmethod
-    def save_plan(self, session_id: str, plan: Plan) -> None:
-        """Persist *plan* for *session_id*."""
+    def save_plan(self, session_id: str, content: str) -> None:
+        """Persist a new plan with *content* for *session_id*."""

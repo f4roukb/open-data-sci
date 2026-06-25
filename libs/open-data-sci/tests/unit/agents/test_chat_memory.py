@@ -8,6 +8,7 @@ fallback path.
 
 import asyncio
 from datetime import datetime, timezone
+from unittest.mock import MagicMock
 
 import pytest
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -318,7 +319,9 @@ class TestChatHistoryBuilder:
 
     async def test_plan_message_appended_after_recap_before_ongoing_turn(self) -> None:
         plan = Plan(content="do the thing", metadata={})
-        builder = self._builder(get_current_plan=lambda: plan)
+        context_store = MagicMock()
+        context_store.get_current_plan.return_value = plan
+        builder = self._builder(context_store=context_store, session_id="s1")
         ctx = await builder.build([HumanMessage(content="x")], [_record(1)])
         assert len(ctx.messages) == 3
         assert "Turn 1" in ctx.messages[0].content
@@ -326,11 +329,13 @@ class TestChatHistoryBuilder:
         assert "x" in ctx.messages[2].content
 
     async def test_no_plan_message_when_get_current_plan_returns_none(self) -> None:
-        builder = self._builder(get_current_plan=lambda: None)
+        context_store = MagicMock()
+        context_store.get_current_plan.return_value = None
+        builder = self._builder(context_store=context_store, session_id="s1")
         ctx = await builder.build([HumanMessage(content="x")], [])
         assert len(ctx.messages) == 1
 
-    async def test_no_plan_message_without_get_current_plan(self) -> None:
+    async def test_no_plan_message_without_context_store(self) -> None:
         builder = self._builder()
         ctx = await builder.build([HumanMessage(content="x")], [])
         assert len(ctx.messages) == 1

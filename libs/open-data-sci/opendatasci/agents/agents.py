@@ -37,7 +37,7 @@ from opendatasci.agents.graphs import AgentGraphFactory, WorkerGraphFactory
 from opendatasci.agents.states import AgentState
 from opendatasci.agents.turn_memory import TurnRewinder
 from opendatasci.configs import OpenDataSciConfig
-from opendatasci.context.base import BaseContextStore, Plan
+from opendatasci.context.base import BaseContextStore
 from opendatasci.context.local import LocalContextStore
 from opendatasci.models.factory import (
     _RetryRunnable,
@@ -184,12 +184,9 @@ class Agent(BaseOpenDataSciAgent):
                 self._sandbox,
                 self._context_store,
                 self._sandbox_factory,
+                session_id=self._session_id,
                 store=self._skill_store,
                 datasci_config=self._config,
-                save_plan=lambda plan: self._context_store.save_plan(  # type: ignore[union-attr]
-                    self._session_id,
-                    Plan(content=plan, metadata={"created_at": datetime.now(timezone.utc).isoformat()}),
-                ),
             )
 
         tools_restricted = [t for t in self._tools if t.name != ToolName.SPAWN_WORKERS]
@@ -209,7 +206,8 @@ class Agent(BaseOpenDataSciAgent):
             summarizer_llm=self._summarizer_llm,
             loop_compactor_llm=self._llm,
             midturn_compaction_threshold=self._config.midturn_compaction_threshold,
-            get_current_plan=lambda: self._context_store.get_current_plan(self._session_id),  # type: ignore[union-attr]
+            context_store=self._context_store,
+            session_id=self._session_id,
         )
 
         self._graph: CompiledStateGraph = self._build_graph(checkpointer)

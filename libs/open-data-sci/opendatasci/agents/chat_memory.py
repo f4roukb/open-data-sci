@@ -6,7 +6,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
@@ -19,6 +19,7 @@ from opendatasci._utils.langchain_utils import (
 )
 from opendatasci._utils.mixins import LLMDigestibleMixin
 from opendatasci.agents._chat_messages import ChatMessageOrigin, HumanMessageMetadata
+from opendatasci.context.base import BaseContextStore
 from opendatasci.context.plans import Plan
 
 logger = logging.getLogger(__name__)
@@ -290,8 +291,8 @@ class ChatHistoryBuilder:
     are recalled exclusively through ``turn_summaries``, never as raw messages.
 
     Pass a *loop_compactor_llm* and a threshold to enable mid-turn compaction;
-    omit either to disable it. Pass *get_current_plan* to recall the session's
-    plan; omit it to disable plan recall.
+    omit either to disable it. Pass *context_store* and *session_id* to recall
+    the session's plan; omit either to disable plan recall.
     """
 
     def __init__(
@@ -299,7 +300,8 @@ class ChatHistoryBuilder:
         summarizer_llm: Any,
         loop_compactor_llm: Any | None = None,
         midturn_compaction_threshold: int | None = None,
-        get_current_plan: "Callable[[], Plan | None] | None" = None,
+        context_store: BaseContextStore | None = None,
+        session_id: str | None = None,
         window_size: int = _CHAT_TURN_SUMMARY_WINDOW_SIZE,
     ) -> None:
         from opendatasci.agents.turn_memory import AgentLoopCompactor  # noqa: PLC0415
@@ -309,7 +311,8 @@ class ChatHistoryBuilder:
             AgentLoopCompactor(llm=loop_compactor_llm) if loop_compactor_llm is not None else None
         )
         self._midturn_compaction_threshold = midturn_compaction_threshold
-        self._get_current_plan = get_current_plan
+        self._context_store = context_store
+        self._session_id = session_id
         self._window_size = window_size
         self._pending_task: asyncio.Task[ChatTurnSummary | None] | None = None
 
@@ -386,8 +389,8 @@ class ChatHistoryBuilder:
 
         recap_messages = build_chat_recap_messages(summaries)
         plan_messages: list[HumanMessage] = []
-        if self._get_current_plan is not None:
-            plan = self._get_current_plan()
+        if self._context_store is not None and self._session_id is not None:
+            plan = self._context_store.get_current_plan(self._session_id)
             if plan is not None:
                 plan_messages = [build_plan_message(plan)]
 

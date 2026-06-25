@@ -1,6 +1,5 @@
 """Tool factories: assemble the right tool sets for main and worker agents."""
 
-from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -118,9 +117,9 @@ def create_agent_tools(
     sandbox: BaseSandbox,
     context: "BaseContextStore | None",
     sandbox_factory: BaseSandboxFactory,
+    session_id: str | None = None,
     store: BaseSkillStore | None = None,
     datasci_config: "OpenDataSciConfig | None" = None,
-    save_plan: "Callable[[str], None] | None" = None,
 ) -> list[BaseTool]:
     """Return the tool list for the main agent.
 
@@ -130,17 +129,17 @@ def create_agent_tools(
     Args:
         workspace:       Workspace container.
         sandbox:         Code execution sandbox.
-        context:         I/O boundary for dataset notes and profiles.
+        context:         I/O boundary for dataset notes and profiles, and the
+                         store plans are persisted to.
         sandbox_factory: Factory used by spawned workers to create their own
                          isolated sandboxes.
+        session_id:      Session the agent's plan is scoped to.  Required
+                         alongside *context* to add ``enter_plan_mode`` and
+                         ``exit_plan_mode`` to the tool list.
         store:           Skill store injected from the caller.  Defaults to a
                          :class:`~opendatasci.skills.local.LocalSkillStore` rooted
                          at ``<context.root>/skills``.
         datasci_config:  LLM configuration forwarded to spawned workers.
-        save_plan:       Callback that persists the final plan via
-                         ``BaseContextStore``.  When provided,
-                         ``enter_plan_mode`` and ``exit_plan_mode`` are added
-                         to the tool list.
     """
     if store is None:
         user_skills_dir = Path(context.root) / "skills" if context is not None else None
@@ -148,8 +147,8 @@ def create_agent_tools(
     tools = _base_tools(workspace, sandbox, context, store)
     if datasci_config is not None:
         tools.extend(create_code_verification_tools(datasci_config))
-    if save_plan is not None:
-        tools.extend(create_planning_tools(save_plan))
+    if context is not None and session_id is not None:
+        tools.extend(create_planning_tools(context, session_id))
     tools.extend(create_critic_tools(store))
     tools.extend(
         create_worker_tools(

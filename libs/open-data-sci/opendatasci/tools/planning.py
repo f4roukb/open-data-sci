@@ -1,6 +1,6 @@
 """Plan-mode tools: enter_plan_mode and exit_plan_mode."""
 
-from typing import Annotated, Callable
+from typing import Annotated
 
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import BaseTool, tool
@@ -8,15 +8,18 @@ from langchain_core.tools.base import InjectedToolCallId
 from langgraph.types import Command
 
 from opendatasci.agents.states import AgentState
+from opendatasci.context.base import BaseContextStore
 
 
 def create_planning_tools(
-    save_plan: Callable[[str], None],
+    context_store: BaseContextStore,
+    session_id: str,
 ) -> list[BaseTool]:
     """Return ``enter_plan_mode`` and ``exit_plan_mode``.
 
     Args:
-        save_plan: Callback that persists the final plan via ``BaseContextStore``.
+        context_store: Store the final plan is persisted to.
+        session_id: Session the plan is scoped to.
     """
 
     @tool
@@ -69,7 +72,7 @@ def create_planning_tools(
         Args:
             final_plan: The complete, ordered plan.
         """
-        save_plan(final_plan)
+        context_store.save_plan(session_id, final_plan)
         return Command(
             update={
                 "is_plan_mode": False,

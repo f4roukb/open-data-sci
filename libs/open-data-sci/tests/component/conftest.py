@@ -52,7 +52,6 @@ if "sandbox_runtime" not in sys.modules:
 # ---------------------------------------------------------------------------
 
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator, Iterable
 from unittest.mock import patch
@@ -64,7 +63,6 @@ from langchain_core.messages import AIMessage
 from opendatasci.agents.agents import Agent
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.local import LocalContextStore
-from opendatasci.context.plans import Plan
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory, SandboxExecResult
 from opendatasci.skills.local import LocalSkillStore
 from opendatasci.tools import create_agent_tools
@@ -234,8 +232,8 @@ async def _build_entered_service(
     ``create_secondary_model`` returns ``None`` (no summarizer), ``with_retry``
     is identity, and ``tools.coding.create_model`` returns a structured-output
     capable stub for the ``verify_python_code`` tool.  Tools are built explicitly
-    (with a sandbox factory and a ``save_plan`` callback) so worker spawning and
-    plan-mode persistence work end-to-end.
+    (with a sandbox factory, context store, and session id) so worker spawning
+    and plan-mode persistence work end-to-end.
     """
     workspace = LocalWorkspace(path)
     workspace_path = Path(workspace.get_reference())
@@ -252,12 +250,10 @@ async def _build_entered_service(
             workspace,
             sandbox,
             context_store,
+            sandbox_factory=factory,
+            session_id=session_id,
             store=skill_store,
             datasci_config=config,
-            sandbox_factory=factory,
-            save_plan=lambda plan: context_store.save_plan(
-                session_id, Plan(content=plan, metadata={"created_at": datetime.now(timezone.utc).isoformat()})
-            ),
         )
 
     with (
