@@ -28,8 +28,8 @@ def reduce_to_ongoing_turn(
     """
     starts_new_turn = any(isinstance(m, HumanMessage) for m in incoming_messages)
     if current_turn_messages and starts_new_turn and is_final_ai_message(current_turn_messages[-1]):
-        return add_messages([], incoming_messages)  # type: ignore[arg-type]
-    return add_messages(current_turn_messages, incoming_messages)  # type: ignore[arg-type]
+        return add_messages([], incoming_messages)  # type: ignore[arg-type, return-value]
+    return add_messages(current_turn_messages, incoming_messages)  # type: ignore[arg-type, return-value]
 
 
 @dataclass
