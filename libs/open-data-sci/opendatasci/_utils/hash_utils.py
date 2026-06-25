@@ -1,6 +1,5 @@
 import asyncio
 from pathlib import Path
-from typing import cast
 
 import xxhash
 
@@ -17,7 +16,7 @@ def _is_visible(file: Path, root: Path) -> bool:
 async def hash_path(path: Path) -> str:
     """Return the 128-bit xxh3 hex digest of *path* (file or directory)."""
     if path.is_file():
-        return cast(str, await run_in_executor(hash_file, path))
+        return await run_in_executor(hash_file, path)
     return await hash_dir(path)
 
 

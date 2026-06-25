@@ -364,7 +364,7 @@ class TestSlashCommands:
         ctrl, ui = _make_controller(service=svc)
         await ctrl.on_submit("/compact")
         svc.compact_chat_history.assert_awaited_once()
-        assert any("condensed history" in m.text for m in ui.messages)
+        assert any("Compaction done" in m.text for m in ui.messages)
 
     async def test_compact_reports_failure(self):
         svc = _make_service_stub(compact_raises=RuntimeError("nope"))

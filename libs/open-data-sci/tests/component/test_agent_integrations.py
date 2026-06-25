@@ -160,19 +160,18 @@ class TestPlanModeFlow:
 
     def test_context_store_plan_persists_to_disk(self, tmp_path):
         from opendatasci.context.local import LocalContextStore
-        from opendatasci.context.plans import Plan
 
         store = LocalContextStore(tmp_path)
         assert store.get_current_plan("abc12345") is None
 
-        store.save_plan("abc12345", Plan(content="Step 1\nStep 2", metadata={}))
+        store.save_plan("abc12345", "Step 1\nStep 2")
         # Plan is read back fresh from disk — no in-memory caching.
         plan = store.get_current_plan("abc12345")
         assert plan is not None
         assert plan.content == "Step 1\nStep 2"
 
         # Save a newer plan — older one is pruned.
-        store.save_plan("abc12345", Plan(content="Step 1\nStep 2\nStep 3", metadata={}))
+        store.save_plan("abc12345", "Step 1\nStep 2\nStep 3")
         plan_files = list(store._plans_root.glob("abc12345_*.json"))
         assert len(plan_files) == 1
         plan = store.get_current_plan("abc12345")
