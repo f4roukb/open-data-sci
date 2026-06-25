@@ -1,6 +1,4 @@
-"""Agent-level memory: message provenance tagging, rolling turn summaries, and the
-turn-scoped context for the LLM call.
-"""
+"""Agent-level chat memory: rolling turn summaries and per-call context assembly."""
 
 import asyncio
 import logging
@@ -52,13 +50,7 @@ def stamp_chat_message_metadata(
     origin: ChatMessageOrigin,
     created_at: datetime | None = None,
 ) -> HumanMessage:
-    """Fill in *message*'s origin/created_at, but only the fields not already set.
-
-    Reads *message*'s current :class:`HumanMessageMetadata`; if both fields are
-    already set, returns *message* unchanged. Otherwise writes the missing
-    ones to ``additional_kwargs`` — never to ``content`` — so they travel with
-    the message through state/checkpoints without ever being regenerated.
-    """
+    """Attach *origin* and *created_at* to *message*, leaving already-set fields unchanged."""
     metadata = HumanMessageMetadata.from_message(message)
     if metadata.origin is not None and metadata.created_at is not None:
         return message
@@ -74,36 +66,18 @@ def stamp_chat_message_metadata(
 
 
 def render_human_message_for_llm(message: HumanMessage) -> HumanMessage:
-    """Return a transient copy of *message* with its metadata tag baked into content.
-
-    The tag comes from *message*'s :class:`HumanMessageMetadata` (falling back
-    to :attr:`ChatMessageOrigin.UNSPECIFIED` + now, only for this render, if
-    unset — see :meth:`HumanMessageMetadata.to_content`). Never mutates
-    *message* and the result is never persisted — it exists only for the
-    outgoing LLM call.
-    """
+    """Return a copy of *message* with its provenance tag prepended to the content."""
     tag = HumanMessageMetadata.from_message(message).to_content()
     return HumanMessage(content=f"{tag}\n{message.content}")
 
 
 def render_messages_for_llm(messages: list[BaseMessage]) -> list[BaseMessage]:
-    """Render every ``HumanMessage`` in *messages* for the LLM call; pass everything else through.
-
-    This is the single chokepoint that turns stamped, clean-content messages
-    (as stored in state) into the tagged, LLM-facing versions — never the
-    reverse, and never in place.
-    """
-    return [
-        render_human_message_for_llm(m) if isinstance(m, HumanMessage) else m for m in messages
-    ]
+    """Render every ``HumanMessage`` in *messages* for the LLM; pass other message types through."""
+    return [render_human_message_for_llm(m) if isinstance(m, HumanMessage) else m for m in messages]
 
 
 def build_plan_message(plan: Plan) -> HumanMessage:
-    """Build the standalone recall message for the current session plan.
-
-    Stamped ``HARNESS`` with the plan's own ``created_at`` metadata (set once,
-    when the plan was saved) — never a freshly generated timestamp.
-    """
+    """Build a recall message for *plan*, preserving its original timestamp."""
     message = HumanMessage(content=plan.to_content())
     created_at = plan.metadata.get("created_at")
     return stamp_chat_message_metadata(
@@ -120,13 +94,10 @@ def build_plan_message(plan: Plan) -> HumanMessage:
 
 @dataclass
 class ChatTurnSummary(LLMDigestibleMixin):
-    """Summary of a single completed conversation turn, or a folded compaction summary.
+    """Summary of a single completed conversation turn.
 
-    ``turn`` is ``None`` for a compaction summary — folds many turns into one
-    record that doesn't correspond to any single turn number (``agent`` then
-    holds the full folded text; ``user``/``actions`` stay empty). Otherwise
-    identical in shape to a per-turn summary and subject to the same rolling
-    FIFO window as any other entry in ``turn_summaries``.
+    A ``turn`` value of ``None`` indicates a folded compaction summary (produced
+    by :class:`ChatHistoryCompactor`) rather than a regular per-turn record.
     """
 
     turn: int | None
@@ -154,12 +125,9 @@ class ChatTurnSummary(LLMDigestibleMixin):
 
 
 def build_chat_recap_messages(turn_summaries: list[ChatTurnSummary]) -> list[HumanMessage]:
-    """Render the rolling turn summaries as standalone recall messages.
+    """Convert *turn_summaries* into recall messages, oldest first.
 
-    One ``HumanMessage`` per summary, in list order (oldest first) — including
-    any folded compaction summary, which is just another entry in the same
-    list. Each is stamped ``HARNESS`` with the summary's own timestamp (set
-    once, never regenerated). Returns an empty list when there's nothing to recall.
+    Returns an empty list when *turn_summaries* is empty.
     """
     messages: list[HumanMessage] = []
     for summary in turn_summaries:
@@ -203,11 +171,7 @@ class ChatTurnSummarizer:
                 )
 
     async def summarize_turn(self, turn_messages: list[BaseMessage]) -> ChatTurnSummary | None:
-        """Summarize *turn_messages* and return a record, falling back to raw text on failure.
-
-        The returned record's ``turn`` index is left as ``0``; the caller assigns
-        the running turn number. Returns ``None`` for an empty turn.
-        """
+        """Summarize *turn_messages* into a :class:`ChatTurnSummary`, or ``None`` for an empty turn."""
         if not turn_messages:
             return None
 
@@ -260,11 +224,8 @@ class ChatTurnContext:
     """The assembled messages for a single LLM call.
 
     Attributes:
-        messages: Recall messages first — one ``HumanMessage`` per rolling turn
-            summary (see :func:`build_chat_recap_messages`), then the current
-            plan (if any, see :func:`build_plan_message`) — followed by the
-            ongoing turn's own messages. Already rendered for the LLM (see
-            :func:`render_messages_for_llm`); never contains SystemMessages.
+        messages: Turn-summary recall messages, followed by the current plan (if any),
+            followed by the ongoing turn's messages — all rendered for the LLM.
         turn_summaries: Updated rolling summary list to write back to agent state.
     """
 
@@ -275,24 +236,13 @@ class ChatTurnContext:
 class ChatHistoryBuilder:
     """Builds the per-call :class:`ChatTurnContext` from agent state.
 
-    Handles, in sequence, inside :meth:`build`:
+    Assembles the message list for each LLM call: rolls in pending turn summaries,
+    optionally compacts an oversized ongoing turn, prepends summary and plan recall
+    messages, then renders everything for the LLM.
 
-    1. Flushing any pending background turn summary and updating the rolling window.
-    2. Applying mid-turn compaction when the ongoing turn exceeds the token budget.
-    3. Rendering the rolling turn summaries and the current plan as standalone
-       recall messages, prepended to the ongoing turn's messages.
-    4. Rendering every outgoing ``HumanMessage`` for the LLM call (see
-       :func:`render_messages_for_llm`) — the only place formatting happens;
-       nothing here is ever written back to state.
-
-    ``ongoing_turn_messages`` passed into :meth:`build` is expected to already
-    be scoped to the ongoing turn only (see
-    :func:`opendatasci.agents.states.reduce_to_ongoing_turn`) — completed turns
-    are recalled exclusively through ``turn_summaries``, never as raw messages.
-
-    Pass a *loop_compactor_llm* and a threshold to enable mid-turn compaction;
-    omit either to disable it. Pass *context_store* and *session_id* to recall
-    the session's plan; omit either to disable plan recall.
+    Pass a *loop_compactor_llm* and a *midturn_compaction_threshold* to enable
+    mid-turn compaction; omit either to disable it. Pass *context_store* and
+    *session_id* to include the session's current plan; omit either to skip it.
     """
 
     def __init__(
@@ -319,11 +269,8 @@ class ChatHistoryBuilder:
     def schedule_turn_summarization(self, completed_turn_messages: list[BaseMessage]) -> None:
         """Schedule background summarization of *completed_turn_messages*.
 
-        A no-op when *completed_turn_messages* is empty. Raises when the turn
-        is still in progress.
-
         Raises:
-            ValueError: if the turn is still ongoing (incomplete).
+            ValueError: if the turn is still in progress (incomplete).
         """
         if not completed_turn_messages:
             return
@@ -340,11 +287,7 @@ class ChatHistoryBuilder:
             self._pending_task = None
 
     async def flush(self) -> ChatTurnSummary | None:
-        """Await and clear the pending summarization task.
-
-        Returns ``None`` when there is no pending task or the task failed;
-        exceptions are swallowed and logged.
-        """
+        """Await and clear the pending summarization task, returning its result or ``None``."""
         if self._pending_task is None:
             return None
         task, self._pending_task = self._pending_task, None
@@ -361,14 +304,7 @@ class ChatHistoryBuilder:
         ongoing_turn_messages: list[BaseMessage],
         turn_summaries: list[ChatTurnSummary],
     ) -> ChatTurnContext:
-        """Build the :class:`ChatTurnContext` for the current LLM call.
-
-        Flushes any pending summary, trims the rolling window, applies mid-turn
-        compaction if needed, prepends the recall messages built from the
-        (trimmed) *turn_summaries* and the current plan, then renders the whole
-        list for the LLM. *ongoing_turn_messages* must already be scoped to the
-        current turn — this method never strips earlier turns itself.
-        """
+        """Build the :class:`ChatTurnContext` for the current LLM call."""
         summaries = list(turn_summaries)
 
         record = await self.flush()
@@ -407,16 +343,7 @@ class ChatHistoryBuilder:
 
 
 class ChatHistoryCompactor:
-    """Folds the rolling per-turn summaries into a single compaction summary.
-
-    Backs an explicit "compact history" action: the LLM reads every entry in
-    ``turn_summaries`` (which may itself already include an older compaction
-    summary — compacting twice just folds it again) and produces one denser
-    summary, returned as a fresh :class:`ChatTurnSummary` with ``turn=None``.
-    Raw turn messages are never involved here — by the time a turn is
-    summarized, its messages are already gone (see
-    :func:`opendatasci.agents.states.reduce_to_ongoing_turn`).
-    """
+    """Folds the rolling per-turn summaries into a single :class:`ChatTurnSummary`."""
 
     def __init__(self, llm: Any) -> None:
         self._llm = llm

@@ -25,7 +25,13 @@ try:
 except ImportError:
     _TUIImage = None
 
-from .adapter import EphemeralHandle, MessageHandle, PendingMessageHandle, ThinkingHandle, TurnStatusHandle
+from .adapter import (
+    EphemeralHandle,
+    MessageHandle,
+    PendingMessageHandle,
+    ThinkingHandle,
+    TurnStatusHandle,
+)
 from .commands import SLASH_COMMANDS, _fmt_model
 from .models import SPINNER, SPINNER_INTERVAL
 from .theme import active as theme

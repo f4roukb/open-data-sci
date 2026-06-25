@@ -19,11 +19,7 @@ class BaseContextStore(ABC):
 
     @abstractmethod
     def session(self) -> AbstractAsyncContextManager[Self]:
-        """Return an async context manager that manages this store's lifecycle.
-
-        Implementations should yield ``self``, performing any required setup on
-        entry and teardown (flushing, releasing resources, etc.) on exit.
-        """
+        """Return an async context manager that manages this store's lifecycle."""
 
     @property
     @abstractmethod
@@ -45,7 +41,7 @@ class BaseContextStore(ABC):
 
     @abstractmethod
     async def get_profile_info(self, dataset_path: str) -> tuple[str, str, str | None]:
-        """Return ``(resolved_path_str, hash_hex, existing_profile_or_None)``."""
+        """Return ``(resolved_path, content_hash, existing_profile_or_None)`` for *dataset_path*."""
 
     @abstractmethod
     def save_dataset_profile(self, hash_hex: str, content: str) -> None:
@@ -53,11 +49,7 @@ class BaseContextStore(ABC):
 
     @abstractmethod
     def get_current_plan(self, session_id: str) -> Plan | None:
-        """Return the most recent plan for *session_id*, or ``None``.
-
-        Always resolved fresh from durable storage — implementations must not
-        cache the current plan in an instance attribute.
-        """
+        """Return the most recent plan for *session_id*, or ``None``."""
 
     @abstractmethod
     def save_plan(self, session_id: str, content: str) -> None:

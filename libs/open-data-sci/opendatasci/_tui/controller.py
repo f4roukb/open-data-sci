@@ -402,6 +402,7 @@ class CLIController:
         return message.agent_query
 
     async def _run_turn(self, query: str) -> None:
+        assert self._service is not None
         self._agent_running = True
         presenter = _TurnPresenter(self._ui)
         try:

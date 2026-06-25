@@ -15,12 +15,7 @@ def create_planning_tools(
     context_store: BaseContextStore,
     session_id: str,
 ) -> list[BaseTool]:
-    """Return ``enter_plan_mode`` and ``exit_plan_mode``.
-
-    Args:
-        context_store: Store the final plan is persisted to.
-        session_id: Session the plan is scoped to.
-    """
+    """Return the ``enter_plan_mode`` and ``exit_plan_mode`` tools for *session_id*."""
 
     @tool
     def enter_plan_mode(

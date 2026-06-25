@@ -68,14 +68,12 @@ class LocalContextStore(BaseContextStore):
     # ── Internal notes storage ────────────────────────────────────────────────
 
     def _find(self, hash_hex: str) -> Path | None:
-        """Locate an existing notes file for *hash_hex* under any date prefix."""
         if self._notes_root.exists():
             for p in self._notes_root.rglob(f"{hash_hex}.md"):
                 return p
         return None
 
     def _resolve_notes_path(self, hash_hex: str) -> Path:
-        """Reuse an existing file for *hash_hex*, or build a new date-keyed path."""
         existing = self._find(hash_hex)
         if existing is not None:
             return existing
@@ -109,16 +107,7 @@ class LocalContextStore(BaseContextStore):
     # ── BaseContextStore interface ──────────────────────────────────
 
     async def read_dataset_info(self, dataset_path: str) -> str:
-        """Return combined dataset info: profile card (if any) + session notes.
-
-        The returned Markdown string has clearly labelled sections:
-
-        ``# DATASET PROFILING`` — auto-generated stats (shape, dtypes, etc.)
-        ``# DATASET NOTES``     — persistent notes written by the agent
-
-        If no profile exists, only the notes section is included.
-        If no notes exist yet, a placeholder scaffold is returned.
-        """
+        """Return combined dataset info for *dataset_path*: profile card (if any) and session notes."""
         path = self._resolve_dataset_path(dataset_path)
         hash_hex = await hash_path(path)
 
@@ -139,10 +128,7 @@ class LocalContextStore(BaseContextStore):
         update: str,
         merge: bool = True,
     ) -> str:
-        """Persist dataset notes and return the path to the stored notes file.
-
-        Only notes are modified — the profile card (if any) is never touched.
-        """
+        """Persist dataset notes for *dataset_path* and return the path to the stored notes file."""
         path = self._resolve_dataset_path(dataset_path)
         hash_hex = await hash_path(path)
 
@@ -160,11 +146,7 @@ class LocalContextStore(BaseContextStore):
         return self._notes_file_path(hash_hex)
 
     async def get_profile_info(self, dataset_path: str) -> tuple[str, str, str | None]:
-        """Return ``(resolved_path_str, hash_hex, existing_profile_or_None)``.
-
-        Used by the ``profile_dataset`` tool to check for a cached card before
-        running the profiling sandbox pass.
-        """
+        """Return ``(resolved_path, content_hash, existing_profile_or_None)`` for *dataset_path*."""
         path = self._resolve_dataset_path(dataset_path)
         hash_hex = await hash_path(path)
         return str(path), hash_hex, self._load_profile(hash_hex)
@@ -198,7 +180,7 @@ class LocalContextStore(BaseContextStore):
         return None
 
     def save_plan(self, session_id: str, content: str) -> None:
-        """Persist a new plan with *content* for *session_id* and prune stale files."""
+        """Persist a new plan for *session_id*."""
         self._plans_root.mkdir(parents=True, exist_ok=True)
         now = _datetime.now(timezone.utc)
         stamp = now.strftime("%Y%m%dT%H%M%S%fZ")
@@ -215,7 +197,6 @@ class LocalContextStore(BaseContextStore):
         self.prune()
 
     def prune(self) -> None:
-        """Keep only the most recent plan file per session_id."""
         if not self._plans_root.exists():
             return
         by_session: dict[str, list[Path]] = {}

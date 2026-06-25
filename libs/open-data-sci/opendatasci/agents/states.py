@@ -1,6 +1,6 @@
 from abc import ABC
 from dataclasses import dataclass, field
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.graph.message import add_messages
@@ -27,13 +27,9 @@ def reduce_to_ongoing_turn(
     messages.
     """
     starts_new_turn = any(isinstance(m, HumanMessage) for m in incoming_messages)
-    if (
-        current_turn_messages
-        and starts_new_turn
-        and is_final_ai_message(current_turn_messages[-1])
-    ):
-        return add_messages([], incoming_messages)
-    return add_messages(current_turn_messages, incoming_messages)
+    if current_turn_messages and starts_new_turn and is_final_ai_message(current_turn_messages[-1]):
+        return cast(list[BaseMessage], add_messages([], incoming_messages))  # type: ignore[arg-type]
+    return cast(list[BaseMessage], add_messages(current_turn_messages, incoming_messages))  # type: ignore[arg-type]
 
 
 @dataclass

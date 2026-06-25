@@ -88,8 +88,6 @@ __all__ = [
 
 
 class BaseOpenDataSciAgent(ABC):
-    """Abstract interface for the data science agent."""
-
     @abstractmethod
     def astream(self, query: str) -> AsyncIterator[AgentStreamEvent]: ...
 
@@ -222,11 +220,9 @@ class Agent(BaseOpenDataSciAgent):
 
     @property
     def graph(self) -> CompiledStateGraph:
-        """Return the underlying compiled state graph."""
         return self._graph
 
     def _get_active_llm_with_tools(self, state: AgentState) -> _RetryRunnable:
-        """Return the LLM binding that matches the current agent mode."""
         if state.is_self_review_mode:
             return self._llm_with_tools_self_review
         if state.is_plan_mode:
@@ -251,13 +247,6 @@ class Agent(BaseOpenDataSciAgent):
 
     @classmethod
     def _prepare_user_message(cls, query: str) -> HumanMessage:
-        """Build the turn-opening HumanMessage.
-
-        ``is_input_on_interrupt`` is recorded so the turn's boundary can be
-        recovered later from the message (see ``is_ongoing_turn``), instead of
-        being held as per-turn agent state. Origin (``USER``) and timestamp are
-        stamped once here too — all via :class:`HumanMessageMetadata`.
-        """
         metadata = HumanMessageMetadata(
             origin=ChatMessageOrigin.USER,
             created_at=datetime.now(timezone.utc),
@@ -270,11 +259,10 @@ class Agent(BaseOpenDataSciAgent):
     # ------------------------------------------------------------------
 
     async def astream(self, user_input: str) -> AsyncIterator[AgentStreamEvent]:
-        """Stream a response to *user_input*, yielding ``AgentStreamEvent`` objects.
+        """Stream a response to *user_input*, yielding :class:`AgentStreamEvent` objects.
 
-        If the previous call ended with an ``input_required`` event, pass the
-        user's answer here to resume the interrupted graph run.  Otherwise
-        *user_input* is treated as a new query.
+        If the previous call ended with an :class:`~opendatasci.streaming.InputRequiredEvent`,
+        pass the user's answer here to resume; otherwise *user_input* starts a new turn.
         """
         config: RunnableConfig = {
             "recursion_limit": AGENT_RECURSION_LIMIT,
@@ -351,12 +339,9 @@ class Agent(BaseOpenDataSciAgent):
     async def compact_chat_history(self) -> str:
         """Fold the rolling turn summaries into a single compaction summary.
 
-        Has the same effect on the conversation as :meth:`clear_chat_history`
-        (the ongoing turn's raw messages are wiped), except ``turn_summaries``
-        ends up holding one compaction record instead of being emptied — it
-        then ages out of the rolling window exactly like any other summary, via
-        the usual FIFO eviction. Returns the compaction summary's text, or a
-        placeholder when there is nothing to compact.
+        Clears the ongoing turn's messages like :meth:`clear_chat_history`, but
+        retains a condensed memory of the conversation instead of discarding it.
+        Returns the compaction text, or a placeholder when there is nothing to compact.
         """
         snapshot = self._graph.get_state(self._graph_config)
         turn_summaries = snapshot.values.get("turn_summaries", [])
