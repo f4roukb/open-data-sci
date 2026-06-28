@@ -45,15 +45,11 @@ from opendatasci.tools.mcp import load_mcp_servers
 
 from . import theme as _theme
 from .adapter import (
-    EphemeralHandle,
-    MessageHandle,
     PendingMessageHandle,
     TurnStatusHandle,
     UIAdapter,
 )
 from .commands import (
-    SLASH_COMMAND_DESCRIPTIONS,
-    SLASH_COMMANDS,
     format_help_message,
     format_models_message,
     format_themes_message,
@@ -63,10 +59,6 @@ from .file_refs import (
     PasteAttachment,
     _build_agent_query,
     _build_user_display,
-    _discover_files,
-    _FileRef,
-    _find_at_fragment,
-    _find_slash_fragment,
     _parse_file_refs,
     _split_existing_file_refs,
 )
@@ -75,27 +67,6 @@ from .presenter import _TurnPresenter
 from .theme import active as theme
 
 logger = logging.getLogger(__name__)
-
-
-# Re-export handle ABCs so existing imports from this module keep working.
-__all__ = [
-    "CLIController",
-    "EphemeralHandle",
-    "MessageHandle",
-    "SLASH_COMMAND_DESCRIPTIONS",
-    "SLASH_COMMANDS",
-    "TurnStatusHandle",
-    "UIAdapter",
-    "_FileRef",
-    "_build_agent_query",
-    "_build_user_display",
-    "_discover_files",
-    "_find_at_fragment",
-    "_find_slash_fragment",
-    "_parse_file_refs",
-    "_split_existing_file_refs",
-    "PasteAttachment",
-]
 
 
 class CLIController:

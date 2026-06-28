@@ -35,6 +35,8 @@ from opendatasci.sandbox.base import (
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_COMMAND_TIMEOUT = 43200  # 12 hours
+
 # Install commands per platform, used to build an actionable error message when
 # the native sandbox binaries (bwrap/socat/ripgrep) are missing. ``pip install``
 # cannot provide these — they must come from the OS package manager.
@@ -181,7 +183,9 @@ class SRTSandbox(BaseSandbox):
         command_timeout: int | None = None,
     ) -> None:
         self._workspace_path = workspace_path
-        self._command_timeout = command_timeout if command_timeout is not None else 1800
+        self._command_timeout = (
+            command_timeout if command_timeout is not None else _DEFAULT_COMMAND_TIMEOUT
+        )
 
         self._session_dir = Path(tempfile.mkdtemp(prefix="opendatasci_srt_"))
         self._state_path = self._session_dir / "state.pkl"

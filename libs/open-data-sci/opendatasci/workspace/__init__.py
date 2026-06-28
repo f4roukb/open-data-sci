@@ -3,7 +3,4 @@
 from opendatasci.workspace.base import BaseWorkspace
 from opendatasci.workspace.local import LocalWorkspace
 
-__all__ = [
-    "BaseWorkspace",
-    "LocalWorkspace",
-]
+__all__ = ["BaseWorkspace", "LocalWorkspace"]

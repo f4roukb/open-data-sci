@@ -1,9 +1,4 @@
 from opendatasci.skills.base import BaseSkillStore, Skill
-from opendatasci.skills.local import SKILL_LABELS, LocalSkillStore
+from opendatasci.skills.local import LocalSkillStore
 
-__all__ = [
-    "BaseSkillStore",
-    "LocalSkillStore",
-    "Skill",
-    "SKILL_LABELS",
-]
+__all__ = ["BaseSkillStore", "Skill", "LocalSkillStore"]

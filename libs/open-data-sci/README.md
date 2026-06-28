@@ -112,7 +112,7 @@ model: claude-sonnet-4-6
 secondary_provider: openai
 secondary_model: gpt-4o-mini
 temperature: 0.1
-thinking_budget: 8000
+thinking_budget: 8192
 ```
 
 ```bash
@@ -159,7 +159,6 @@ opendatasci PATH [OPTIONS]
 | `--secondary-model` | *(provider default)* | Secondary model name for lightweight tasks (summarisation, etc.) |
 | `--api-key` | *(env var)* | API key for the primary provider. Falls back to the standard env var for the selected provider |
 | `--theme` | `default` | Colour palette. Choices: `default`, `accessible`, `light`, `solarized`, `dracula`. Run `/themes` inside the TUI for descriptions |
-| `--debug` | `false` | Enable debug output — writes a detailed `opendatasci_debug.log` |
 | `--config` | *(none)* | Path to a YAML file containing `OpenDataSciConfig` fields; explicit TUI flags take precedence |
 | `--list-providers` | | Print all supported providers and their default models, then exit |
 | `--version` | | Print the installed version, then exit |
@@ -298,7 +297,19 @@ async with create_agent("data.parquet", config=config) as agent:
 | `google_cloud_project` | GCP project ID for Vertex AI (env: `GOOGLE_CLOUD_PROJECT`) |
 | `google_cloud_location` | Vertex AI region (env: `GOOGLE_CLOUD_LOCATION`) |
 | `azure_endpoint` | Azure OpenAI resource endpoint URL (env: `AZURE_OPENAI_ENDPOINT`) |
+| `azure_api_version` | Azure OpenAI API version — defaults to `2025-01-01-preview` (env: `AZURE_OPENAI_API_VERSION`) |
 | `llm_server_base_url` | Custom API base URL — required for `ollama` and `openai_compatible_server` (env: `LLM_SERVER_BASE_URL`) |
+| `temperature` | Sampling temperature — ignored for Anthropic/Bedrock when extended thinking is active (env: `TEMPERATURE`) |
+| `thinking_budget` | Token budget for extended thinking, Anthropic and Bedrock only (env: `THINKING_BUDGET`) |
+| `name` | Display name for the agent — defaults to `"Sai"` (env: `NAME`) |
+| `mcp_servers` | List of MCP server URLs the agent may connect to (env: `MCP_SERVERS`) |
+| `extra_web_domains` | Additional hostnames the `fetch_url` tool may retrieve, on top of the built-in allowlist (env: `EXTRA_FETCH_DOMAINS`) |
+| `override_web_domains` | When set, replaces the built-in domain allowlist entirely — `extra_web_domains` is still applied on top |
+| `skills_directory` | Path to a directory of custom skill files loaded in addition to built-ins (env: `SKILLS_DIRECTORY`) |
+| `builtin_skills_directory` | Path to the built-in skills directory — override only to replace defaults entirely (env: `BUILTIN_SKILLS_DIRECTORY`) |
+| `worker_timeout_seconds` | Max seconds to wait for spawned workers to finish — `null` disables the timeout, default `300` (env: `WORKER_TIMEOUT_SECONDS`) |
+| `midturn_compaction_threshold` | Token count at which context is compacted mid-turn — default `96000` (env: `MIDTURN_COMPACTION_THRESHOLD`) |
+| `local_code_exec_timeout` | Max seconds for a single sandboxed code-execution run — default `1800` (env: `CODE_EXEC_TIMEOUT`) |
 
 ---
 
@@ -329,19 +340,41 @@ Place these files inside your workspace's `.opendatasci/` directory:
 
 | Path | Purpose |
 |------|---------|
-| `.opendatasci/mcp.json` | MCP server URLs — connects the agent to external tool servers |
+| `.opendatasci/mcp.json` | MCP server definitions — connects the agent to external tool servers |
 | `.opendatasci/plans/` | Persisted plan files — auto-managed, one file per planning session |
+
+`mcp.json` uses the same convention as Cursor:
+
+```json
+{
+  "mcpServers": {
+    "my-server":   { "url": "http://localhost:8080" },
+    "another":     { "url": "http://localhost:9000" }
+  }
+}
+```
 
 ### Environment variables
 
 | Variable | Description |
 |----------|-------------|
 | `ANTHROPIC_API_KEY` | API key for the Anthropic provider |
-| `OPENAI_API_KEY` | API key for the OpenAI provider |
-| `REGION` | Cloud provider region |
+| `OPENAI_API_KEY` | API key for the OpenAI / OpenAI-compatible server provider |
+| `GOOGLE_API_KEY` | API key for the Google Gemini provider |
+| `AZURE_OPENAI_API_KEY` | API key for the Azure OpenAI provider |
+| `REGION` | AWS region for Bedrock |
+| `GOOGLE_CLOUD_PROJECT` | GCP project ID for Vertex AI |
+| `GOOGLE_CLOUD_LOCATION` | Vertex AI region / location |
+| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI resource endpoint URL |
+| `AZURE_OPENAI_API_VERSION` | Azure OpenAI API version (default: `2025-01-01-preview`) |
 | `LLM_SERVER_BASE_URL` | Custom API base URL — used by `ollama` and `openai_compatible_server` providers |
-| `SKILLS_DIRECTORY` | Path to a directory of user-defined skill files (overrides none by default) |
-| `BUILTIN_SKILLS_DIRECTORY` | Path to the built-in skills directory (defaults to the bundled `resources/skills`) |
+| `TEMPERATURE` | LLM sampling temperature |
+| `THINKING_BUDGET` | Token budget for extended thinking (Anthropic and Bedrock only) |
+| `MCP_SERVERS` | Comma-separated list of MCP server URLs |
+| `SKILLS_DIRECTORY` | Path to a directory of user-defined skill files |
+| `BUILTIN_SKILLS_DIRECTORY` | Path to the built-in skills directory (defaults to the bundled skills) |
+| `WORKER_TIMEOUT_SECONDS` | Max seconds to wait for spawned workers (default: `300`) |
+| `MIDTURN_COMPACTION_THRESHOLD` | Token count at which context is compacted mid-turn (default: `96000`) |
 | `CODE_EXEC_TIMEOUT` | Max seconds for a single sandboxed code execution (default: `1800`) |
 
 A `.env` file in the working directory is loaded automatically at startup.

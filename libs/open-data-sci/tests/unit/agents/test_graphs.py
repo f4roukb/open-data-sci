@@ -3,7 +3,6 @@
 
 from unittest.mock import MagicMock
 
-from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 

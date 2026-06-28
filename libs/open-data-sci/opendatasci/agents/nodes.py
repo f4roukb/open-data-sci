@@ -4,8 +4,10 @@ from typing import Any, Awaitable, Callable, Optional
 from langchain_core.messages import SystemMessage
 from langchain_core.runnables import RunnableConfig
 
-from opendatasci.agents.chat_memory import ChatHistoryBuilder, render_messages_for_llm
+from opendatasci._utils.mixins import RenderableMessageMixin
+from opendatasci.agents.chat_history import ChatHistoryBuilder
 from opendatasci.agents.states import AgentState
+from opendatasci.memory.messages import AgentMessage
 from opendatasci.models.factory import _RetryRunnable
 
 BuildSystemContext = Callable[[AgentState], list[SystemMessage]]
@@ -58,15 +60,19 @@ class AgentNode(BaseNode):
 
         if self._chat_history_builder is not None:
             turn_context = await self._chat_history_builder.build(
-                state.messages, state.turn_summaries
+                state.messages, state.turn_summaries, state.chat_history_compaction
             )
             updates["turn_summaries"] = turn_context.turn_summaries
+            updates["chat_history_compaction"] = turn_context.chat_history_compaction
             system = self._build_system_context(state)
             messages = system + turn_context.messages
         else:
             system = self._build_system_context(state)
-            messages = system + render_messages_for_llm(list(state.messages))
+            messages = system + [
+                m.render() if isinstance(m, RenderableMessageMixin) else m for m in state.messages
+            ]
 
-        response = await self._get_llm_with_tools(state).ainvoke(messages, config)
+        _raw = await self._get_llm_with_tools(state).ainvoke(messages, config)
+        response = AgentMessage.from_langchain(_raw)
         updates["messages"] = [response]
         return updates

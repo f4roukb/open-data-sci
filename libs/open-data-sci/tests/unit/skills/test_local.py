@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from opendatasci.skills import SKILL_LABELS, Skill
-from opendatasci.skills.local import _BUILTIN_SKILLS_DIRECTORY, LocalSkillStore
+from opendatasci.skills import Skill
+from opendatasci.skills.local import _BUILTIN_SKILLS_DIRECTORY, LocalSkillStore, SKILL_LABELS
 
 
 class TestBuiltinSkills:

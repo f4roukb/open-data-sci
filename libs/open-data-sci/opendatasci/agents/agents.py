@@ -8,7 +8,6 @@ from typing import Any, AsyncIterator, Callable
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
-    HumanMessage,
     RemoveMessage,
     SystemMessage,
     ToolMessage,
@@ -20,25 +19,22 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
-from opendatasci._utils.langchain_utils import (
+from opendatasci._utils.graph_utils import is_interrupt_state_snapshot
+from opendatasci._utils.message_utils import (
     get_final_ai_message,
     get_message_text_content,
-    is_interrupt_state_snapshot,
+    is_final_ai_message,
 )
 from opendatasci._utils.streaming_utils import format_stream_error
-from opendatasci.agents._chat_messages import ChatMessageOrigin, HumanMessageMetadata
-from opendatasci.agents.chat_memory import (
-    ChatHistoryBuilder,
-    ChatHistoryCompactor,
-    extract_thinking_and_text,
-    stamp_chat_message_metadata,
-)
+from opendatasci.agents.chat_history import ChatHistoryBuilder
 from opendatasci.agents.graphs import AgentGraphFactory, WorkerGraphFactory
 from opendatasci.agents.states import AgentState
-from opendatasci.agents.turn_memory import TurnRewinder
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.base import BaseContextStore
 from opendatasci.context.local import LocalContextStore
+from opendatasci.memory.chat_memory import ChatHistoryCompactor
+from opendatasci.memory.messages import HarnessMessage, UserMessage
+from opendatasci.memory.turn_memory import TurnRewinder
 from opendatasci.models.factory import (
     _RetryRunnable,
     create_model,
@@ -76,15 +72,6 @@ WORKER_MAX_STEPS: int = 50
 OnEventCallback = Callable[[str, str, "dict[str, Any] | None"], None]
 
 _ARGS_PREVIEW_LEN = 80
-
-__all__ = [
-    "Agent",
-    "ConcurrentWorkerAgent",
-    "SUBAGENT_TAG",
-    "WORKER_MAX_STEPS",
-    "OnEventCallback",
-    "extract_thinking_and_text",
-]
 
 
 class BaseOpenDataSciAgent(ABC):
@@ -246,13 +233,8 @@ class Agent(BaseOpenDataSciAgent):
         ).build()
 
     @classmethod
-    def _prepare_user_message(cls, query: str) -> HumanMessage:
-        metadata = HumanMessageMetadata(
-            origin=ChatMessageOrigin.USER,
-            created_at=datetime.now(timezone.utc),
-            is_input_on_interrupt=False,
-        )
-        return metadata.attach_to(HumanMessage(content=query))
+    def _prepare_user_message(cls, query: str) -> UserMessage:
+        return UserMessage(content=query, created_at=datetime.now(timezone.utc))
 
     # ------------------------------------------------------------------
     # Public API
@@ -316,7 +298,7 @@ class Agent(BaseOpenDataSciAgent):
         ongoing_turn_messages = snapshot.values.get("messages", [])
         if not ongoing_turn_messages:
             return
-        self._chat_history_builder.cancel_pending()
+        self._chat_history_builder.cancel_pending_tasks()
         rewinder = TurnRewinder()
         kept_messages = rewinder.rewind_last_turn(ongoing_turn_messages)
         removed = ongoing_turn_messages[len(kept_messages) :]
@@ -330,8 +312,8 @@ class Agent(BaseOpenDataSciAgent):
         """Clear conversation history and rolling memory (preserves session state)."""
         snapshot = await self._graph.aget_state(self._graph_config)
         ongoing_turn_messages = snapshot.values.get("messages", [])
-        self._chat_history_builder.cancel_pending()
-        updates: dict[str, Any] = {"turn_summaries": []}
+        self._chat_history_builder.cancel_pending_tasks()
+        updates: dict[str, Any] = {"turn_summaries": [], "chat_history_compaction": None}
         if ongoing_turn_messages:
             updates["messages"] = [RemoveMessage(id=msg.id) for msg in ongoing_turn_messages]
         self._graph.update_state(self._graph_config, updates)
@@ -339,26 +321,44 @@ class Agent(BaseOpenDataSciAgent):
     async def compact_chat_history(self) -> str:
         """Fold the rolling turn summaries into a single compaction summary.
 
-        Clears the ongoing turn's messages like :meth:`clear_chat_history`, but
-        retains a condensed memory of the conversation instead of discarding it.
+        Includes any existing compaction, all turn summaries, and the current
+        completed turn (if any) in the compaction context. Clears turn summaries
+        and replaces any existing compaction with the new one. An ongoing (incomplete)
+        turn is left untouched.
+
         Returns the compaction text, or a placeholder when there is nothing to compact.
         """
         snapshot = self._graph.get_state(self._graph_config)
         turn_summaries = snapshot.values.get("turn_summaries", [])
+        existing_compaction = snapshot.values.get("chat_history_compaction", None)
+        current_messages = snapshot.values.get("messages", [])
+
+        # Include the current turn only when it is complete.
+        completed_messages = (
+            current_messages
+            if current_messages and is_final_ai_message(current_messages[-1])
+            else []
+        )
 
         compactor = ChatHistoryCompactor(self._llm)
         try:
-            compaction_summary = await compactor.compact(turn_summaries)
+            compaction_summary = await compactor.compact(
+                existing_compaction=existing_compaction,
+                turn_summaries=turn_summaries,
+                completed_messages=completed_messages,
+            )
         except ValueError:
             return "(no conversation to compact)"
 
-        ongoing_turn_messages = snapshot.values.get("messages", [])
-        self._chat_history_builder.cancel_pending()
-        updates: dict[str, Any] = {"turn_summaries": [compaction_summary]}
-        if ongoing_turn_messages:
-            updates["messages"] = [RemoveMessage(id=msg.id) for msg in ongoing_turn_messages]
+        self._chat_history_builder.cancel_pending_tasks()
+        updates: dict[str, Any] = {
+            "turn_summaries": [],
+            "chat_history_compaction": compaction_summary,
+        }
+        if completed_messages:
+            updates["messages"] = [RemoveMessage(id=msg.id) for msg in completed_messages]
         self._graph.update_state(self._graph_config, updates)
-        return compaction_summary.agent
+        return compaction_summary.content
 
 
 class ConcurrentWorkerAgent:
@@ -405,11 +405,8 @@ class ConcurrentWorkerAgent:
     ) -> str:
         """Execute *task* to completion and return the final text response."""
         self._current_system_prompt = system_prompt
-        task_message = stamp_chat_message_metadata(
-            HumanMessage(content=task), ChatMessageOrigin.HARNESS
-        )
         initial_state = AgentState(
-            messages=[task_message],
+            messages=[HarnessMessage(content=task)],
             active_skills=list(initial_active_skills or []),
         )
         invoke_config: RunnableConfig = {

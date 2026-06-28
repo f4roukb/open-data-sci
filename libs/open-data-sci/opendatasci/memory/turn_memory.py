@@ -7,7 +7,8 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_core.messages.utils import count_tokens_approximately
 from pydantic import BaseModel
 
-from opendatasci._utils.langchain_utils import is_ongoing_turn, render_turn
+from opendatasci._utils.message_utils import render_turn
+from opendatasci.memory.messages import HarnessMessage, is_ongoing_turn
 from opendatasci.prompts.prompt_templates import MIDTURN_COMPACTOR_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,7 @@ class AgentLoopCompactor:
             result: _CompactedAgentLoop = await self._structured_llm.ainvoke(
                 [
                     SystemMessage(content=self._system_prompt),
-                    HumanMessage(content=render_turn(intermediate)),
+                    HarnessMessage(content=render_turn(intermediate)),
                 ]
             )
 

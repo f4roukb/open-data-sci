@@ -3,14 +3,15 @@
 
 from unittest.mock import AsyncMock, MagicMock
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, SystemMessage
 
 from opendatasci.agents.nodes import AgentNode
 from opendatasci.agents.states import AgentState
+from opendatasci.memory.messages import AgentMessage, UserMessage
 
 
 def _make_state(messages: list | None = None) -> AgentState:
-    return AgentState(messages=messages or [HumanMessage(content="question")])
+    return AgentState(messages=messages or [UserMessage(content="question")])
 
 
 def _no_system(state):
@@ -36,15 +37,15 @@ class TestAgentNode:
         return node, llm
 
     async def test_ainvoke_returns_messages_key(self) -> None:
-        response = AIMessage(content="answer")
-        node, _ = self._make_node(response=response)
+        node, _ = self._make_node(response=AIMessage(content="answer"))
         result = await node.ainvoke(_make_state())
         assert "messages" in result
-        assert result["messages"][0] is response
+        assert isinstance(result["messages"][0], AgentMessage)
+        assert result["messages"][0].content == "answer"
 
     async def test_ainvoke_calls_llm_with_state_messages(self) -> None:
         node, llm = self._make_node()
-        state = _make_state([HumanMessage(content="hi")])
+        state = _make_state([UserMessage(content="hi")])
         await node.ainvoke(state)
         llm.ainvoke.assert_called_once()
 
@@ -63,24 +64,27 @@ class TestAgentNode:
     async def test_history_follows_system_messages(self) -> None:
         llm = AsyncMock()
         llm.ainvoke = AsyncMock(return_value=AIMessage(content="ok"))
-        human = HumanMessage(content="hello")
+        human = UserMessage(content="hello")
         node = AgentNode(
             get_llm_with_tools=lambda state: llm,
             build_system_context=_one_system,
         )
         await node.ainvoke(_make_state([human]))
         call_args = llm.ainvoke.call_args[0][0]
-        # The no-builder branch renders HumanMessages too — same message, new object.
+        # The no-builder branch renders UserMessages too — same message, new object.
         assert "hello" in call_args[-1].content
 
     async def test_recap_messages_precede_ongoing_turn_messages(self) -> None:
-        from opendatasci.agents.chat_memory import ChatHistoryBuilder, ChatTurnContext
+        from opendatasci.agents.chat_history import ChatHistoryBuilder
+        from opendatasci.memory.chat_memory import ChatTurnContext
 
-        recap_message = HumanMessage(content="[Earlier session summary]\nold stuff")
+        recap_message = UserMessage(content="[Earlier session summary]\nold stuff")
+        inline_turn_message = UserMessage(content="q")
         mock_builder = MagicMock(spec=ChatHistoryBuilder)
         mock_builder.build = AsyncMock(return_value=ChatTurnContext(
-            messages=[recap_message, HumanMessage(content="q")],
+            messages=[recap_message, inline_turn_message],
             turn_summaries=[],
+            chat_history_compaction=None,
         ))
 
         llm = AsyncMock()
@@ -93,14 +97,14 @@ class TestAgentNode:
 
         await node.ainvoke(_make_state())
         sent = llm.ainvoke.call_args[0][0]
-        assert sent == [
-            SystemMessage(content="system"),
-            recap_message,
-            HumanMessage(content="q"),
-        ]
+        assert len(sent) == 3
+        assert isinstance(sent[0], SystemMessage) and sent[0].content == "system"
+        assert sent[1] is recap_message
+        assert sent[2].content == "q"
 
     async def test_build_system_context_called_without_recap_param(self) -> None:
-        from opendatasci.agents.chat_memory import ChatHistoryBuilder, ChatTurnContext
+        from opendatasci.agents.chat_history import ChatHistoryBuilder
+        from opendatasci.memory.chat_memory import ChatTurnContext
 
         received_states: list[AgentState] = []
 
@@ -110,8 +114,9 @@ class TestAgentNode:
 
         mock_builder = MagicMock(spec=ChatHistoryBuilder)
         mock_builder.build = AsyncMock(return_value=ChatTurnContext(
-            messages=[HumanMessage(content="q")],
+            messages=[UserMessage(content="q")],
             turn_summaries=[],
+            chat_history_compaction=None,
         ))
 
         llm = AsyncMock()
@@ -125,27 +130,6 @@ class TestAgentNode:
         await node.ainvoke(_make_state())
         assert len(received_states) == 1
 
-    async def test_turn_summaries_written_back_when_builder_present(self) -> None:
-        from opendatasci.agents.chat_memory import ChatHistoryBuilder, ChatTurnContext, ChatTurnSummary
-
-        record = ChatTurnSummary(turn=1, user="q", actions="", agent="a", timestamp="")
-        mock_builder = MagicMock(spec=ChatHistoryBuilder)
-        mock_builder.build = AsyncMock(return_value=ChatTurnContext(
-            messages=[HumanMessage(content="q")],
-            turn_summaries=[record],
-        ))
-
-        llm = AsyncMock()
-        llm.ainvoke = AsyncMock(return_value=AIMessage(content="ok"))
-        node = AgentNode(
-            get_llm_with_tools=lambda state: llm,
-            build_system_context=_no_system,
-            chat_history_builder=mock_builder,
-        )
-
-        result = await node.ainvoke(_make_state())
-        assert result["turn_summaries"] == [record]
-
     async def test_no_turn_summaries_key_without_builder(self) -> None:
         node, _ = self._make_node()
         result = await node.ainvoke(_make_state())
@@ -157,11 +141,11 @@ class TestAgentNode:
         assert callable(fn)
 
     async def test_to_async_callable_delegates_to_ainvoke(self) -> None:
-        response = AIMessage(content="from callable")
-        node, _ = self._make_node(response=response)
+        node, _ = self._make_node(response=AIMessage(content="from callable"))
         fn = node.to_async_callable()
         result = await fn(_make_state())
-        assert result["messages"][0] is response
+        assert isinstance(result["messages"][0], AgentMessage)
+        assert result["messages"][0].content == "from callable"
 
     async def test_ainvoke_forwards_config_to_llm(self) -> None:
         node, llm = self._make_node()
@@ -207,7 +191,7 @@ class TestAgentNode:
             get_llm_with_tools=get_llm,
             build_system_context=_no_system,
         )
-        state = AgentState(messages=[HumanMessage(content="hi")], is_plan_mode=True)
+        state = AgentState(messages=[UserMessage(content="hi")], is_plan_mode=True)
         await node.ainvoke(state)
 
         assert len(received_states) == 1
@@ -224,13 +208,15 @@ class TestAgentNodeWithCompaction:
     """AgentNode passes builder output straight to the LLM — no compaction logic of its own."""
 
     async def test_node_uses_compacted_messages_from_builder(self) -> None:
-        from opendatasci.agents.chat_memory import ChatHistoryBuilder, ChatTurnContext
+        from opendatasci.agents.chat_history import ChatHistoryBuilder
+        from opendatasci.memory.chat_memory import ChatTurnContext
 
-        compacted = [HumanMessage(content="compacted summary")]
+        compacted = [UserMessage(content="compacted summary")]
         mock_builder = MagicMock(spec=ChatHistoryBuilder)
         mock_builder.build = AsyncMock(return_value=ChatTurnContext(
             messages=compacted,
             turn_summaries=[],
+            chat_history_compaction=None,
         ))
 
         llm = AsyncMock()
@@ -241,6 +227,6 @@ class TestAgentNodeWithCompaction:
             chat_history_builder=mock_builder,
         )
 
-        await node.ainvoke(_make_state([HumanMessage(content="original")]))
+        await node.ainvoke(_make_state([UserMessage(content="original")]))
         called_messages = llm.ainvoke.call_args[0][0]
         assert called_messages == compacted

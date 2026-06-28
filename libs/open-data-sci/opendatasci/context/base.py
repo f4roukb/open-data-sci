@@ -7,8 +7,6 @@ from typing import Self
 
 from opendatasci.context.plans import Plan
 
-__all__ = ["BaseContextStore", "Plan"]
-
 
 class BaseContextStore(ABC):
     """Context store for dataset notes, profile cards, and session plans.

@@ -18,7 +18,8 @@ from opendatasci.configs import DEFAULT_MODEL, DEFAULT_SECONDARY_MODEL, OpenData
 from opendatasci.models.providers import Provider
 
 from . import theme as _theme
-from .controller import CLIController, UIAdapter
+from .adapter import UIAdapter
+from .controller import CLIController
 from .widgets import (
     AppHeader,
     ChatPane,

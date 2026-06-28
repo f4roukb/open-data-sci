@@ -57,30 +57,36 @@ def register(tool_name: str, display: ToolDisplay) -> None:
 
 register("execute_python_code", ToolDisplay(label="Code", icon="🐍", summary_arg="summary"))
 register("execute_cli_command", ToolDisplay(label="Command", icon="⌨️", summary_arg="summary"))
-register("list_python_libs", ToolDisplay(label="Checking available libraries", icon="📦"))
-register("enter_plan_mode", ToolDisplay(label="Planning", icon="🎯"))
-register("exit_plan_mode", ToolDisplay(label="Done planning", icon="✅"))
+register(
+    "list_python_libs", ToolDisplay(label="Checking available libraries", icon="📦", display=False)
+)
+register("enter_plan_mode", ToolDisplay(label="Planning the next steps", icon="🎯"))
+register("exit_plan_mode", ToolDisplay(label="Planning complete", icon="✅"))
 register("load_skill", ToolDisplay(label="Loading skill", icon="🧠", summary_arg="summary"))
 register("spawn_workers", ToolDisplay(label="Spawning workers", icon="⚙️"))
 register(
     "read_dataset_info",
-    ToolDisplay(label="Reading dataset info", icon="📚", summary_arg="summary"),
+    ToolDisplay(
+        label="Reading dataset information", icon="📚", summary_arg="summary", display=False
+    ),
 )
 register(
     "update_dataset_info",
     ToolDisplay(label="Updating dataset notes", icon="📝", display=False),
 )
-register("profile_dataset", ToolDisplay(label="Profiling dataset", icon="📊"))
-register("list_workspace_files", ToolDisplay(label="Listing workspace files", icon="📁"))
+register("profile_dataset", ToolDisplay(label="Profiling dataset", icon="📊", display=False))
+register(
+    "list_workspace_files", ToolDisplay(label="Listing workspace files", icon="📁", display=False)
+)
 register(
     "web_search",
     ToolDisplay(label="Searching the web", icon="🌐", summary_arg="summary"),
 )
 register(
     "fetch_url",
-    ToolDisplay(label="Fetching content", icon="🔗", summary_arg="summary"),
+    ToolDisplay(label="Fetching web content", icon="🔗", summary_arg="summary", display=False),
 )
 register("ask_user_mcq", ToolDisplay(label="Question", icon="💬", display=False))
 register("enter_self_review_mode", ToolDisplay(label="Reviewing progress so far", icon="🔍"))
 register("exit_self_review_mode", ToolDisplay(label="Done reviewing progress", icon="✅"))
-register("verify_python_code", ToolDisplay(label="Reviewing code", icon="🔎"))
+register("verify_python_code", ToolDisplay(label="Reviewing code", icon="🔎", display=False))

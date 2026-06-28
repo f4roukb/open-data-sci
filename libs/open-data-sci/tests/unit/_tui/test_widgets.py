@@ -1,6 +1,6 @@
 ﻿"""Unit tests for opendatasci._tui.widgets — pure logic only (no Textual app context)."""
 
-
+import time
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
@@ -15,11 +15,15 @@ from opendatasci._tui.widgets import (
     AttachmentBar,
     ChatPane,
     CommandHighlighter,
+    CompletionPopup,
     MessageBubble,
+    PendingMessageBubble,
+    PendingMessagePanel,
     SmartInput,
     ThinkingBlock,
     ToolCallBlock,
     TurnStatusBar,
+    WorkspacePanel,
     _InputHistory,
 )
 
@@ -1530,3 +1534,573 @@ class TestAttachmentBar:
         bar.show_pill("Text: 2 lines")
 
         assert "Esc" in captured[-1].plain
+
+
+# ---------------------------------------------------------------------------
+# CompletionPopup — show_matches and hide
+# ---------------------------------------------------------------------------
+
+
+def _make_completion_popup() -> CompletionPopup:
+    return CompletionPopup.__new__(CompletionPopup)
+
+
+class TestCompletionPopup:
+    def test_show_matches_calls_update(self) -> None:
+        popup = _make_completion_popup()
+        popup.update = MagicMock()
+        popup.add_class = MagicMock()
+        popup.show_matches(["/clear", "/compact"], selected=0)
+        popup.update.assert_called_once()
+
+    def test_show_matches_includes_all_items_in_output(self) -> None:
+        popup = _make_completion_popup()
+        captured: list[Text] = []
+        popup.update = MagicMock(side_effect=captured.append)
+        popup.add_class = MagicMock()
+        popup.show_matches(["/clear", "/compact"], selected=0)
+        plain = captured[-1].plain
+        assert "/clear" in plain
+        assert "/compact" in plain
+
+    def test_show_matches_selected_item_marked_with_arrow(self) -> None:
+        popup = _make_completion_popup()
+        captured: list[Text] = []
+        popup.update = MagicMock(side_effect=captured.append)
+        popup.add_class = MagicMock()
+        popup.show_matches(["/clear", "/compact"], selected=0)
+        assert "▸" in captured[-1].plain
+
+    def test_show_matches_only_one_arrow_for_one_selection(self) -> None:
+        popup = _make_completion_popup()
+        captured: list[Text] = []
+        popup.update = MagicMock(side_effect=captured.append)
+        popup.add_class = MagicMock()
+        popup.show_matches(["/clear", "/compact", "/exit"], selected=1)
+        assert captured[-1].plain.count("▸") == 1
+
+    def test_show_matches_second_item_selected_has_arrow_before_it(self) -> None:
+        popup = _make_completion_popup()
+        captured: list[Text] = []
+        popup.update = MagicMock(side_effect=captured.append)
+        popup.add_class = MagicMock()
+        popup.show_matches(["/clear", "/compact"], selected=1)
+        lines = captured[-1].plain.splitlines()
+        # Second line is the selected item — it must contain ▸
+        assert "▸" in lines[1]
+        assert "▸" not in lines[0]
+
+    def test_show_matches_adds_active_class(self) -> None:
+        popup = _make_completion_popup()
+        popup.update = MagicMock()
+        popup.add_class = MagicMock()
+        popup.show_matches(["/clear"], selected=0)
+        popup.add_class.assert_called_once_with("active")
+
+    def test_hide_removes_active_class(self) -> None:
+        popup = _make_completion_popup()
+        popup.remove_class = MagicMock()
+        popup.update = MagicMock()
+        popup.hide()
+        popup.remove_class.assert_called_once_with("active")
+
+    def test_hide_clears_content_to_empty_string(self) -> None:
+        popup = _make_completion_popup()
+        popup.remove_class = MagicMock()
+        popup.update = MagicMock()
+        popup.hide()
+        popup.update.assert_called_once_with("")
+
+
+# ---------------------------------------------------------------------------
+# WorkspacePanel — navigation state machine (pure logic, no DOM)
+# ---------------------------------------------------------------------------
+
+
+def _make_panel(
+    files: list[str],
+    selected: int = 0,
+    offset: int = 0,
+) -> WorkspacePanel:
+    panel = WorkspacePanel.__new__(WorkspacePanel)
+    panel._files = list(files)
+    panel._selected = selected
+    panel._offset = offset
+    return panel
+
+
+class TestWorkspacePanelNavigation:
+    """Verify that action_move_* methods update _selected and _offset correctly.
+
+    All tests patch _update_content to keep tests pure — the DOM-level rendering
+    path is tested separately or implicitly through the app integration tests.
+    """
+
+    def test_move_up_decrements_selected(self) -> None:
+        panel = _make_panel(["a", "b", "c"], selected=2)
+        with patch.object(panel, "_update_content"):
+            panel.action_move_up()
+        assert panel._selected == 1
+
+    def test_move_up_noop_at_first_item(self) -> None:
+        panel = _make_panel(["a", "b"], selected=0)
+        with patch.object(panel, "_update_content") as mock_update:
+            panel.action_move_up()
+        mock_update.assert_not_called()
+        assert panel._selected == 0
+
+    def test_move_up_adjusts_offset_when_selection_scrolls_above_view(self) -> None:
+        panel = _make_panel(list("abcde"), selected=3, offset=3)
+        with patch.object(panel, "_update_content"):
+            panel.action_move_up()
+        assert panel._selected == 2
+        assert panel._offset == 2
+
+    def test_move_up_does_not_change_offset_when_selection_stays_visible(self) -> None:
+        panel = _make_panel(list("abcde"), selected=2, offset=0)
+        with patch.object(panel, "_update_content"):
+            panel.action_move_up()
+        assert panel._selected == 1
+        assert panel._offset == 0
+
+    def test_move_down_increments_selected(self) -> None:
+        panel = _make_panel(["a", "b", "c"], selected=0)
+        with patch.object(panel, "_update_content"):
+            panel.action_move_down()
+        assert panel._selected == 1
+
+    def test_move_down_noop_at_last_item(self) -> None:
+        panel = _make_panel(["a", "b"], selected=1)
+        with patch.object(panel, "_update_content") as mock_update:
+            panel.action_move_down()
+        mock_update.assert_not_called()
+        assert panel._selected == 1
+
+    def test_move_down_advances_offset_when_selection_leaves_page(self) -> None:
+        # PAGE_SIZE = 12; with 14 files at selected=11, offset=0 → moving down
+        # pushes selected to 12 which is >= 0 + 12, so offset becomes 1.
+        files = [str(i) for i in range(14)]
+        panel = _make_panel(files, selected=11, offset=0)
+        with patch.object(panel, "_update_content"):
+            panel.action_move_down()
+        assert panel._selected == 12
+        assert panel._offset == 1
+
+    def test_move_down_does_not_change_offset_when_selection_stays_in_page(self) -> None:
+        panel = _make_panel(list("abcde"), selected=0, offset=0)
+        with patch.object(panel, "_update_content"):
+            panel.action_move_down()
+        assert panel._selected == 1
+        assert panel._offset == 0
+
+    def test_move_home_jumps_to_first_item(self) -> None:
+        panel = _make_panel(["a", "b", "c"], selected=2, offset=0)
+        with patch.object(panel, "_update_content"):
+            panel.action_move_home()
+        assert panel._selected == 0
+        assert panel._offset == 0
+
+    def test_move_home_resets_offset(self) -> None:
+        files = [str(i) for i in range(20)]
+        panel = _make_panel(files, selected=15, offset=4)
+        with patch.object(panel, "_update_content"):
+            panel.action_move_home()
+        assert panel._selected == 0
+        assert panel._offset == 0
+
+    def test_move_home_noop_on_empty_list(self) -> None:
+        panel = _make_panel([])
+        with patch.object(panel, "_update_content") as mock_update:
+            panel.action_move_home()
+        mock_update.assert_not_called()
+
+    def test_move_end_jumps_to_last_item(self) -> None:
+        panel = _make_panel(["a", "b", "c"], selected=0, offset=0)
+        with patch.object(panel, "_update_content"):
+            panel.action_move_end()
+        assert panel._selected == 2
+
+    def test_move_end_sets_offset_to_last_page(self) -> None:
+        files = [str(i) for i in range(15)]
+        panel = _make_panel(files, selected=0, offset=0)
+        with patch.object(panel, "_update_content"):
+            panel.action_move_end()
+        assert panel._selected == 14
+        # PAGE_SIZE=12; last page starts at max(0, 15-12)=3
+        assert panel._offset == 3
+
+    def test_move_end_noop_on_empty_list(self) -> None:
+        panel = _make_panel([])
+        with patch.object(panel, "_update_content") as mock_update:
+            panel.action_move_end()
+        mock_update.assert_not_called()
+
+    def test_move_page_up_jumps_by_page_size_and_adjusts_offset(self) -> None:
+        # 20 files, selected=15, offset=4, PAGE_SIZE=12
+        # → new_selected = max(0, 15-12) = 3; 3 < 4 → offset = 3
+        files = [str(i) for i in range(20)]
+        panel = _make_panel(files, selected=15, offset=4)
+        with patch.object(panel, "_update_content"):
+            panel.action_move_page_up()
+        assert panel._selected == 3
+        assert panel._offset == 3
+
+    def test_move_page_up_noop_when_already_at_first(self) -> None:
+        panel = _make_panel(["a", "b", "c"], selected=0)
+        with patch.object(panel, "_update_content") as mock_update:
+            panel.action_move_page_up()
+        mock_update.assert_not_called()
+        assert panel._selected == 0
+
+    def test_move_page_up_noop_on_empty_list(self) -> None:
+        panel = _make_panel([])
+        with patch.object(panel, "_update_content") as mock_update:
+            panel.action_move_page_up()
+        mock_update.assert_not_called()
+
+    def test_move_page_up_clamps_to_first_item(self) -> None:
+        files = [str(i) for i in range(5)]
+        panel = _make_panel(files, selected=3, offset=0)
+        with patch.object(panel, "_update_content"):
+            panel.action_move_page_up()
+        assert panel._selected == 0  # max(0, 3-12) = 0
+
+    def test_move_page_down_jumps_by_page_size_and_adjusts_offset(self) -> None:
+        # 20 files, selected=5, offset=0, PAGE_SIZE=12
+        # → new_selected = min(19, 5+12) = 17; 17 >= 0+12 → offset = 17-12+1 = 6
+        files = [str(i) for i in range(20)]
+        panel = _make_panel(files, selected=5, offset=0)
+        with patch.object(panel, "_update_content"):
+            panel.action_move_page_down()
+        assert panel._selected == 17
+        assert panel._offset == 6
+
+    def test_move_page_down_noop_when_already_at_last(self) -> None:
+        panel = _make_panel(["a", "b", "c"], selected=2)
+        with patch.object(panel, "_update_content") as mock_update:
+            panel.action_move_page_down()
+        mock_update.assert_not_called()
+        assert panel._selected == 2
+
+    def test_move_page_down_noop_on_empty_list(self) -> None:
+        panel = _make_panel([])
+        with patch.object(panel, "_update_content") as mock_update:
+            panel.action_move_page_down()
+        mock_update.assert_not_called()
+
+    def test_move_page_down_clamps_to_last_item(self) -> None:
+        files = [str(i) for i in range(5)]
+        panel = _make_panel(files, selected=2, offset=0)
+        with patch.object(panel, "_update_content"):
+            panel.action_move_page_down()
+        assert panel._selected == 4  # min(4, 2+12) = 4
+
+    def test_move_up_calls_update_content_on_actual_move(self) -> None:
+        panel = _make_panel(["a", "b"], selected=1)
+        with patch.object(panel, "_update_content") as mock_update:
+            panel.action_move_up()
+        mock_update.assert_called_once()
+
+    def test_move_down_calls_update_content_on_actual_move(self) -> None:
+        panel = _make_panel(["a", "b"], selected=0)
+        with patch.object(panel, "_update_content") as mock_update:
+            panel.action_move_down()
+        mock_update.assert_called_once()
+
+    def test_move_home_calls_update_content(self) -> None:
+        panel = _make_panel(["a", "b"], selected=1)
+        with patch.object(panel, "_update_content") as mock_update:
+            panel.action_move_home()
+        mock_update.assert_called_once()
+
+    def test_move_end_calls_update_content(self) -> None:
+        panel = _make_panel(["a", "b"], selected=0)
+        with patch.object(panel, "_update_content") as mock_update:
+            panel.action_move_end()
+        mock_update.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# PendingMessageBubble — on_mount markup
+# ---------------------------------------------------------------------------
+
+
+class TestPendingMessageBubbleMount:
+    def test_on_mount_calls_update(self) -> None:
+        bubble = PendingMessageBubble("my pending query")
+        bubble.update = MagicMock()
+        bubble.on_mount()
+        bubble.update.assert_called_once()
+
+    def test_on_mount_renders_queued_label(self) -> None:
+        bubble = PendingMessageBubble("my pending query")
+        bubble.update = MagicMock()
+        bubble.on_mount()
+        rendered: Text = bubble.update.call_args[0][0]
+        assert "Queued" in rendered.plain
+
+    def test_on_mount_includes_message_text(self) -> None:
+        bubble = PendingMessageBubble("analyse this dataset")
+        bubble.update = MagicMock()
+        bubble.on_mount()
+        rendered: Text = bubble.update.call_args[0][0]
+        assert "analyse this dataset" in rendered.plain
+
+    def test_on_mount_renders_hourglass_emoji(self) -> None:
+        bubble = PendingMessageBubble("query")
+        bubble.update = MagicMock()
+        bubble.on_mount()
+        rendered: Text = bubble.update.call_args[0][0]
+        assert "⏳" in rendered.plain
+
+
+# ---------------------------------------------------------------------------
+# PendingMessagePanel — add_pending mounts at the front
+# ---------------------------------------------------------------------------
+
+
+class TestPendingMessagePanelAddPending:
+    def test_add_pending_mounts_bubble_before_position_zero(self) -> None:
+        panel = PendingMessagePanel.__new__(PendingMessagePanel)
+        panel.mount = MagicMock()
+        bubble_sentinel = MagicMock()
+
+        with patch("opendatasci._tui.widgets.PendingMessageBubble", return_value=bubble_sentinel):
+            panel.add_pending("queued message")
+
+        panel.mount.assert_called_once_with(bubble_sentinel, before=0)
+
+    def test_add_pending_creates_bubble_with_correct_text(self) -> None:
+        panel = PendingMessagePanel.__new__(PendingMessagePanel)
+        panel.mount = MagicMock()
+
+        with patch(
+            "opendatasci._tui.widgets.PendingMessageBubble"
+        ) as mock_cls:
+            mock_cls.return_value = MagicMock()
+            panel.add_pending("text to queue")
+
+        mock_cls.assert_called_once_with("text to queue")
+
+    def test_add_pending_returns_the_bubble(self) -> None:
+        panel = PendingMessagePanel.__new__(PendingMessagePanel)
+        panel.mount = MagicMock()
+        sentinel = MagicMock()
+
+        with patch("opendatasci._tui.widgets.PendingMessageBubble", return_value=sentinel):
+            result = panel.add_pending("msg")
+
+        assert result is sentinel
+
+
+# ---------------------------------------------------------------------------
+# TurnStatusBar.stop — time label and interval teardown
+# ---------------------------------------------------------------------------
+
+
+class TestTurnStatusBarStop:
+    def _bar(self) -> TurnStatusBar:
+        t = TurnStatusBar.__new__(TurnStatusBar)
+        t._stopped = False
+        t._mounted = True
+        t._start = time.monotonic()
+        t._interval = MagicMock()
+        t._context_tokens = None
+        t._cached_tokens = None
+        return t
+
+    def test_stop_sets_stopped_flag(self) -> None:
+        t = self._bar()
+        t.update = MagicMock()
+        t.stop()
+        assert t._stopped is True
+
+    def test_stop_calls_interval_stop(self) -> None:
+        t = self._bar()
+        t.update = MagicMock()
+        t.stop()
+        t._interval.stop.assert_called_once()
+
+    def test_stop_updates_label_to_worked_for(self) -> None:
+        t = self._bar()
+        t.update = MagicMock()
+        t.stop()
+        rendered: str = t.update.call_args[0][0]
+        assert "Worked for" in rendered
+
+    def test_stop_noop_when_already_stopped(self) -> None:
+        t = self._bar()
+        t._stopped = True
+        t.update = MagicMock()
+        t.stop()
+        t.update.assert_not_called()
+        t._interval.stop.assert_not_called()
+
+    def test_stop_noop_when_not_mounted(self) -> None:
+        t = self._bar()
+        t._mounted = False
+        t.update = MagicMock()
+        t.stop()
+        t.update.assert_not_called()
+
+    def test_stop_with_context_tokens_includes_context_in_label(self) -> None:
+        t = self._bar()
+        t._context_tokens = 5000
+        t.update = MagicMock()
+        t.stop()
+        rendered: str = t.update.call_args[0][0]
+        assert "Context:" in rendered
+
+    def test_stop_interval_none_does_not_raise(self) -> None:
+        t = self._bar()
+        t._interval = None
+        t.update = MagicMock()
+        t.stop()  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# TurnStatusBar.on_unmount — prevents double-stop
+# ---------------------------------------------------------------------------
+
+
+class TestTurnStatusBarOnUnmount:
+    def test_on_unmount_stops_interval_when_mounted_and_not_yet_stopped(self) -> None:
+        t = TurnStatusBar.__new__(TurnStatusBar)
+        t._mounted = True
+        t._stopped = False
+        t._interval = MagicMock()
+        t.on_unmount()
+        assert t._stopped is True
+        t._interval.stop.assert_called_once()
+
+    def test_on_unmount_noop_when_already_stopped(self) -> None:
+        t = TurnStatusBar.__new__(TurnStatusBar)
+        t._mounted = True
+        t._stopped = True
+        t._interval = MagicMock()
+        t.on_unmount()
+        t._interval.stop.assert_not_called()
+
+    def test_on_unmount_noop_when_never_mounted(self) -> None:
+        t = TurnStatusBar.__new__(TurnStatusBar)
+        t._mounted = False
+        t._stopped = False
+        t._interval = MagicMock()
+        t.on_unmount()
+        t._interval.stop.assert_not_called()
+
+    def test_on_unmount_after_stop_is_idempotent(self) -> None:
+        t = TurnStatusBar.__new__(TurnStatusBar)
+        t._mounted = True
+        t._stopped = False
+        t._start = time.monotonic()
+        t._interval = MagicMock()
+        t._context_tokens = None
+        t._cached_tokens = None
+        t.update = MagicMock()
+        t.stop()  # first stop
+        t._interval.reset_mock()
+        t.on_unmount()  # unmount must not double-stop
+        t._interval.stop.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# MessageBubble._refresh_content — non-agent roles
+# ---------------------------------------------------------------------------
+
+
+class TestMessageBubbleRefreshContentNonAgent:
+    def _mounted_bubble(self, role: str, content: str) -> MessageBubble:
+        bubble = _make_bubble(role, content)
+        bubble._inner = MagicMock(spec=Static)
+        return bubble
+
+    def test_user_role_updates_inner_with_content(self) -> None:
+        bubble = self._mounted_bubble("user", "Hello")
+        bubble._refresh_content()
+        bubble._inner.update.assert_called_once()
+        rendered: Text = bubble._inner.update.call_args[0][0]
+        assert "Hello" in rendered.plain
+
+    def test_question_role_updates_inner_with_content(self) -> None:
+        bubble = self._mounted_bubble("question", "What would you like?")
+        bubble._refresh_content()
+        bubble._inner.update.assert_called_once()
+        rendered: Text = bubble._inner.update.call_args[0][0]
+        assert "What would you like?" in rendered.plain
+
+    def test_question_role_handles_rich_markup_error_gracefully(self) -> None:
+        # Rich may reject invalid markup; the question role catches that and
+        # falls back to plain Text(content).
+        bubble = self._mounted_bubble("question", "[broken")
+        bubble._refresh_content()  # must not raise
+        bubble._inner.update.assert_called_once()
+
+    def test_agent_role_does_nothing_synchronously(self) -> None:
+        # Agent rendering is fully async via _flush_agent; _refresh_content
+        # must be a no-op so it never races with the async update path.
+        bubble = _make_bubble("agent", "response text")
+        bubble._inner = MagicMock(spec=TUIMarkdown)
+        bubble._refresh_content()
+        bubble._inner.update.assert_not_called()
+
+    def test_refresh_content_noop_when_inner_not_yet_set(self) -> None:
+        bubble = _make_bubble("user", "Hello")
+        bubble._inner = None
+        bubble._refresh_content()  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# MessageBubble.finish_with_summary — thinking bubble summary
+# ---------------------------------------------------------------------------
+
+
+class TestMessageBubbleFinishWithSummary:
+    def _thinking_bubble(self) -> MessageBubble:
+        bubble = _make_bubble("thinking", "")
+        bubble._inner = MagicMock(spec=Static)
+        return bubble
+
+    def test_finish_with_summary_stops_spin_timer(self) -> None:
+        bubble = self._thinking_bubble()
+        timer = MagicMock()
+        bubble._spin_timer = timer
+        bubble.finish_with_summary("Thought for 5s")
+        timer.stop.assert_called_once()
+        assert bubble._spin_timer is None
+
+    def test_finish_with_summary_noop_stop_when_timer_already_none(self) -> None:
+        bubble = self._thinking_bubble()
+        bubble._spin_timer = None
+        bubble.finish_with_summary("Thought for 0s")  # must not raise
+
+    def test_finish_with_summary_sets_summary_text(self) -> None:
+        bubble = self._thinking_bubble()
+        bubble.finish_with_summary("Thought for 3s")
+        assert bubble._summary_text == "Thought for 3s"
+
+    def test_finish_with_summary_calls_inner_update(self) -> None:
+        bubble = self._thinking_bubble()
+        bubble.finish_with_summary("Thought for 3s")
+        bubble._inner.update.assert_called_once()
+
+    def test_finish_with_summary_renders_checkmark_and_summary_text(self) -> None:
+        bubble = self._thinking_bubble()
+        bubble.finish_with_summary("Thought for 2s")
+        rendered: Text = bubble._inner.update.call_args[0][0]
+        assert "✓" in rendered.plain
+        assert "Thought for 2s" in rendered.plain
+
+    def test_finish_with_summary_uses_dim_thinking_style(self) -> None:
+        from opendatasci._tui import theme as _theme
+
+        bubble = self._thinking_bubble()
+        bubble.finish_with_summary("Thought for 1s")
+        rendered: Text = bubble._inner.update.call_args[0][0]
+        thinking_color = _theme.active["thinking"]
+        assert any(thinking_color in str(span.style) for span in rendered._spans)
+
+    def test_finish_with_summary_noop_when_inner_is_none(self) -> None:
+        bubble = _make_bubble("thinking", "")
+        bubble._inner = None
+        bubble.finish_with_summary("summary")  # must not raise
