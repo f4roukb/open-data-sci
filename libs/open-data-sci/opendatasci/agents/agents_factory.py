@@ -10,8 +10,6 @@ from opendatasci.sandbox.srt import SRTSandboxFactory
 from opendatasci.skills.local import LocalSkillStore
 from opendatasci.workspace.local import LocalWorkspace
 
-__all__ = ["create_agent"]
-
 
 def create_agent(
     path: str,

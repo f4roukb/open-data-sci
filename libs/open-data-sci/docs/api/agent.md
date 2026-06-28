@@ -56,7 +56,7 @@ async for event in agent.astream(query):
 |--------|-------------|
 | `clear_chat_history()` | Remove all messages and rolling memory summaries. Preserves sandbox state. |
 | `rewind_turn()` | Remove only the last turn (user message + agent response) from the conversation. |
-| `compact_chat_history()` | Use the LLM to summarise old turns, then discard them. Returns the summary text. Use this instead of `clear_chat_history` when you want to keep context across a long session without blowing up the context window. |
+| `compact_chat_history()` | Fold all turn summaries and any existing compaction into a single `ChatHistoryCompaction` record. Returns the compaction text. Use this instead of `clear_chat_history` when you want to preserve context across a long session. |
 
 ```python
 # After many turns, compact instead of clearing:

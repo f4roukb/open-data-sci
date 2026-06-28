@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 from langchain_core.messages import AIMessage
 
 from opendatasci._tui.service import OpenDataSciTuiService
-from opendatasci.agents.chat_memory import ChatTurnSummary
+from opendatasci.memory.chat_memory import ChatTurnSummary
 
 
 class TestCompactConversation:
@@ -30,11 +30,13 @@ class TestCompactConversation:
     async def test_compact_summarizes_via_llm(
         self, loaded_opendatasci_service, mock_llm
     ):
+        from datetime import datetime, timezone
+        _dt = datetime(2024, 1, 1, tzinfo=timezone.utc)
         agent = loaded_opendatasci_service._agent
         agent.graph.update_state(agent._graph_config, {
             "turn_summaries": [
-                ChatTurnSummary(turn=1, user="What are the trends?", actions="", agent="Upward."),
-                ChatTurnSummary(turn=2, user="Confirm?", actions="", agent="Confirmed."),
+                ChatTurnSummary(turn_start_timestamp=_dt, turn_end_timestamp=_dt, user_message_summary="What are the trends?", actions_summary="", agent_response_summary="Upward."),
+                ChatTurnSummary(turn_start_timestamp=_dt, turn_end_timestamp=_dt, user_message_summary="Confirm?", actions_summary="", agent_response_summary="Confirmed."),
             ],
         })
 
@@ -43,12 +45,12 @@ class TestCompactConversation:
         summary = await loaded_opendatasci_service.compact_chat_history()
 
         assert summary == "They chatted briefly."
-        # Rolling summaries are replaced by a single compaction summary record.
+        # Rolling summaries are cleared; compaction is stored in chat_history_compaction.
         state = agent.graph.get_state(agent._graph_config).values
-        summaries = state.get("turn_summaries", [])
-        assert len(summaries) == 1
-        assert summaries[0].turn is None
-        assert summaries[0].agent == "They chatted briefly."
+        assert state.get("turn_summaries", []) == []
+        compaction = state.get("chat_history_compaction")
+        assert compaction is not None
+        assert compaction.content == "They chatted briefly."
 
 
 class TestRewindTurn:

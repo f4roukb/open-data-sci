@@ -17,8 +17,8 @@ from opendatasci.streaming import (
     UsageEvent,
     WorkerDoneEvent,
 )
-from opendatasci._tui.controller import (
-    CLIController,
+from opendatasci._tui.controller import CLIController
+from opendatasci._tui.file_refs import (
     PasteAttachment,
     _build_agent_query,
     _build_user_display,

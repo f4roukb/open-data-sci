@@ -7,7 +7,6 @@ the real integration between OpenDataSci, Session, and Agent state.
 
 
 import pytest
-from langchain_core.messages import HumanMessage
 
 
 def _seed_messages(agent, messages):

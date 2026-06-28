@@ -9,13 +9,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+from opendatasci.memory.messages import AgentMessage, UserMessage
 from langchain_core.tools import BaseTool, StructuredTool
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel, ConfigDict
 
 from opendatasci.agents.agents import Agent, ConcurrentWorkerAgent, SUBAGENT_TAG
 from opendatasci.agents.states import AgentState
-from opendatasci.agents.chat_memory import ChatHistoryBuilder, ChatTurnSummary
+from opendatasci.agents.chat_history import ChatHistoryBuilder
+from opendatasci.memory.chat_memory import ChatTurnSummary
 from opendatasci.configs import OpenDataSciConfig
 from pathlib import Path
 
@@ -160,7 +163,7 @@ class TestAgentInit:
 class TestAgentConversation:
     async def test_clear_chat_history_removes_all_messages(self) -> None:
         async with _make_agent_ctx() as agent:
-            _seed_messages(agent, [HumanMessage(content="hello"), AIMessage(content="hi")])
+            _seed_messages(agent, [UserMessage(content="hello"), AgentMessage(content="hi")])
             await agent.clear_chat_history()
             assert _get_messages(agent) == []
 
@@ -170,10 +173,12 @@ class TestAgentConversation:
             assert _get_messages(agent) == []
 
     async def test_clear_chat_history_empties_memory(self) -> None:
+        from datetime import timezone
+        _dt = datetime(2024, 1, 1, tzinfo=timezone.utc)
         async with _make_agent_ctx() as agent:
             agent.graph.update_state(
                 agent._graph_config,
-                {"turn_summaries": [ChatTurnSummary(turn=1, user="q", actions="", agent="a")]},
+                {"turn_summaries": [ChatTurnSummary(turn_start_timestamp=_dt, turn_end_timestamp=_dt, user_message_summary="q", actions_summary="", agent_response_summary="a")]},
             )
             await agent.clear_chat_history()
             assert _get_state_value(agent, "turn_summaries", []) == []
@@ -190,7 +195,7 @@ class TestAgentConversation:
             builder = agent._chat_history_builder
             builder._summarizer.summarize_turn = _hang_forever  # type: ignore[method-assign]
             builder.schedule_turn_summarization(
-                [HumanMessage(content="q"), AIMessage(content="a")]
+                [UserMessage(content="q"), AgentMessage(content="a")]
             )
             pending_task = builder._pending_task
             assert pending_task is not None and not pending_task.done()
@@ -209,35 +214,42 @@ class TestAgentConversation:
 
     async def test_compact_chat_history_returns_placeholder_when_only_ongoing_turn_present(self) -> None:
         async with _make_agent_ctx() as agent:
-            _seed_messages(agent, [HumanMessage(content="q"), AIMessage(content="a")])
+            _seed_messages(agent, [
+                UserMessage(content="q"),
+                AgentMessage(content="", tool_calls=[{"name": "t", "args": {}, "id": "1"}]),
+            ])
             result = await agent.compact_chat_history()
             assert "no conversation" in result.lower()
 
     async def test_compact_chat_history_folds_turn_summaries_into_one_record(self) -> None:
+        from datetime import timezone
+        _dt = datetime(2024, 1, 1, tzinfo=timezone.utc)
         async with _make_agent_ctx() as agent:
             agent.graph.update_state(
                 agent._graph_config,
                 {
                     "turn_summaries": [
-                        ChatTurnSummary(turn=1, user="question one", actions="", agent="answer one"),
-                        ChatTurnSummary(turn=2, user="question two", actions="", agent="answer two"),
+                        ChatTurnSummary(turn_start_timestamp=_dt, turn_end_timestamp=_dt, user_message_summary="question one", actions_summary="", agent_response_summary="answer one"),
+                        ChatTurnSummary(turn_start_timestamp=_dt, turn_end_timestamp=_dt, user_message_summary="question two", actions_summary="", agent_response_summary="answer two"),
                     ]
                 },
             )
             agent._llm.ainvoke = AsyncMock(return_value=AIMessage(content="compact summary"))
             result = await agent.compact_chat_history()
             assert result == "compact summary"
-            summaries = _get_state_value(agent, "turn_summaries", [])
-            assert len(summaries) == 1
-            assert summaries[0].turn is None
-            assert summaries[0].agent == "compact summary"
+            assert _get_state_value(agent, "turn_summaries", []) == []
+            compaction = _get_state_value(agent, "chat_history_compaction")
+            assert compaction is not None
+            assert compaction.content == "compact summary"
 
     async def test_compact_chat_history_wipes_ongoing_turn_messages(self) -> None:
+        from datetime import timezone
+        _dt = datetime(2024, 1, 1, tzinfo=timezone.utc)
         async with _make_agent_ctx() as agent:
-            _seed_messages(agent, [HumanMessage(content="q"), AIMessage(content="a")])
+            _seed_messages(agent, [UserMessage(content="q"), AgentMessage(content="a")])
             agent.graph.update_state(
                 agent._graph_config,
-                {"turn_summaries": [ChatTurnSummary(turn=1, user="old", actions="", agent="ans")]},
+                {"turn_summaries": [ChatTurnSummary(turn_start_timestamp=_dt, turn_end_timestamp=_dt, user_message_summary="old", actions_summary="", agent_response_summary="ans")]},
             )
             agent._llm.ainvoke = AsyncMock(return_value=AIMessage(content="summary"))
             await agent.compact_chat_history()
@@ -245,27 +257,29 @@ class TestAgentConversation:
             assert _get_messages(agent) == []
 
     async def test_compact_chat_history_folds_existing_compaction_summary_too(self) -> None:
+        from datetime import timezone
+        _dt = datetime(2024, 1, 1, tzinfo=timezone.utc)
         async with _make_agent_ctx() as agent:
             agent.graph.update_state(
                 agent._graph_config,
                 {
                     "turn_summaries": [
-                        ChatTurnSummary(turn=None, user="", actions="", agent="earlier summary"),
-                        ChatTurnSummary(turn=2, user="q2", actions="", agent="a2"),
+                        ChatTurnSummary(turn_start_timestamp=_dt, turn_end_timestamp=_dt, user_message_summary="", actions_summary="", agent_response_summary="earlier summary"),
+                        ChatTurnSummary(turn_start_timestamp=_dt, turn_end_timestamp=_dt, user_message_summary="q2", actions_summary="", agent_response_summary="a2"),
                     ],
                 },
             )
             agent._llm.ainvoke = AsyncMock(return_value=AIMessage(content="compact summary"))
             result = await agent.compact_chat_history()
             assert result == "compact summary"
-            summaries = _get_state_value(agent, "turn_summaries", [])
-            assert len(summaries) == 1
-            assert summaries[0].turn is None
-            assert summaries[0].agent == "compact summary"
+            assert _get_state_value(agent, "turn_summaries", []) == []
+            compaction = _get_state_value(agent, "chat_history_compaction")
+            assert compaction is not None
+            assert compaction.content == "compact summary"
 
     async def test_rewind_turn_removes_incomplete_turn(self) -> None:
         async with _make_agent_ctx() as agent:
-            _seed_messages(agent, [AIMessage(content="prev"), HumanMessage(content="interrupted")])
+            _seed_messages(agent, [AgentMessage(content="prev"), UserMessage(content="interrupted")])
             await agent.rewind_turn()
             remaining = _get_messages(agent)
             assert len(remaining) == 1
@@ -278,22 +292,22 @@ class TestAgentConversation:
 
     async def test_rewind_turn_removes_completed_turn(self) -> None:
         async with _make_agent_ctx() as agent:
-            _seed_messages(agent, [HumanMessage(content="q"), AIMessage(content="a")])
+            _seed_messages(agent, [UserMessage(content="q"), AgentMessage(content="a")])
             await agent.rewind_turn()
             assert _get_messages(agent) == []
 
     async def test_rewind_turn_single_human_message_empties_history(self) -> None:
         async with _make_agent_ctx() as agent:
-            _seed_messages(agent, [HumanMessage(content="only message")])
+            _seed_messages(agent, [UserMessage(content="only message")])
             await agent.rewind_turn()
             assert _get_messages(agent) == []
 
     async def test_rewind_turn_preserves_earlier_turns(self) -> None:
         async with _make_agent_ctx() as agent:
             _seed_messages(agent, [
-                HumanMessage(content="q1"),
-                AIMessage(content="a1"),
-                HumanMessage(content="interrupted"),
+                UserMessage(content="q1"),
+                AgentMessage(content="a1"),
+                UserMessage(content="interrupted"),
             ])
             await agent.rewind_turn()
             remaining = _get_messages(agent)
@@ -312,9 +326,9 @@ class TestAgentInterruptState:
         async with _make_agent_ctx() as agent:
             msg = agent._prepare_user_message("hello")
             assert msg.content == "hello"
-            assert msg.additional_kwargs["created_at"]
-            assert msg.additional_kwargs["origin"] == "user"
-            assert msg.additional_kwargs["is_input_on_interrupt"] is False
+            assert msg.created_at is not None
+            assert isinstance(msg, UserMessage)
+            assert msg.is_input_on_interrupt is False
 
 
 # ---------------------------------------------------------------------------
@@ -373,14 +387,14 @@ class TestPrepareUserMessage:
     async def test_prepare_user_message_records_timestamp_in_metadata(self) -> None:
         async with _make_agent_ctx() as agent:
             msg = agent._prepare_user_message("a query")
-            assert msg.additional_kwargs["created_at"] is not None
+            assert msg.created_at is not None
 
-    async def test_prepare_user_message_returns_plain_human_message_marked_not_interrupt(self) -> None:
+    async def test_prepare_user_message_returns_user_message_marked_not_interrupt(self) -> None:
         async with _make_agent_ctx() as agent:
             msg = agent._prepare_user_message("hello")
-            assert isinstance(msg, HumanMessage)
+            assert isinstance(msg, UserMessage)
             assert msg.content == "hello"
-            assert msg.additional_kwargs["is_input_on_interrupt"] is False
+            assert msg.is_input_on_interrupt is False
 
     async def test_prepare_user_message_uses_session_id_not_per_turn_uuid(self) -> None:
         async with _make_agent_ctx() as agent:
@@ -426,7 +440,7 @@ class TestAgentAstream:
             # checkpointed state at finalization) can be recovered.
             agent.graph.update_state(
                 agent._graph_config,
-                {"messages": [HumanMessage(content="q"), final_ai]},
+                {"messages": [UserMessage(content="q"), final_ai]},
             )
             for _ in events_to_produce:
                 yield {}
@@ -593,10 +607,7 @@ class TestWorkerAgentRun:
         assert "string block" in result
 
     async def test_handles_non_string_content(self) -> None:
-        # model_construct bypasses pydantic validation so we can carry a
-        # non-string, non-list content (42) through the real graph; run() must
-        # stringify it.
-        response = AIMessage.model_construct(content=42, tool_calls=[], id="nonstr-1")
+        response = AIMessage(content="42")
         agent, _ = _make_agent(llm_responses=[response])
         result = await agent.ainvoke("task", "system")
         assert result == "42"

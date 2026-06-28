@@ -1,9 +1,10 @@
 """Unit tests for TurnRewinder in opendatasci.agents.turn_memory."""
 
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
-from opendatasci.agents.turn_memory import TurnRewinder
+from opendatasci.memory.messages import AgentMessage, UserMessage
+from opendatasci.memory.turn_memory import TurnRewinder
 
 
 class TestTurnRewinder:
@@ -18,7 +19,7 @@ class TestTurnRewinder:
         assert self.rewinder.rewind_last_turn([]) == []
 
     def test_no_human_message_returns_copy(self) -> None:
-        messages = [AIMessage(content="hello")]
+        messages = [AgentMessage(content="hello")]
         result = self.rewinder.rewind_last_turn(messages)
         assert result == messages
         assert result is not messages  # must be a copy
@@ -29,15 +30,15 @@ class TestTurnRewinder:
 
     def test_single_turn_drops_all(self) -> None:
         messages = [
-            HumanMessage(content="hi"),
-            AIMessage(content="there"),
+            UserMessage(content="hi"),
+            AgentMessage(content="there"),
         ]
         assert self.rewinder.rewind_last_turn(messages) == []
 
     def test_single_turn_keep_user_message(self) -> None:
         messages = [
-            HumanMessage(content="hi"),
-            AIMessage(content="there"),
+            UserMessage(content="hi"),
+            AgentMessage(content="there"),
         ]
         result = self.rewinder.rewind_last_turn(messages, keep_user_message=True)
         assert len(result) == 1
@@ -49,10 +50,10 @@ class TestTurnRewinder:
 
     def test_two_turns_drops_second_only(self) -> None:
         messages = [
-            HumanMessage(content="turn1"),
-            AIMessage(content="resp1"),
-            HumanMessage(content="turn2"),
-            AIMessage(content="resp2"),
+            UserMessage(content="turn1"),
+            AgentMessage(content="resp1"),
+            UserMessage(content="turn2"),
+            AgentMessage(content="resp2"),
         ]
         result = self.rewinder.rewind_last_turn(messages)
         assert len(result) == 2
@@ -61,10 +62,10 @@ class TestTurnRewinder:
 
     def test_two_turns_keep_user_message(self) -> None:
         messages = [
-            HumanMessage(content="turn1"),
-            AIMessage(content="resp1"),
-            HumanMessage(content="turn2"),
-            AIMessage(content="resp2"),
+            UserMessage(content="turn1"),
+            AgentMessage(content="resp1"),
+            UserMessage(content="turn2"),
+            AgentMessage(content="resp2"),
         ]
         result = self.rewinder.rewind_last_turn(messages, keep_user_message=True)
         assert len(result) == 3
@@ -76,10 +77,10 @@ class TestTurnRewinder:
 
     def test_in_progress_turn_drops_partial_turn(self) -> None:
         messages = [
-            HumanMessage(content="prev"),
-            AIMessage(content="prev_resp"),
-            HumanMessage(content="ongoing"),
-            AIMessage(content="", tool_calls=[{"id": "1", "name": "tool", "args": {}}]),
+            UserMessage(content="prev"),
+            AgentMessage(content="prev_resp"),
+            UserMessage(content="ongoing"),
+            AgentMessage(content="", tool_calls=[{"id": "1", "name": "tool", "args": {}}]),
             ToolMessage(content="tool result", tool_call_id="1"),
         ]
         result = self.rewinder.rewind_last_turn(messages)
@@ -89,9 +90,9 @@ class TestTurnRewinder:
 
     def test_in_progress_turn_keep_user_message(self) -> None:
         messages = [
-            HumanMessage(content="prev"),
-            AIMessage(content="prev_resp"),
-            HumanMessage(content="ongoing"),
+            UserMessage(content="prev"),
+            AgentMessage(content="prev_resp"),
+            UserMessage(content="ongoing"),
             ToolMessage(content="tool result", tool_call_id="1"),
         ]
         result = self.rewinder.rewind_last_turn(messages, keep_user_message=True)
@@ -104,10 +105,10 @@ class TestTurnRewinder:
 
     def test_turn_with_tool_messages_removed(self) -> None:
         messages = [
-            HumanMessage(content="q"),
-            AIMessage(content="", tool_calls=[{"id": "t1", "name": "search", "args": {}}]),
+            UserMessage(content="q"),
+            AgentMessage(content="", tool_calls=[{"id": "t1", "name": "search", "args": {}}]),
             ToolMessage(content="result", tool_call_id="t1"),
-            AIMessage(content="final answer"),
+            AgentMessage(content="final answer"),
         ]
         result = self.rewinder.rewind_last_turn(messages)
         assert result == []
@@ -119,8 +120,8 @@ class TestTurnRewinder:
     def test_system_messages_before_turn_are_preserved(self) -> None:
         messages = [
             SystemMessage(content="sys"),
-            HumanMessage(content="hi"),
-            AIMessage(content="there"),
+            UserMessage(content="hi"),
+            AgentMessage(content="there"),
         ]
         result = self.rewinder.rewind_last_turn(messages)
         assert len(result) == 1
@@ -132,14 +133,14 @@ class TestTurnRewinder:
 
     def test_returns_new_list(self) -> None:
         messages = [
-            HumanMessage(content="a"),
-            AIMessage(content="b"),
-            HumanMessage(content="c"),
+            UserMessage(content="a"),
+            AgentMessage(content="b"),
+            UserMessage(content="c"),
         ]
         result = self.rewinder.rewind_last_turn(messages)
         assert result is not messages
 
     def test_no_human_message_returns_new_list(self) -> None:
-        messages = [AIMessage(content="x")]
+        messages = [AgentMessage(content="x")]
         result = self.rewinder.rewind_last_turn(messages)
         assert result is not messages

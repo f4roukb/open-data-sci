@@ -1,8 +1,6 @@
-"""Mixin for objects that can be rendered as LLM-digestible text content."""
+"""Abstract mixins."""
 
 from abc import ABC, abstractmethod
-
-__all__ = ["LLMDigestibleMixin"]
 
 
 class LLMDigestibleMixin(ABC):
@@ -11,4 +9,13 @@ class LLMDigestibleMixin(ABC):
     @abstractmethod
     def to_content(self) -> str:
         """Render this object as plain text suitable for inclusion in an LLM message."""
+        ...
+
+
+class RenderableMessageMixin[MixinSubtype](ABC):
+    """Mixin for message types that know how to render themselves for LLM consumption."""
+
+    @abstractmethod
+    def render(self) -> MixinSubtype:
+        """Return an LLM-ready copy of this message."""
         ...

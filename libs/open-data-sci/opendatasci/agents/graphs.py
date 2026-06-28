@@ -6,13 +6,13 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
 
-from opendatasci._utils.langchain_utils import is_final_ai_message
+from opendatasci._utils.message_utils import is_final_ai_message
 from opendatasci.agents.nodes import AgentNode, BuildSystemContext
 from opendatasci.agents.states import AgentState
 from opendatasci.models.factory import _RetryRunnable
 
 if TYPE_CHECKING:
-    from opendatasci.agents.chat_memory import ChatHistoryBuilder
+    from opendatasci.agents.chat_history import ChatHistoryBuilder
 
 
 def _route_after_llm_call(state: AgentState) -> str:

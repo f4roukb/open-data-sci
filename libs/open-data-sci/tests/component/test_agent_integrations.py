@@ -253,7 +253,7 @@ class TestTurnSummarizerIntegration:
         # AsyncMock that yields a real ChatTurnSummaryOutput on ainvoke. We patch
         # the private _structured_llm attribute on the existing
         # ChatTurnSummarizer to avoid rewiring the whole turn finalizer.
-        from opendatasci.agents.chat_memory import ChatTurnSummaryOutput
+        from opendatasci.memory.chat_memory import ChatTurnSummaryOutput
 
         structured_summary = ChatTurnSummaryOutput(
             user_request="Asked to greet.",
@@ -267,15 +267,12 @@ class TestTurnSummarizerIntegration:
         async for _ in svc.astream("Greet me"):
             pass
         await asyncio.sleep(0)
-        record = await agent._chat_history_builder.flush()
+        record = await agent._chat_history_builder.flush_pending_tasks()
 
         # The flushed summary carries the turn details.
-        from opendatasci.agents.chat_memory import build_chat_recap_messages
-
         assert record is not None
-        recap = build_chat_recap_messages([record])
+        recap = agent._chat_history_builder._build_summary_messages([record])
         formatted = recap[0].content
-        assert "Turn" in formatted
         assert "Asked to greet" in formatted
         assert "The agent said hello" in formatted
 
@@ -289,13 +286,11 @@ class TestTurnSummarizerIntegration:
         async for _ in svc.astream("Greet me!"):
             pass
         await asyncio.sleep(0)
-        record = await agent._chat_history_builder.flush()
+        record = await agent._chat_history_builder.flush_pending_tasks()
 
         # Even without a structured LLM, the fallback path still records the turn
         # using the raw query and explanation text.
-        from opendatasci.agents.chat_memory import build_chat_recap_messages
-
         assert record is not None
-        recap = build_chat_recap_messages([record])
+        recap = agent._chat_history_builder._build_summary_messages([record])
         assert "Greet me!" in recap[0].content
 

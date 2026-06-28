@@ -9,8 +9,9 @@ from langgraph.prebuilt import InjectedState
 from langgraph.types import Command
 
 from opendatasci.agents.states import AgentState
-from opendatasci.skills import SKILL_LABELS, Skill
+from opendatasci.skills import Skill
 from opendatasci.skills.base import BaseSkillStore
+from opendatasci.skills.local import SKILL_LABELS
 
 
 def _label_for(skill: Skill) -> str:

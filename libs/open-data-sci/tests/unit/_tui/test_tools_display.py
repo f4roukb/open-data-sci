@@ -147,13 +147,13 @@ class TestRegistryContents:
     # ── Planning ──────────────────────────────────────────────────────────────
 
     def test_enter_plan_mode_label(self) -> None:
-        assert REGISTRY["enter_plan_mode"].label == "Planning"
+        assert REGISTRY["enter_plan_mode"].label == "Planning the next steps"
 
     def test_enter_plan_mode_icon(self) -> None:
         assert REGISTRY["enter_plan_mode"].icon == "🎯"
 
     def test_exit_plan_mode_label(self) -> None:
-        assert REGISTRY["exit_plan_mode"].label == "Done planning"
+        assert REGISTRY["exit_plan_mode"].label == "Planning complete"
 
     def test_exit_plan_mode_icon(self) -> None:
         assert REGISTRY["exit_plan_mode"].icon == "✅"
@@ -183,7 +183,7 @@ class TestRegistryContents:
     # ── Dataset ───────────────────────────────────────────────────────────────
 
     def test_read_dataset_info_label(self) -> None:
-        assert REGISTRY["read_dataset_info"].label == "Reading dataset info"
+        assert REGISTRY["read_dataset_info"].label == "Reading dataset information"
 
     def test_read_dataset_info_icon(self) -> None:
         assert REGISTRY["read_dataset_info"].icon == "📚"
@@ -223,7 +223,7 @@ class TestRegistryContents:
         assert REGISTRY["web_search"].summary_arg == "summary"
 
     def test_fetch_url_label(self) -> None:
-        assert REGISTRY["fetch_url"].label == "Fetching content"
+        assert REGISTRY["fetch_url"].label == "Fetching web content"
 
     def test_fetch_url_icon(self) -> None:
         assert REGISTRY["fetch_url"].icon == "🔗"

@@ -19,12 +19,12 @@ All of the following are importable directly from `opendatasci`:
 ```python
 from opendatasci import (
     create_agent,           # Factory: build a fully-wired agent from a path
-    Agent,       # The agent class itself
+    Agent,                  # The agent class itself
     OpenDataSciConfig,      # Configuration dataclass
     LocalWorkspace,         # Filesystem-backed workspace
     AgentStreamEvent,       # Streaming event dataclass
     SandboxExecResult,      # Code execution result dataclass
-    ChatTurnContext,        # Assembled per-turn context (recap messages + ongoing turn messages)
+    ChatTurnContext,        # Assembled per-turn context (compaction + summaries + ongoing turn messages)
 )
 ```
 
@@ -36,7 +36,7 @@ from opendatasci import (
 | [Agent](agent.md) | Full agent class: `astream`, `rewind_turn`, `compact_chat_history`, … |
 | [OpenDataSciConfig](config.md) | All configuration fields and environment variable mappings |
 | [TUI Service](session_manager.md) | `OpenDataSciTuiService` — service layer used by the terminal UI |
-| [Memory](memory.md) | `ChatTurnContext`, `ChatTurnSummary`, message provenance tagging |
+| [Memory](memory.md) | `ChatTurnContext`, `ChatTurnSummary`, `ChatHistoryCompaction`, message provenance tagging |
 | [Workspace](workbench.md) | `BaseWorkspace`, `LocalWorkspace` |
 | [Sandbox & Execution](session.md) | `BaseSandbox`, `SandboxExecResult`, TUI command allowlist |
 | [Events & Types](types.md) | `AgentStreamEvent` — all event types explained |

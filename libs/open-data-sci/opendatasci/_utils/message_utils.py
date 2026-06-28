@@ -1,23 +1,23 @@
-"""LangChain / LangGraph message and state utilities."""
+"""LangChain message utilities."""
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
-from langgraph.types import StateSnapshot
 
 
 def get_message_text_content(msg: BaseMessage) -> str:
     """Extract plain text from a message, skipping non-text blocks (e.g. thinking)."""
     content = msg.content
     if isinstance(content, str):
-        return content
+        return content.strip()
     if not isinstance(content, list):
-        return str(content)
+        return str(content).strip()
     parts: list[str] = []
     for block in content:
         if isinstance(block, dict):
-            if block.get("type") == "text":
-                parts.append(block.get("text", ""))
+            if block.get("type") == "text" and (stripped := block.get("text", "").strip()):
+                parts.append(stripped)
         elif isinstance(block, str):
-            parts.append(block)
+            if stripped := block.strip():
+                parts.append(stripped)
     return "\n".join(parts)
 
 
@@ -63,14 +63,13 @@ def prepend_messages(
     return messages + non_system
 
 
-def is_interrupt_state_snapshot(state: StateSnapshot) -> bool:
-    """Return True if *state* contains at least one pending LangGraph interrupt."""
-    return any(intr for task in state.tasks for intr in task.interrupts)
+def is_ai_message_with_tool_calls(msg: BaseMessage) -> bool:
+    return isinstance(msg, AIMessage) and bool(msg.tool_calls)
 
 
 def is_final_ai_message(msg: BaseMessage) -> bool:
     """Return True if *msg* is an AIMessage with no pending tool calls."""
-    return isinstance(msg, AIMessage) and not bool(getattr(msg, "tool_calls", None))
+    return isinstance(msg, AIMessage) and not is_ai_message_with_tool_calls(msg)
 
 
 def get_final_ai_message(chat_history: list[BaseMessage]) -> AIMessage:
@@ -81,23 +80,13 @@ def get_final_ai_message(chat_history: list[BaseMessage]) -> AIMessage:
     raise ValueError("No AIMessage found in chat history")
 
 
-def is_ongoing_turn(turn: list[BaseMessage]) -> bool:
-    """Return True if *turn* is an active, in-progress ReAct turn.
-
-    A valid ongoing turn starts with a HumanMessage and ends with either an
-    AIMessage carrying pending tool calls, a ToolMessage (tool results not yet
-    processed by the agent), or an interrupt-reply HumanMessage (the agent
-    paused to ask the user a question and has not yet resumed).
-    """
-    if not turn:
-        return False
-    if not isinstance(turn[0], HumanMessage):
-        return False
-    last = turn[-1]
-    if isinstance(last, ToolMessage):
-        return True
-    if isinstance(last, HumanMessage) and last.additional_kwargs.get(
-        "is_input_on_interrupt", False
-    ):
-        return True
-    return isinstance(last, AIMessage) and bool(last.tool_calls)
+def get_thoughts(msg: AIMessage) -> str:
+    """Return the concatenated thinking content from *msg*, or an empty string if none."""
+    content = msg.content
+    if isinstance(content, str):
+        return ""
+    return "\n".join(
+        block.get("thinking", "")
+        for block in content
+        if isinstance(block, dict) and block.get("type") == "thinking"
+    )

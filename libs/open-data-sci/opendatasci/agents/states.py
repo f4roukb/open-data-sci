@@ -6,12 +6,27 @@ from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.graph.message import add_messages
 from langgraph.types import Interrupt
 
-from opendatasci._utils.langchain_utils import is_final_ai_message
-from opendatasci.agents.chat_memory import ChatTurnSummary
+from opendatasci._utils.message_utils import is_final_ai_message
+from opendatasci.agents.chat_history import CHAT_MAX_TURN_SUMMARIES as MAX_TURN_SUMMARIES
+from opendatasci.memory.chat_memory import (
+    ChatHistoryCompaction,
+    ChatTurnSummary,
+)
 from opendatasci.skills.base import Skill
 
 
-def reduce_to_ongoing_turn(
+def _reduce_turn_summaries(
+    current: list[ChatTurnSummary], incoming: list[ChatTurnSummary]
+) -> list[ChatTurnSummary]:
+    """Replace the summary list, capping silently at ``MAX_TURN_SUMMARIES``.
+
+    The cap is a safeguard: in normal operation the node always writes a
+    windowed slice that never exceeds ``MAX_TURN_SUMMARIES``.
+    """
+    return incoming[-MAX_TURN_SUMMARIES:]
+
+
+def _reduce_to_ongoing_turn(
     current_turn_messages: list[BaseMessage], incoming_messages: list[BaseMessage]
 ) -> list[BaseMessage]:
     """Keep ``AgentState.messages`` scoped to the current turn only.
@@ -23,7 +38,7 @@ def reduce_to_ongoing_turn(
     turn has completed (its last message is a final AIMessage with no pending
     tool calls — the same check ``graphs.py`` uses to route to ``end``) does the
     turn reset from scratch instead of accumulating onto the old one: completed
-    turns live on only as :class:`ChatTurnSummary` entries, never as raw
+    turns live on only as :class:`~opendatasci._utils.mixins.LLMDigestibleContent` entries, never as raw
     messages.
     """
     starts_new_turn = any(isinstance(m, HumanMessage) for m in incoming_messages)
@@ -45,14 +60,17 @@ class AgentState(BaseAgentState):
 
     ``messages`` holds only the *ongoing* conversation turn (see
     :func:`reduce_to_ongoing_turn`) — completed turns are folded into
-    ``turn_summaries`` instead of accumulating here.
+    ``turn_summaries`` (:class:`~opendatasci._utils.mixins.LLMDigestibleContent`) instead of accumulating here.
     """
 
-    messages: Annotated[list[Any], reduce_to_ongoing_turn] = field(default_factory=list)
+    messages: Annotated[list[Any], _reduce_to_ongoing_turn] = field(default_factory=list)
+    turn_summaries: Annotated[list[ChatTurnSummary], _reduce_turn_summaries] = field(
+        default_factory=list
+    )
+    chat_history_compaction: ChatHistoryCompaction | None = None
     active_skills: list[Skill] = field(default_factory=list)
     is_plan_mode: bool = False
     is_self_review_mode: bool = False
-    turn_summaries: list[ChatTurnSummary] = field(default_factory=list)
 
 
 @dataclass
