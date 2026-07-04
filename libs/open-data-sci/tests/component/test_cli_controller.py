@@ -53,7 +53,6 @@ class _RecordingMessageHandle(MessageHandle):
         self.role = role
         self.contents: list[str] = [content] if content else []
         self.finished = False
-        self.summary: str | None = None
 
     def append(self, chunk: str) -> None:
         self.contents.append(chunk)
@@ -63,10 +62,6 @@ class _RecordingMessageHandle(MessageHandle):
 
     def finish(self) -> None:
         self.finished = True
-
-    def finish_with_summary(self, text: str) -> None:
-        self.finished = True
-        self.summary = text
 
     @property
     def text(self) -> str:
@@ -798,3 +793,43 @@ class TestOnInputChanged:
         ctrl.on_input_changed("/c")
         ctrl.hide_completion()
         assert not ctrl.has_completion_matches
+
+
+class TestSlashCommandArguments:
+    """Slash commands tolerate trailing text — only the head token is matched (2.1.3)."""
+
+    async def test_help_with_trailing_text_still_runs_help(self):
+        ctrl, ui = _make_controller()
+        action, _ = await ctrl.on_submit("/help me please")
+        assert action == ""
+        assert "Unknown command" not in ui.messages[-1].text
+
+    async def test_exit_with_trailing_text_quits(self):
+        ctrl, _ = _make_controller()
+        action, _ = await ctrl.on_submit("/exit now")
+        assert action == "quit"
+
+    async def test_unknown_command_with_args_still_warns(self):
+        ctrl, ui = _make_controller()
+        await ctrl.on_submit("/bogus something")
+        assert "Unknown command" in ui.messages[-1].text
+
+
+class TestBootFailureDeadState:
+    """After a failed boot the app must say so instead of 'still loading' (2.1.5)."""
+
+    async def test_query_after_boot_failure_explains_failed_startup(self):
+        ctrl, ui = _make_controller()
+        ctrl._boot_failed = True
+
+        await ctrl.run_agent("analyse the data")
+
+        assert "Startup failed" in ui.messages[-1].text
+        assert "Still loading" not in ui.messages[-1].text
+
+    async def test_query_while_loading_still_says_loading(self):
+        ctrl, ui = _make_controller()
+
+        await ctrl.run_agent("analyse the data")
+
+        assert "Still loading" in ui.messages[-1].text

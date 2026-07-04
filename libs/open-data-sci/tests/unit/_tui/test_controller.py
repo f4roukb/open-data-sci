@@ -1420,3 +1420,117 @@ class TestCompactStopsTimer:
         mock_service.compact_chat_history = AsyncMock(side_effect=RuntimeError("boom"))
         await loaded_controller.compact()
         timer.stop.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# Slash commands with trailing text (2.1.3)
+# ---------------------------------------------------------------------------
+
+
+class TestSlashCommandArguments:
+    """_handle_slash matches only the head token, so trailing text is tolerated."""
+
+    async def test_help_with_trailing_text_still_runs_help(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        action, _ = await controller.on_submit("/help me please")
+        assert action == ""
+        content = mock_ui.add_message.call_args[0][1]
+        assert "Unknown command" not in content
+
+    async def test_exit_with_trailing_text_quits(self, controller: CLIController) -> None:
+        action, _ = await controller.on_submit("/exit now")
+        assert action == "quit"
+
+    async def test_models_with_trailing_text_dispatches(
+        self, loaded_controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await loaded_controller.on_submit("/models verbose")
+        content = mock_ui.add_message.call_args[0][1]
+        assert "Unknown command" not in content
+
+    async def test_unknown_command_with_args_reports_head_token(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await controller.on_submit("/bogus arg1 arg2")
+        content = mock_ui.add_message.call_args[0][1]
+        assert "Unknown command" in content
+        assert "/bogus" in content
+
+    async def test_awaiting_choice_exit_with_trailing_text_quits(
+        self, controller: CLIController
+    ) -> None:
+        controller._show_choice_prompt("Pick one", ["a", "b"])
+        action, _ = await controller.on_submit("/exit now")
+        assert action == "quit"
+
+
+# ---------------------------------------------------------------------------
+# Boot-failure dead state (2.1.5)
+# ---------------------------------------------------------------------------
+
+
+class TestBootFailedState:
+    def test_boot_failed_false_initially(self, controller: CLIController) -> None:
+        assert controller._boot_failed is False
+
+    async def test_boot_failure_sets_flag(self, mock_ui: MagicMock) -> None:
+        ctrl = _make_boot_ctrl(mock_ui)
+        with (
+            patch("pathlib.Path.is_file", return_value=False),
+            patch("pathlib.Path.is_dir", return_value=False),
+            patch("opendatasci._tui.controller.create_agent", side_effect=FileNotFoundError()),
+            patch("opendatasci._tui.controller.OpenDataSciTuiService"),
+            patch("opendatasci._tui.session.CLISessionInfo.from_path"),
+            patch("opendatasci.tools.mcp.load_mcp_servers", return_value=[]),
+            patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
+            patch("opendatasci._tui.controller.CLIController._did_you_mean", return_value=""),
+        ):
+            await ctrl.boot()
+
+        assert ctrl._boot_failed is True
+
+    async def test_run_agent_after_boot_failure_explains_dead_state(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        controller._boot_failed = True
+
+        await controller.run_agent("analyse this")
+
+        content = mock_ui.add_message.call_args[0][1]
+        assert "Startup failed" in content
+        assert "Still loading" not in content
+        assert "/exit" in content
+
+    async def test_run_agent_while_still_loading_keeps_wait_message(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await controller.run_agent("analyse this")
+
+        content = mock_ui.add_message.call_args[0][1]
+        assert "Still loading" in content
+
+
+# ---------------------------------------------------------------------------
+# Controller state properties used by app-level stop shortcuts (2.1.4)
+# ---------------------------------------------------------------------------
+
+
+class TestControllerStateProperties:
+    def test_agent_running_false_initially(self, controller: CLIController) -> None:
+        assert controller.agent_running is False
+
+    def test_agent_running_reflects_internal_flag(self, controller: CLIController) -> None:
+        controller._agent_running = True
+        assert controller.agent_running is True
+
+    def test_has_paste_attachment_false_initially(self, controller: CLIController) -> None:
+        assert controller.has_paste_attachment is False
+
+    def test_has_paste_attachment_tracks_paste_lifecycle(
+        self, controller: CLIController
+    ) -> None:
+        controller.on_paste("line1\nline2")
+        assert controller.has_paste_attachment is True
+        controller.clear_paste_attachment()
+        assert controller.has_paste_attachment is False

@@ -15,7 +15,7 @@ from opendatasci.streaming.events import (
     UsageEvent,
     WorkerDoneEvent,
 )
-from opendatasci._tui.presenter import _TurnPresenter
+from opendatasci._tui.presenter import _TurnPresenter, apply_usage_event
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -27,7 +27,6 @@ def _make_ui() -> MagicMock:
     msg = MagicMock()
     msg.append = MagicMock()
     msg.finish = MagicMock()
-    msg.finish_with_summary = MagicMock()
     ui.add_message.return_value = msg
     ui.add_thinking_block.return_value = MagicMock()
     return ui
@@ -125,43 +124,35 @@ class TestCleanup:
 # ---------------------------------------------------------------------------
 
 
-class TestHandleUsage:
-    def _presenter(self) -> _TurnPresenter:
-        return _TurnPresenter(_make_ui())
-
+class TestApplyUsageEvent:
     def _usage(self, **kwargs: object) -> UsageEvent:
         return UsageEvent(**kwargs)  # type: ignore[arg-type]
 
     def test_context_tokens_is_input_plus_output(self) -> None:
-        p = self._presenter()
         bar = MagicMock()
-        p.handle_usage(self._usage(input_tokens=1200, output_tokens=300), bar)
+        apply_usage_event(self._usage(input_tokens=1200, output_tokens=300), bar)
         bar.update_context.assert_called_once_with(1500, None)
 
     def test_cache_read_tokens_forwarded(self) -> None:
-        p = self._presenter()
         bar = MagicMock()
-        p.handle_usage(
+        apply_usage_event(
             self._usage(input_tokens=1000, output_tokens=200, cache_read_tokens=600), bar
         )
         bar.update_context.assert_called_once_with(1200, 600)
 
     def test_missing_token_keys_yields_none_context(self) -> None:
-        p = self._presenter()
         bar = MagicMock()
-        p.handle_usage(self._usage(), bar)
+        apply_usage_event(self._usage(), bar)
         bar.update_context.assert_called_once_with(None, None)
 
     def test_missing_cache_key_yields_none_cached(self) -> None:
-        p = self._presenter()
         bar = MagicMock()
-        p.handle_usage(self._usage(input_tokens=500, output_tokens=100), bar)
+        apply_usage_event(self._usage(input_tokens=500, output_tokens=100), bar)
         _, cached = bar.update_context.call_args.args
         assert cached is None
 
     def test_none_turn_status_does_not_raise(self) -> None:
-        p = self._presenter()
-        p.handle_usage(self._usage(input_tokens=100, output_tokens=50), None)
+        apply_usage_event(self._usage(input_tokens=100, output_tokens=50), None)
 
 
 # ---------------------------------------------------------------------------

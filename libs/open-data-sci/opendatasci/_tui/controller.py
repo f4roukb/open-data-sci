@@ -63,7 +63,7 @@ from .file_refs import (
     _split_existing_file_refs,
 )
 from .message_queue import PendingMessageQueue
-from .presenter import _TurnPresenter
+from .presenter import _TurnPresenter, apply_usage_event
 from .theme import active as theme
 
 logger = logging.getLogger(__name__)
@@ -85,6 +85,7 @@ class CLIController:
         self._base_config = datasci_config
         self._session_id = session_id
         self._service: OpenDataSciTuiService | None = None
+        self._boot_failed: bool = False
         self._exit_stack: AsyncExitStack = AsyncExitStack()
         self._awaiting_choice: bool = False
         self._pending_choices: list[str] = []
@@ -107,6 +108,16 @@ class CLIController:
     @property
     def model(self) -> str:
         return self._base_config.model
+
+    @property
+    def agent_running(self) -> bool:
+        """True while an agent turn is streaming."""
+        return self._agent_running
+
+    @property
+    def has_paste_attachment(self) -> bool:
+        """True when a multi-line paste is pending in the attachment bar."""
+        return self._paste_attachment is not None
 
     # ── Completion state delegation ───────────────────────────────────────────
     # These properties expose CompletionState internals under the names that
@@ -196,6 +207,7 @@ class CLIController:
             info = CLISessionInfo.from_path(self._workspace_path, workspace_path, cfg)
             ui.set_file_count(self._describe_data(info))
         except FileNotFoundError:
+            self._boot_failed = True
             hint = self._did_you_mean(self._workspace_path)
             msg_text = (
                 f"❌ File not found: `{escape_markup(self._workspace_path)}`\n\n"
@@ -205,14 +217,17 @@ class CLIController:
             msg.set_content(msg_text)
             msg.finish()
         except PermissionError:
+            self._boot_failed = True
             msg = ui.add_message("agent", "")
             msg.set_content(f"❌ Permission denied: `{escape_markup(self._workspace_path)}`")
             msg.finish()
         except ValueError as exc:
+            self._boot_failed = True
             msg = ui.add_message("agent", "")
             msg.set_content(f"❌ Provider error: {exc}")
             msg.finish()
         except Exception as exc:
+            self._boot_failed = True
             msg = ui.add_message("agent", "")
             msg.set_content(f"❌ Failed to load: {exc}")
             msg.finish()
@@ -296,7 +311,7 @@ class CLIController:
         if self._awaiting_choice:
             if not raw:
                 return "", ""
-            if raw in {"/exit", "/reset", "/clear"}:
+            if raw.split()[0] in {"/exit", "/reset", "/clear"}:
                 self._exit_choice_mode()
                 should_quit = await self._handle_slash(raw)
                 return ("quit" if should_quit else ""), ""
@@ -350,9 +365,17 @@ class CLIController:
         requires the user's input before anything else can proceed).
         """
         if self._service is None:
-            self._ui.add_message(
-                "agent", "⚠️ Still loading — please wait a moment and try again."
-            ).finish()
+            if self._boot_failed:
+                self._ui.add_message(
+                    "agent",
+                    "❌ Startup failed, so queries can't run in this session. "
+                    "Fix the problem shown above and restart the app "
+                    "(type `/exit` to quit).",
+                ).finish()
+            else:
+                self._ui.add_message(
+                    "agent", "⚠️ Still loading — please wait a moment and try again."
+                ).finish()
             return
 
         while True:
@@ -415,7 +438,7 @@ class CLIController:
         elif isinstance(event, ToolResultEvent):
             presenter.handle_tool_result(event)
         elif isinstance(event, UsageEvent):
-            presenter.handle_usage(event, self._active_turn_status)
+            apply_usage_event(event, self._active_turn_status)
         elif isinstance(event, InputRequiredEvent):
             self._show_choice_prompt(event.content, list(event.choices))
         elif isinstance(event, ResponseEvent):
@@ -521,8 +544,13 @@ class CLIController:
 
     # ── Slash command dispatch ────────────────────────────────────────────────
 
-    async def _handle_slash(self, cmd: str) -> bool:
-        """Dispatch a slash command. Returns True if the app should quit."""
+    async def _handle_slash(self, raw: str) -> bool:
+        """Dispatch a slash command. Returns True if the app should quit.
+
+        Only the first whitespace-separated token is matched, so trailing
+        text ("/help x") doesn't turn a valid command into an unknown one.
+        """
+        cmd = raw.split()[0] if raw.split() else raw
         if cmd == "/exit":
             return True
         elif cmd == "/clear":

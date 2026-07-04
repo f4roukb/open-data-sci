@@ -28,6 +28,28 @@ from .tools_display import REGISTRY, ToolDisplay
 logger = logging.getLogger(__name__)
 
 
+def apply_usage_event(event: UsageEvent, turn_status: TurnStatusHandle | None) -> None:
+    """Push token/cache counts from *event* onto *turn_status*, if present.
+
+    Not a presenter method: it only touches the turn status handle passed in
+    and has no dependency on any per-turn presenter state.
+    """
+    if turn_status is None:
+        return
+
+    input_tokens = event.input_tokens
+    output_tokens = event.output_tokens
+    cache_read_tokens = event.cache_read_tokens
+
+    context_tokens: int | None = None
+    if input_tokens is not None or output_tokens is not None:
+        context_tokens = int(input_tokens or 0) + int(output_tokens or 0)
+
+    cached_tokens: int | None = int(cache_read_tokens) if cache_read_tokens is not None else None
+
+    turn_status.update_context(context_tokens, cached_tokens)
+
+
 class _TurnPresenter:
     """Manages ephemeral UI state (bubbles, tool blocks, thinking) for one turn.
 
@@ -227,22 +249,6 @@ class _TurnPresenter:
                 tool_call_id,
             )
         self._show_thinking_block()
-
-    def handle_usage(self, event: UsageEvent, turn_status: TurnStatusHandle | None) -> None:
-        input_tokens = event.input_tokens
-        output_tokens = event.output_tokens
-        cache_read_tokens = event.cache_read_tokens
-
-        context_tokens: int | None = None
-        if input_tokens is not None or output_tokens is not None:
-            context_tokens = int(input_tokens or 0) + int(output_tokens or 0)
-
-        cached_tokens: int | None = (
-            int(cache_read_tokens) if cache_read_tokens is not None else None
-        )
-
-        if turn_status is not None:
-            turn_status.update_context(context_tokens, cached_tokens)
 
     def handle_response(self, event: ResponseEvent) -> None:
         self._finish_thinking()
