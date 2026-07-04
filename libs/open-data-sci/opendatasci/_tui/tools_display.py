@@ -80,9 +80,7 @@ register(
     "update_dataset_info",
     ToolDisplay(label="Updating dataset notes", icon="📝", display_status=False),
 )
-register(
-    "profile_dataset", ToolDisplay(label="Profiling dataset", icon="📊", display_status=False)
-)
+register("profile_dataset", ToolDisplay(label="Profiling dataset", icon="📊", display_status=False))
 register(
     "list_workspace_files",
     ToolDisplay(label="Listing workspace files", icon="📁", display_status=False),
@@ -93,7 +91,9 @@ register(
 )
 register(
     "fetch_url",
-    ToolDisplay(label="Fetching web content", icon="🔗", summary_arg="summary", display_status=False),
+    ToolDisplay(
+        label="Fetching web content", icon="🔗", summary_arg="summary", display_status=False
+    ),
 )
 register("ask_user_mcq", ToolDisplay(label="Question", icon="💬", display_status=False))
 register("enter_self_review_mode", ToolDisplay(label="Reviewing progress so far", icon="🔍"))

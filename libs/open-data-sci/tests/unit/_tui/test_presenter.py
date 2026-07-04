@@ -165,12 +165,12 @@ class TestHandleUsage:
 
 
 # ---------------------------------------------------------------------------
-# display=False — tool calls must be invisible to the user
+# display_status=False — tool calls must be invisible to the user
 # ---------------------------------------------------------------------------
 
 
 def _hidden_tool_call(tool_call_id: str = "h1") -> ToolCallEvent:
-    # ask_user_mcq is registered with display=False in _tui/tools_display.py
+    # ask_user_mcq is registered with display_status=False in _tui/tools_display.py
     return ToolCallEvent(
         tool="ask_user_mcq",
         tool_call_id=tool_call_id,
@@ -240,7 +240,7 @@ class TestDisplayFalse:
             )
         )
         assert ui.add_ephemeral_block.call_count == 1
-        # tool_call fires with display=False — block survives without a status line
+        # tool_call fires with display_status=False — block survives without a status line
         p.handle_tool_call(_hidden_tool_call("h1"))
         comm_block.dismiss.assert_not_called()
         comm_block.upgrade.assert_called_once_with("", "")
@@ -272,7 +272,7 @@ class TestDisplayFalse:
             ToolCommunicationEvent(
                 content="Reading dataset notes…",
                 tool_call_id="h1",
-                tool_name="read_dataset_info",  # display=False in tools_display.py
+                tool_name="read_dataset_info",  # display_status=False in tools_display.py
             )
         )
         ui.add_ephemeral_block.assert_called_once_with("Reading dataset notes…", "", "")
@@ -293,7 +293,7 @@ class TestDisplayFalse:
             ToolCommunicationEvent(
                 content="Profiling…",
                 tool_call_id="h1",
-                tool_name="profile_dataset",  # display=False in tools_display.py
+                tool_name="profile_dataset",  # display_status=False in tools_display.py
             )
         )
         p.handle_tool_call(ToolCallEvent(tool="profile_dataset", tool_call_id="h1", summary=""))

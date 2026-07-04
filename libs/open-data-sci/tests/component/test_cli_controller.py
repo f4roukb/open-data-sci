@@ -559,7 +559,7 @@ class TestStreamingAllEventTypes:
         assert ui.dividers >= 1
 
     async def test_hidden_tool_call_skips_block(self):
-        """Tools with display=False emit tool_result without a paired ephemeral; no crash."""
+        """Tools with display_status=False emit tool_result without a paired ephemeral; no crash."""
         events = [
             ToolCallEvent(
                 content="{}",

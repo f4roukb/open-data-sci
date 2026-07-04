@@ -618,7 +618,7 @@ class TestToolCallBlockRefreshSpacing:
 
 class TestToolCallBlockCommunicationOnly:
     """Communication-only mode (label == summary == ""): used for hidden
-    (display=False) tools whose narration must stay visible while the tool
+    (display_status=False) tools whose narration must stay visible while the tool
     identity does not.  The narration is the whole block — spinner-prefixed
     while running, plain text once finished, error glyph on failure."""
 
