@@ -6,11 +6,9 @@ import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool, tool
 from pydantic import BaseModel, Field
-
-from opendatasci.memory.messages import HarnessMessage
 from opendatasci.models.factory import create_model
 from opendatasci.sandbox.base import BaseSandbox, SandboxExecResult
 
@@ -178,7 +176,7 @@ def create_code_verification_tools(datasci_config: "OpenDataSciConfig") -> list[
 
         messages = [
             SystemMessage(content=_REVIEW_SYSTEM_PROMPT),
-            HarnessMessage(content=user_content),
+            HumanMessage(content=user_content),
         ]
         review: _CodeReview = await _llm.ainvoke(messages)  # type: ignore[assignment]
 

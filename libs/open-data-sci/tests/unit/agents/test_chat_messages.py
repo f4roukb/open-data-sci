@@ -7,7 +7,9 @@ from langchain_core.messages import AIMessage, HumanMessage
 from opendatasci._utils.mixins import RenderableMessageMixin
 from opendatasci.memory.messages import (
     AgentMessage,
-    HarnessMessage,
+    AgentToAgentMessage,
+    CompactionMessage,
+    MessageOrigin,
     PlanMessage,
     SummaryMessage,
     UserMessage,
@@ -49,25 +51,50 @@ class TestUserMessage:
         assert msg.content == "hi"
 
 
-class TestHarnessMessage:
+class TestCompactionMessage:
     def test_is_subtype_of_human_message(self) -> None:
-        assert isinstance(HarnessMessage(content="ctx"), HumanMessage)
+        assert isinstance(CompactionMessage(content="compact"), HumanMessage)
 
     def test_is_not_user_message(self) -> None:
-        assert not is_user_message(HarnessMessage(content="ctx"))
+        assert not is_user_message(CompactionMessage(content="compact"))
 
-    def test_render_returns_harness_message(self) -> None:
-        msg = HarnessMessage(content="ctx", created_at=_TS)
-        assert isinstance(msg.render(), HarnessMessage)
+    def test_render_returns_compaction_message(self) -> None:
+        msg = CompactionMessage(content="compact", created_at=_TS)
+        assert isinstance(msg.render(), CompactionMessage)
 
     def test_render_includes_harness_origin_tag(self) -> None:
-        msg = HarnessMessage(content="ctx", created_at=_TS)
+        msg = CompactionMessage(content="compact", created_at=_TS)
         assert "<origin>harness</origin>" in msg.render().content
 
     def test_render_does_not_mutate_original(self) -> None:
-        msg = HarnessMessage(content="ctx")
+        msg = CompactionMessage(content="compact")
         msg.render()
-        assert msg.content == "ctx"
+        assert msg.content == "compact"
+
+
+class TestAgentToAgentMessage:
+    def test_is_subtype_of_human_message(self) -> None:
+        assert isinstance(AgentToAgentMessage(content="task", origin=MessageOrigin.AGENT), HumanMessage)
+
+    def test_is_not_user_message(self) -> None:
+        assert not is_user_message(AgentToAgentMessage(content="task", origin=MessageOrigin.AGENT))
+
+    def test_render_returns_agent_to_agent_message(self) -> None:
+        msg = AgentToAgentMessage(content="task", origin=MessageOrigin.AGENT, created_at=_TS)
+        assert isinstance(msg.render(), AgentToAgentMessage)
+
+    def test_render_includes_origin_tag(self) -> None:
+        msg = AgentToAgentMessage(content="task", origin=MessageOrigin.AGENT, created_at=_TS)
+        assert "<origin>agent</origin>" in msg.render().content
+
+    def test_render_reflects_provided_origin(self) -> None:
+        msg = AgentToAgentMessage(content="task", origin=MessageOrigin.HARNESS, created_at=_TS)
+        assert "<origin>harness</origin>" in msg.render().content
+
+    def test_render_does_not_mutate_original(self) -> None:
+        msg = AgentToAgentMessage(content="task", origin=MessageOrigin.AGENT)
+        msg.render()
+        assert msg.content == "task"
 
 
 _TS_START = datetime(2024, 5, 31, tzinfo=timezone.utc)
@@ -148,13 +175,17 @@ class TestAgentMessage:
         msg = AgentMessage(content="resp")
         assert msg.created_at is not None
 
+    def test_origin_defaults_to_agent(self) -> None:
+        msg = AgentMessage(content="resp")
+        assert msg.origin == MessageOrigin.AGENT
+
 
 class TestIsUserMessage:
     def test_user_message_returns_true(self) -> None:
         assert is_user_message(UserMessage(content="hi"))
 
-    def test_harness_message_returns_false(self) -> None:
-        assert not is_user_message(HarnessMessage(content="ctx"))
+    def test_compaction_message_returns_false(self) -> None:
+        assert not is_user_message(CompactionMessage(content="compact"))
 
     def test_ai_message_returns_false(self) -> None:
         assert not is_user_message(AIMessage(content="resp"))

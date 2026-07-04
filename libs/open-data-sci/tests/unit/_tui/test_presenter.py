@@ -223,7 +223,10 @@ class TestDisplayFalse:
         p.handle_tool_result(ToolResultEvent(tool_call_id="h1"))
         ui.add_thinking_block.assert_not_called()
 
-    def test_pending_comm_ephemeral_dismissed_when_tool_is_hidden(self) -> None:
+    def test_pending_comm_block_kept_as_comm_only_when_tool_is_hidden(self) -> None:
+        """No flash: a pre-mounted comm block (unregistered tool_name at comm
+        time) must be KEPT when the tool turns out to be hidden — downgraded to
+        communication-only (empty label/summary), not dismissed."""
         p, ui = self._setup()
         comm_block = MagicMock()
         comm_block.is_running.return_value = True
@@ -237,9 +240,71 @@ class TestDisplayFalse:
             )
         )
         assert ui.add_ephemeral_block.call_count == 1
-        # tool_call fires with display=False — pending block must be dismissed
+        # tool_call fires with display=False — block survives without a status line
+        p.handle_tool_call(_hidden_tool_call("h1"))
+        comm_block.dismiss.assert_not_called()
+        comm_block.upgrade.assert_called_once_with("", "")
+
+    def test_pending_comm_block_dismissed_when_hidden_and_narration_present(self) -> None:
+        """When the agent already narrated in a regular message, the hidden
+        tool's comm block is redundant and must be retracted."""
+        p, ui = self._setup()
+        comm_block = MagicMock()
+        comm_block.is_running.return_value = True
+        ui.add_ephemeral_block.return_value = comm_block
+        p.handle_token(TokenEvent(content="I'm saving my notes now."))
+        p.handle_tool_communication(
+            ToolCommunicationEvent(
+                content="Saving notes…",
+                tool_call_id="h1",
+                tool_name="internal_action",
+            )
+        )
         p.handle_tool_call(_hidden_tool_call("h1"))
         comm_block.dismiss.assert_called_once()
+        comm_block.upgrade.assert_not_called()
+
+    def test_comm_for_registered_hidden_tool_creates_comm_only_block(self) -> None:
+        """The user must still get updates for hidden tools: their comm
+        pre-mounts a communication-only block (empty label, empty summary)."""
+        p, ui = self._setup()
+        p.handle_tool_communication(
+            ToolCommunicationEvent(
+                content="Reading dataset notes…",
+                tool_call_id="h1",
+                tool_name="read_dataset_info",  # display=False in tools_display.py
+            )
+        )
+        ui.add_ephemeral_block.assert_called_once_with("Reading dataset notes…", "", "")
+
+    def test_full_hidden_tool_lifecycle_shows_narration_without_status_line(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """comm → tool_call → tool_result for a hidden tool: the narration
+        block is created once, never dismissed (no flash), finalised on the
+        result, and the thinking spinner returns afterwards."""
+        import logging
+
+        p, ui = self._setup()
+        comm_block = MagicMock()
+        comm_block.is_running.return_value = True
+        ui.add_ephemeral_block.return_value = comm_block
+        p.handle_tool_communication(
+            ToolCommunicationEvent(
+                content="Profiling…",
+                tool_call_id="h1",
+                tool_name="profile_dataset",  # display=False in tools_display.py
+            )
+        )
+        p.handle_tool_call(ToolCallEvent(tool="profile_dataset", tool_call_id="h1", summary=""))
+        ui.add_thinking_block.reset_mock()
+        with caplog.at_level(logging.WARNING):
+            p.handle_tool_result(ToolResultEvent(tool_call_id="h1"))
+        ui.add_ephemeral_block.assert_called_once()
+        comm_block.dismiss.assert_not_called()
+        comm_block.set_done.assert_called_once()
+        ui.add_thinking_block.assert_called_once()
+        assert not caplog.records
 
     def test_visible_tool_after_hidden_tool_still_creates_ephemeral(self) -> None:
         p, ui = self._setup()

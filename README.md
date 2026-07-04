@@ -55,6 +55,7 @@ Most "AI for data" tools turn you into the bottleneck. Every experiment starts w
 
 | | |
 |--|--|
+| **Rich TUI** | Interactive terminal interface for real-time progress, tool calls, and agent output |
 | **Full workflow** | EDA, cleaning, feature engineering, modelling, evaluation, visualisation, reporting |
 | **Real code execution** | Full Python in a native OS sandbox |
 | **Built-in DS methodology** | Leakage prevention, proper evaluation, causality awareness |

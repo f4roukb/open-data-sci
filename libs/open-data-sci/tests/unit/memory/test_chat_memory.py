@@ -14,7 +14,6 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from opendatasci._utils.mixins import LLMDigestibleMixin
 from opendatasci.memory.messages import (
     AgentMessage,
-    HarnessMessage,
     PlanMessage,
     SummaryMessage,
     UserMessage,

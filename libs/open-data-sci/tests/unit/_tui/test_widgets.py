@@ -616,6 +616,46 @@ class TestToolCallBlockRefreshSpacing:
         assert lines[0] == "⣾ …"
 
 
+class TestToolCallBlockCommunicationOnly:
+    """Communication-only mode (label == summary == ""): used for hidden
+    (display=False) tools whose narration must stay visible while the tool
+    identity does not.  The narration is the whole block — spinner-prefixed
+    while running, plain text once finished, error glyph on failure."""
+
+    def _rendered_lines(self, block: ToolCallBlock) -> list[str]:
+        captured: list[Text] = []
+        with patch.object(block, "update", side_effect=captured.append):
+            block._refresh()
+        assert captured, "update() was never called"
+        return captured[-1].plain.splitlines()
+
+    def test_running_shows_spinner_prefixed_narration_only(self) -> None:
+        block = _make_block(communication="Checking dataset notes.", label="", summary="")
+        lines = self._rendered_lines(block)
+        # Single line: no separate status line, no blank separator.
+        assert lines == ["⣾ Checking dataset notes."]
+
+    def test_done_shows_plain_narration_without_status_styling(self) -> None:
+        block = _make_block(communication="Checking dataset notes.", label="", summary="")
+        block._done = True
+        lines = self._rendered_lines(block)
+        assert lines == ["Checking dataset notes."]
+
+    def test_error_shows_x_glyph_on_narration(self) -> None:
+        block = _make_block(communication="Checking dataset notes.", label="", summary="")
+        block._done = True
+        block._error = True
+        lines = self._rendered_lines(block)
+        assert lines == ["✗ Checking dataset notes."]
+
+    def test_upgrade_to_real_label_restores_two_part_layout(self) -> None:
+        block = _make_block(communication="Checking dataset notes.", label="", summary="")
+        with patch.object(block, "_refresh"):
+            block.upgrade("MyTool", "ran")
+        lines = self._rendered_lines(block)
+        assert lines == ["Checking dataset notes.", "", "⣾ ran"]
+
+
 class TestToolCallBlockWorkerRowRendering:
     """Worker block renders a subtree:
 

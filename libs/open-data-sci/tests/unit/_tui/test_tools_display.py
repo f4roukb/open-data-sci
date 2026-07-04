@@ -25,9 +25,9 @@ class TestToolDisplay:
         display = ToolDisplay(label="Tool")
         assert display.summary_arg is None
 
-    def test_display_defaults_to_true(self) -> None:
+    def test_display_status_defaults_to_true(self) -> None:
         display = ToolDisplay(label="Tool")
-        assert display.display is True
+        assert display.display_status is True
 
     def test_custom_icon(self) -> None:
         display = ToolDisplay(label="Python", icon="🐍")
@@ -37,9 +37,9 @@ class TestToolDisplay:
         display = ToolDisplay(label="Tool", summary_arg="summary")
         assert display.summary_arg == "summary"
 
-    def test_display_false(self) -> None:
-        display = ToolDisplay(label="Quiet Tool", display=False)
-        assert display.display is False
+    def test_display_status_false(self) -> None:
+        display = ToolDisplay(label="Quiet Tool", display_status=False)
+        assert display.display_status is False
 
     def test_is_frozen_immutable(self) -> None:
         display = ToolDisplay(label="Tool")

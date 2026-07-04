@@ -29,15 +29,17 @@ class ToolDisplay:
                         short summary line in the ephemeral block.  ``None``
                         means no summary (the block shows only the label and
                         communication).
-        display:        When ``True`` (default) an ephemeral block is shown
+        display_status: When ``True`` (default) a tool-status line is shown
                         while the tool runs and kept as a breadcrumb afterwards.
-                        Set to ``False`` for silent internal tools.
+                        Set to ``False`` for internal tools: only their
+                        streamed ``communication`` (if any) is surfaced, never
+                        the tool identity/status line.
     """
 
     label: str
     icon: str = ""
     summary_arg: str | None = None
-    display: bool = True
+    display_status: bool = True
 
 
 # Global registry: canonical tool name → ToolDisplay.
@@ -58,7 +60,8 @@ def register(tool_name: str, display: ToolDisplay) -> None:
 register("execute_python_code", ToolDisplay(label="Code", icon="🐍", summary_arg="summary"))
 register("execute_cli_command", ToolDisplay(label="Command", icon="⌨️", summary_arg="summary"))
 register(
-    "list_python_libs", ToolDisplay(label="Checking available libraries", icon="📦", display=False)
+    "list_python_libs",
+    ToolDisplay(label="Checking available libraries", icon="📦", display_status=False),
 )
 register("enter_plan_mode", ToolDisplay(label="Planning the next steps", icon="🎯"))
 register("exit_plan_mode", ToolDisplay(label="Planning complete", icon="✅"))
@@ -67,16 +70,22 @@ register("spawn_workers", ToolDisplay(label="Spawning workers", icon="⚙️"))
 register(
     "read_dataset_info",
     ToolDisplay(
-        label="Reading dataset information", icon="📚", summary_arg="summary", display=False
+        label="Reading dataset information",
+        icon="📚",
+        summary_arg="summary",
+        display_status=False,
     ),
 )
 register(
     "update_dataset_info",
-    ToolDisplay(label="Updating dataset notes", icon="📝", display=False),
+    ToolDisplay(label="Updating dataset notes", icon="📝", display_status=False),
 )
-register("profile_dataset", ToolDisplay(label="Profiling dataset", icon="📊", display=False))
 register(
-    "list_workspace_files", ToolDisplay(label="Listing workspace files", icon="📁", display=False)
+    "profile_dataset", ToolDisplay(label="Profiling dataset", icon="📊", display_status=False)
+)
+register(
+    "list_workspace_files",
+    ToolDisplay(label="Listing workspace files", icon="📁", display_status=False),
 )
 register(
     "web_search",
@@ -84,9 +93,9 @@ register(
 )
 register(
     "fetch_url",
-    ToolDisplay(label="Fetching web content", icon="🔗", summary_arg="summary", display=False),
+    ToolDisplay(label="Fetching web content", icon="🔗", summary_arg="summary", display_status=False),
 )
-register("ask_user_mcq", ToolDisplay(label="Question", icon="💬", display=False))
+register("ask_user_mcq", ToolDisplay(label="Question", icon="💬", display_status=False))
 register("enter_self_review_mode", ToolDisplay(label="Reviewing progress so far", icon="🔍"))
 register("exit_self_review_mode", ToolDisplay(label="Done reviewing progress", icon="✅"))
-register("verify_python_code", ToolDisplay(label="Reviewing code", icon="🔎", display=False))
+register("verify_python_code", ToolDisplay(label="Reviewing code", icon="🔎", display_status=False))

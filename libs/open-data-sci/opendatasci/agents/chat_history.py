@@ -18,7 +18,7 @@ from opendatasci.memory.chat_memory import (
     ChatTurnSummary,
 )
 from opendatasci.memory.messages import (
-    HarnessMessage,
+    CompactionMessage,
     PlanMessage,
     SummaryMessage,
     is_ongoing_turn,
@@ -109,9 +109,9 @@ class ChatHistoryBuilder(BaseChatHistoryBuilder):
         created_at = datetime.fromisoformat(raw_ts) if raw_ts else datetime.now(timezone.utc)
         return PlanMessage(content=plan.to_content(), created_at=created_at)
 
-    def _build_compaction_message(self, compaction: "ChatHistoryCompaction") -> HarnessMessage:
+    def _build_compaction_message(self, compaction: "ChatHistoryCompaction") -> CompactionMessage:
         """Convert *compaction* into a stamped recall message."""
-        return HarnessMessage(content=compaction.to_content(), created_at=compaction.compacted_at)
+        return CompactionMessage(content=compaction.to_content(), created_at=compaction.compacted_at)
 
     def _build_summary_messages(
         self, turn_summaries: list[ChatTurnSummary]
@@ -177,7 +177,7 @@ class ChatHistoryBuilder(BaseChatHistoryBuilder):
         ):
             messages = await self._loop_compactor.compact(messages)
 
-        recap_messages: list[HarnessMessage | SummaryMessage] = []
+        recap_messages: list[CompactionMessage | SummaryMessage] = []
         if chat_history_compaction is not None:
             recap_messages.append(self._build_compaction_message(chat_history_compaction))
         recap_messages.extend(self._build_summary_messages(summaries))

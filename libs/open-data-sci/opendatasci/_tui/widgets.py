@@ -892,6 +892,11 @@ class ToolCallBlock(Static):
     Call ``dismiss()`` to remove from the DOM entirely.
     For ``spawn_workers``, pass ``worker_summaries`` to get one status line per worker.
     Worker rows can be individually marked done (green ✓) or error (red ✗).
+
+    When both ``label`` and ``summary`` are empty the block is
+    *communication-only* (used for hidden ``display_status=False`` tools): the
+    narration is the whole block — spinner-prefixed while running, plain text
+    once finished — and no tool-status line ever appears.
     """
 
     DEFAULT_CSS = """
@@ -980,10 +985,19 @@ class ToolCallBlock(Static):
                 lines.append(display)
         else:
             display = self._summary if self._summary else self._label
-            if self._communication:
+            if self._communication and display:
                 lines.append(escape(self._communication))
                 lines.append("")  # blank line so the gap matches the inter-block margin
-            lines.append(self._status_markup(display))
+                lines.append(self._status_markup(display))
+            elif self._communication:
+                # Communication-only block (hidden tool): the narration is the
+                # whole block — spinner while running, plain text once done.
+                if self._done and not self._error:
+                    lines.append(escape(self._communication))
+                else:
+                    lines.append(self._status_markup(self._communication))
+            else:
+                lines.append(self._status_markup(display))
         self.update(Text.from_markup("\n".join(lines)))
 
     def _stop_spinner(self) -> None:

@@ -33,7 +33,7 @@ from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.base import BaseContextStore
 from opendatasci.context.local import LocalContextStore
 from opendatasci.memory.chat_memory import ChatHistoryCompactor
-from opendatasci.memory.messages import HarnessMessage, UserMessage
+from opendatasci.memory.messages import AgentToAgentMessage, MessageOrigin, UserMessage
 from opendatasci.memory.turn_memory import TurnRewinder
 from opendatasci.models.factory import (
     _RetryRunnable,
@@ -406,7 +406,7 @@ class ConcurrentWorkerAgent:
         """Execute *task* to completion and return the final text response."""
         self._current_system_prompt = system_prompt
         initial_state = AgentState(
-            messages=[HarnessMessage(content=task)],
+            messages=[AgentToAgentMessage(content=task, origin=MessageOrigin.AGENT)],
             active_skills=list(initial_active_skills or []),
         )
         invoke_config: RunnableConfig = {
