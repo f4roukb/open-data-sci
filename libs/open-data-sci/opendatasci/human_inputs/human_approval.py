@@ -129,9 +129,7 @@ class HumanApprovalManager(HumanApprovalBaseManager):
     """
 
     def __init__(self, config: OpenDataSciConfig) -> None:
-        self._llm = create_secondary_model(config).with_structured_output(
-            _CommandImpactAssessment
-        )
+        self._llm = create_secondary_model(config).with_structured_output(_CommandImpactAssessment)
 
     async def ask_for_command_approval(self, command: str) -> bool:
         try:
