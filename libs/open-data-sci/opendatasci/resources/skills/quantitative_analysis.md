@@ -25,6 +25,7 @@
 - Model risk — the risk that the model itself is wrong — is a distinct and often underappreciated source of uncertainty; comparing results across plausible alternative models is a useful guard
 - Tail risk measures (VaR, CVaR/Expected Shortfall) answer different questions: VaR describes a threshold, CVaR describes what to expect when that threshold is breached — for many purposes CVaR is the more informative measure
 - Monte Carlo simulation provides a flexible framework for propagating uncertainty through complex models; the quality of the output depends entirely on the quality of the input distribution assumptions
+- Simulation effort is a resource decision as much as a statistical one: the number of Monte Carlo paths, scenarios, or backtest configurations worth running depends on the hardware executing them — check the machine's available resources first, and prefer variance-reduction techniques or coarser grids over a simulation budget the machine cannot sustain
 
 **Optimisation**
 - Many quantitative problems can be cast as optimisation; recognising the structure (convex vs. non-convex, constrained vs. unconstrained, continuous vs. integer) determines what solvers are applicable and what guarantees are available

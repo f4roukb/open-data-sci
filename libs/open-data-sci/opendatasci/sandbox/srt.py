@@ -11,6 +11,8 @@ import base64
 import json
 import logging
 import os
+import platform
+import re
 import shlex
 import shutil
 import signal
@@ -20,6 +22,7 @@ import tempfile
 import traceback
 import warnings
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncIterator
 
@@ -157,6 +160,349 @@ async def _ensure_manager_initialized(config: SandboxRuntimeConfig) -> None:
 def _base_sandbox_env() -> dict[str, str]:
     """Return a minimal, allowlisted copy of the host environment."""
     return {key: os.environ[key] for key in _ENV_PASSTHROUGH if key in os.environ}
+
+
+@dataclass
+class _HardwareResources:
+    """One free-form description per hardware aspect of the probed machine."""
+
+    platform: str
+    cpu: str
+    ram: str
+    disk: str
+    gpu: str
+    accelerators: str
+
+
+class _HardwareResourcesProbe:
+    """Best-effort discovery of the hardware available to SRT-sandboxed code.
+
+    SRT executes code on the local machine, so probing the host directly
+    describes exactly the hardware that sandboxed code will see. All probes
+    are read-only, run fixed command lines (never model input), and degrade
+    to an explanatory message when a command is missing or fails.
+    """
+
+    _PROBE_TIMEOUT = 15  # seconds per external command
+
+    # lspci device-class keywords that indicate a GPU.
+    _GPU_PCI_PATTERN = re.compile(r"vga|3d controller|display controller", re.IGNORECASE)
+    # lspci keywords that indicate an NPU or another dedicated accelerator.
+    _ACCEL_PCI_PATTERN = re.compile(
+        r"neural|npu|vpu|tpu|habana|gaudi|coral|fpga|processing accelerator", re.IGNORECASE
+    )
+
+    def __init__(self, workspace_path: Path | None = None) -> None:
+        self._workspace_path = workspace_path
+
+    async def collect(self) -> _HardwareResources:
+        """Probe every hardware aspect concurrently and return the results."""
+        cpu, ram, disk, gpu, accel = await asyncio.gather(
+            self._cpu_section(),
+            self._ram_section(),
+            self._disk_section(),
+            self._gpu_section(),
+            self._accelerator_section(),
+        )
+        return _HardwareResources(
+            platform=platform.platform(),
+            cpu=cpu,
+            ram=ram,
+            disk=disk,
+            gpu=gpu,
+            accelerators=accel,
+        )
+
+    # -- probing primitives -------------------------------------------------
+
+    async def _run_command(self, *argv: str) -> str | None:
+        """Run *argv* and return its stripped stdout, or ``None`` on any failure."""
+        proc: asyncio.subprocess.Process | None = None
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *argv,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout_bytes, _ = await asyncio.wait_for(
+                proc.communicate(), timeout=self._PROBE_TIMEOUT
+            )
+        except asyncio.TimeoutError:
+            if proc is not None:
+                proc.kill()
+                await proc.wait()
+            return None
+        except OSError:
+            return None
+        if proc.returncode != 0:
+            return None
+        text = stdout_bytes.decode("utf-8", errors="replace").strip()
+        return text or None
+
+    @staticmethod
+    def _read_text(path: Path) -> str | None:
+        try:
+            return path.read_text(encoding="utf-8", errors="replace").strip() or None
+        except OSError:
+            return None
+
+    @staticmethod
+    def _format_bytes(num_bytes: int) -> str:
+        return f"{num_bytes / 1024**3:.1f} GiB"
+
+    async def _lspci_lines(self, pattern: "re.Pattern[str]") -> list[str]:
+        output = await self._run_command("lspci")
+        if not output:
+            return []
+        return [line for line in output.splitlines() if pattern.search(line)]
+
+    # -- sections ------------------------------------------------------------
+
+    async def _cpu_section(self) -> str:
+        lines = [
+            f"Architecture: {platform.machine() or 'unknown'}",
+            f"Logical cores: {os.cpu_count() or 'unknown'}",
+        ]
+        if hasattr(os, "getloadavg"):
+            try:
+                load_1, load_5, load_15 = os.getloadavg()
+                lines.append(
+                    f"Load average (1/5/15 min): {load_1:.2f}, {load_5:.2f}, {load_15:.2f}"
+                )
+            except OSError:
+                pass
+        if sys.platform == "darwin":
+            # Dumps the whole machdep.cpu subtree: brand string, core counts,
+            # and capability flags (features/leaf7_features on Intel;
+            # hw.optional.* covers arm64 features).
+            for probe in (
+                ("sysctl", "machdep.cpu"),
+                ("sysctl", "hw.physicalcpu", "hw.logicalcpu"),
+                ("sysctl", "hw.optional"),
+            ):
+                output = await self._run_command(*probe)
+                if output:
+                    lines.append(output)
+        elif sys.platform.startswith("linux"):
+            # lscpu includes the model name, core/socket topology, frequencies,
+            # caches, and the full capability flag list (AVX/AMX/SVE, …).
+            lscpu = await self._run_command("lscpu")
+            if lscpu:
+                lines.append(lscpu)
+            else:
+                cpuinfo = self._read_text(Path("/proc/cpuinfo"))
+                if cpuinfo:
+                    # First processor block is enough: the flags repeat per core.
+                    lines.append(cpuinfo.split("\n\n", 1)[0])
+        elif platform.processor():
+            lines.append(f"Processor: {platform.processor()}")
+        return "\n".join(lines)
+
+    async def _ram_section(self) -> str:
+        if sys.platform.startswith("linux"):
+            meminfo = self._read_text(Path("/proc/meminfo"))
+            if meminfo:
+                wanted = ("MemTotal", "MemFree", "MemAvailable", "SwapTotal", "SwapFree")
+                lines = [
+                    line for line in meminfo.splitlines() if line.split(":")[0].strip() in wanted
+                ]
+                if lines:
+                    return "\n".join(lines)
+        elif sys.platform == "darwin":
+            lines = []
+            memsize = await self._run_command("sysctl", "-n", "hw.memsize")
+            if memsize and memsize.isdigit():
+                lines.append(f"Total RAM: {self._format_bytes(int(memsize))}")
+            vm_stat = await self._run_command("vm_stat")
+            if vm_stat:
+                free = self._parse_vm_stat_free_bytes(vm_stat)
+                if free is not None:
+                    lines.append(f"Free RAM (free + inactive pages): {self._format_bytes(free)}")
+                lines.append(vm_stat)
+            if lines:
+                return "\n".join(lines)
+        elif sys.platform == "win32":
+            win = self._windows_memory_status()
+            if win:
+                return win
+        return "RAM information unavailable on this platform (best-effort probe)."
+
+    async def _disk_section(self) -> str:
+        if self._workspace_path is None:
+            return "No workspace path configured; disk space not probed."
+        try:
+            usage = shutil.disk_usage(self._workspace_path)
+        except OSError:
+            return f"Disk usage unavailable for workspace path {self._workspace_path}."
+        return (
+            f"Workspace: {self._workspace_path}\n"
+            f"Total: {self._format_bytes(usage.total)}, "
+            f"free: {self._format_bytes(usage.free)}"
+        )
+
+    @staticmethod
+    def _parse_vm_stat_free_bytes(vm_stat_output: str) -> int | None:
+        """Compute free bytes from ``vm_stat``: (free + inactive pages) × page size."""
+        page_size_match = re.search(r"page size of (\d+) bytes", vm_stat_output)
+        if not page_size_match:
+            return None
+        page_size = int(page_size_match.group(1))
+        total_pages = 0
+        found = False
+        for label in ("Pages free", "Pages inactive"):
+            match = re.search(rf"{label}:\s+(\d+)", vm_stat_output)
+            if match:
+                total_pages += int(match.group(1))
+                found = True
+        return total_pages * page_size if found else None
+
+    @classmethod
+    def _windows_memory_status(cls) -> str | None:
+        """Total/available RAM via GlobalMemoryStatusEx (dev/mock hosts only)."""
+        import ctypes
+
+        class _MemoryStatusEx(ctypes.Structure):
+            _fields_ = [
+                ("dwLength", ctypes.c_uint32),
+                ("dwMemoryLoad", ctypes.c_uint32),
+                ("ullTotalPhys", ctypes.c_uint64),
+                ("ullAvailPhys", ctypes.c_uint64),
+                ("ullTotalPageFile", ctypes.c_uint64),
+                ("ullAvailPageFile", ctypes.c_uint64),
+                ("ullTotalVirtual", ctypes.c_uint64),
+                ("ullAvailVirtual", ctypes.c_uint64),
+                ("ullAvailExtendedVirtual", ctypes.c_uint64),
+            ]
+
+        status = _MemoryStatusEx()
+        status.dwLength = ctypes.sizeof(_MemoryStatusEx)
+        try:
+            if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                return None
+        except (AttributeError, OSError):
+            return None
+        return (
+            f"Total RAM: {cls._format_bytes(status.ullTotalPhys)}\n"
+            f"Available RAM: {cls._format_bytes(status.ullAvailPhys)}"
+        )
+
+    async def _gpu_section(self) -> str:
+        parts: list[str] = []
+
+        nvidia = await self._run_command(
+            "nvidia-smi",
+            "--query-gpu=name,driver_version,compute_cap,memory.total,memory.free,memory.used,utilization.gpu",
+            "--format=csv",
+        )
+        if nvidia is None:
+            # Older drivers may not support compute_cap; fall back to the listing.
+            nvidia = await self._run_command("nvidia-smi", "-L")
+        if nvidia:
+            parts.append(f"NVIDIA (nvidia-smi):\n{nvidia}")
+            tensor_notes = self._nvidia_tensor_core_notes(nvidia)
+            parts.append(
+                tensor_notes
+                or "Note: tensor cores are present on compute capability >= 7.0 (Volta "
+                "and newer); their count scales with the GPU's SM count."
+            )
+
+        rocm = await self._run_command("rocm-smi", "--showproductname", "--showmeminfo", "vram")
+        if rocm:
+            parts.append(f"AMD (rocm-smi):\n{rocm}")
+
+        if sys.platform == "darwin":
+            displays = await self._run_command("system_profiler", "SPDisplaysDataType")
+            if displays:
+                parts.append(f"macOS (system_profiler SPDisplaysDataType):\n{displays}")
+
+        if sys.platform.startswith("linux") and not parts:
+            pci_gpus = await self._lspci_lines(self._GPU_PCI_PATTERN)
+            if pci_gpus:
+                parts.append(
+                    "PCI display devices (lspci; no vendor tool available for details):\n"
+                    + "\n".join(pci_gpus)
+                )
+
+        if not parts:
+            return (
+                "No GPU detected (best-effort probe via nvidia-smi, rocm-smi, "
+                "lspci, system_profiler)."
+            )
+        return "\n\n".join(parts)
+
+    @classmethod
+    def _nvidia_tensor_core_notes(cls, nvidia_csv: str) -> str | None:
+        """Per-GPU architecture/tensor-core notes from nvidia-smi CSV output.
+
+        Returns ``None`` when nothing can be parsed (e.g. ``nvidia-smi -L``
+        fallback output), letting the caller fall back to a generic note.
+        """
+        notes = []
+        for line in nvidia_csv.splitlines()[1:]:  # first line is the CSV header
+            fields = [field.strip() for field in line.split(",")]
+            if len(fields) > 2:
+                described = cls._describe_compute_cap(fields[2])
+                if described:
+                    notes.append(f"{fields[0]}: {described}")
+        return "\n".join(notes) or None
+
+    @staticmethod
+    def _describe_compute_cap(compute_cap: str) -> str | None:
+        """Map an NVIDIA compute capability to architecture and tensor-core support."""
+        try:
+            major, minor = (int(part) for part in compute_cap.split("."))
+        except ValueError:
+            return None
+        if major >= 10:
+            arch = "Blackwell (5th-gen tensor cores; FP4/FP8/BF16/TF32)"
+        elif major == 9:
+            arch = "Hopper (4th-gen tensor cores; FP8/BF16/TF32)"
+        elif (major, minor) == (8, 9):
+            arch = "Ada Lovelace (4th-gen tensor cores; FP8/BF16/TF32)"
+        elif major == 8:
+            arch = "Ampere (3rd-gen tensor cores; BF16/TF32)"
+        elif (major, minor) == (7, 5):
+            arch = "Turing (2nd-gen tensor cores; FP16/INT8)"
+        elif major == 7:
+            arch = "Volta (1st-gen tensor cores; FP16)"
+        else:
+            arch = "pre-Volta (no tensor cores)"
+        return f"compute capability {major}.{minor} — {arch}"
+
+    async def _accelerator_section(self) -> str:
+        parts: list[str] = []
+
+        if sys.platform == "darwin" and platform.machine() == "arm64":
+            parts.append(
+                "Apple Neural Engine: present (integrated in the Apple Silicon SoC; "
+                "reachable via Core ML; the GPU is reachable via Metal/MPS)."
+            )
+
+        if sys.platform.startswith("linux"):
+            # Intel NPUs, Habana Gaudi, and similar devices register under the
+            # kernel's accel subsystem.
+            accel_devices = sorted(str(p) for p in Path("/dev").glob("accel*"))
+            if accel_devices:
+                parts.append(f"Kernel accel devices: {', '.join(accel_devices)}")
+            # Coral Edge TPUs appear as /dev/apex_*.
+            apex_devices = sorted(str(p) for p in Path("/dev").glob("apex*"))
+            if apex_devices:
+                parts.append(f"Coral Edge TPU devices: {', '.join(apex_devices)}")
+            pci_accels = await self._lspci_lines(self._ACCEL_PCI_PATTERN)
+            if pci_accels:
+                parts.append("PCI accelerator devices (lspci):\n" + "\n".join(pci_accels))
+
+        tpu_env = {
+            var: os.environ[var] for var in ("TPU_NAME", "COLAB_TPU_ADDR") if var in os.environ
+        }
+        if tpu_env:
+            parts.append(
+                "Cloud TPU environment: " + ", ".join(f"{k}={v}" for k, v in tpu_env.items())
+            )
+
+        if not parts:
+            return "No NPU or other dedicated accelerator detected (best-effort probe)."
+        return "\n\n".join(parts)
 
 
 class SRTSandbox(BaseSandbox):
@@ -305,6 +651,20 @@ class SRTSandbox(BaseSandbox):
 
             self._history.append(result)
             return result
+
+    async def get_available_hardware_resources(self) -> str:
+        probe = _HardwareResourcesProbe(self._workspace_path or self._session_dir)
+        hw = await probe.collect()
+        return "\n\n".join(
+            [
+                f"# Available hardware resources — {hw.platform} (best-effort probe)",
+                f"## CPU\n{hw.cpu}",
+                f"## RAM\n{hw.ram}",
+                f"## Disk\n{hw.disk}",
+                f"## GPU\n{hw.gpu}",
+                f"## NPU / other accelerators\n{hw.accelerators}",
+            ]
+        )
 
     def get_history(self) -> list[SandboxExecResult]:
         return list(self._history)

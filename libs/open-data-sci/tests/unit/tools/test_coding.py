@@ -235,14 +235,15 @@ class TestGetCodingTools:
         sandbox.execute = AsyncMock()
         return sandbox
 
-    def test_returns_two_tools(self) -> None:
+    def test_returns_three_tools(self) -> None:
         tools = create_coding_tools(self._make_sandbox())
-        assert len(tools) == 2
+        assert len(tools) == 3
 
     def test_tool_names(self) -> None:
         tools = create_coding_tools(self._make_sandbox())
         names = {t.name for t in tools}
         assert "execute_python_code" in names
+        assert "get_available_hardware_resources" in names
         assert "list_python_libs" in names
 
     @pytest.mark.asyncio
@@ -300,6 +301,32 @@ class TestGetCodingTools:
         execute_python_code = next(t for t in tools if t.name == "execute_python_code")
         await execute_python_code.ainvoke({"code": "x = 1", "summary": "s", "communication": "c"})
         sandbox.execute.assert_awaited_once_with("x = 1")
+
+
+# ---------------------------------------------------------------------------
+# get_available_hardware_resources
+# ---------------------------------------------------------------------------
+
+
+class TestGetAvailableHardwareResources:
+    def _make_sandbox(self, spec: str = "## CPU\n8 cores") -> MagicMock:
+        sandbox = MagicMock()
+        sandbox.get_available_hardware_resources = AsyncMock(return_value=spec)
+        return sandbox
+
+    def test_tool_takes_no_arguments(self) -> None:
+        tools = create_coding_tools(self._make_sandbox())
+        tool = next(t for t in tools if t.name == "get_available_hardware_resources")
+        assert tool.args == {}
+
+    @pytest.mark.asyncio
+    async def test_returns_sandbox_hardware_string(self) -> None:
+        sandbox = self._make_sandbox(spec="## GPU\nRTX 4090, 24 GiB VRAM")
+        tools = create_coding_tools(sandbox)
+        tool = next(t for t in tools if t.name == "get_available_hardware_resources")
+        result = await tool.ainvoke({})
+        assert result == "## GPU\nRTX 4090, 24 GiB VRAM"
+        sandbox.get_available_hardware_resources.assert_awaited_once_with()
 
 
 # ---------------------------------------------------------------------------

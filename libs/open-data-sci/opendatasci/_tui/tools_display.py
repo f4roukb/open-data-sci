@@ -63,6 +63,10 @@ register(
     "list_python_libs",
     ToolDisplay(label="Checking available libraries", icon="📦", display_status=False),
 )
+register(
+    "get_available_hardware_resources",
+    ToolDisplay(label="Checking hardware resources", icon="🖥️", display_status=False),
+)
 register("enter_plan_mode", ToolDisplay(label="Planning the next steps", icon="🎯"))
 register("exit_plan_mode", ToolDisplay(label="Planning complete", icon="✅"))
 register("load_skill", ToolDisplay(label="Loading skill", icon="🧠", summary_arg="summary"))

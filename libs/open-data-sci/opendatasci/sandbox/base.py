@@ -136,6 +136,19 @@ class BaseSandbox(ABC):
     def reset(self) -> None:
         """Clear all session state (history, variables, results)."""
 
+    async def get_available_hardware_resources(self) -> str:
+        """Describe the hardware available to code running in this sandbox.
+
+        The return value is a free-form string — implementations may include
+        whatever is meaningful for their execution environment (CPU model and
+        capabilities, RAM and free space, GPU/VRAM, NPUs, other accelerators),
+        ideally one section per aspect. The default reports that no
+        information is available; override in concrete sandboxes.
+        """
+        return (
+            "No hardware resource information is available for this sandbox."
+        )
+
     async def close(self) -> None:
         """Release external resources held by this sandbox.
 

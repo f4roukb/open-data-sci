@@ -38,6 +38,7 @@ class ToolName(str, Enum):
     EXECUTE_PYTHON_CODE = "execute_python_code"
     EXECUTE_CLI = "execute_cli_command"
     LIST_PYTHON_LIBS = "list_python_libs"
+    GET_AVAILABLE_HARDWARE_RESOURCES = "get_available_hardware_resources"
     LOAD_SKILL = "load_skill"
     ENTER_PLAN_MODE = "enter_plan_mode"
     EXIT_PLAN_MODE = "exit_plan_mode"

@@ -38,6 +38,7 @@ class TestToolName:
             "profile_dataset",
             "list_workspace_files",
             "list_python_libs",
+            "get_available_hardware_resources",
             "web_search",
             "fetch_url",
             "ask_user_mcq",
@@ -143,6 +144,7 @@ class TestWorkerToolSetExact:
         {
             "execute_python_code",
             "list_python_libs",
+            "get_available_hardware_resources",
             "execute_cli_command",
             "read_dataset_info",
             "profile_dataset",

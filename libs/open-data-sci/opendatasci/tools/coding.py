@@ -198,7 +198,28 @@ def create_code_verification_tools(datasci_config: "OpenDataSciConfig") -> list[
 
 
 def create_coding_tools(sandbox: BaseSandbox) -> list[BaseTool]:
-    """Return execution tools bound to *sandbox*: execute_python_code."""
+    """Return execution tools bound to *sandbox*: execute_python_code,
+    get_available_hardware_resources, and list_python_libs."""
+
+    @tool
+    async def get_available_hardware_resources() -> str:
+        """Check the hardware of the machine that executes your code, before sizing a workload.
+
+        Returns one section per aspect: CPU (model, cores, capability flags),
+        RAM (total and free), GPU (model, VRAM total/free, compute capability /
+        tensor cores), and NPUs or other accelerators.
+
+        # When to use this tool
+        - Before designing compute- or memory-heavy work — model training,
+          large joins, cross-validation grids — so device placement (CPU vs
+          GPU), batch sizes, parallelism (``n_jobs``), and memory budgets fit
+          the machine actually running the code.
+        - Re-check before a memory-heavy step: free RAM changes over time.
+
+        # When NOT to use this tool
+        - For trivial or small-data operations that any machine can run.
+        """
+        return await sandbox.get_available_hardware_resources()
 
     @tool
     async def execute_python_code(code: str, summary: str, communication: str) -> str:
@@ -215,6 +236,8 @@ def create_coding_tools(sandbox: BaseSandbox) -> list[BaseTool]:
         - Assign ``result = ...`` to return a value.
         - Any library can be imported; check ``list_python_libs`` first for non-standard ones.
         - Prefer vectorised operations over row-wise loops on large DataFrames.
+        - For compute- or memory-heavy code, check ``get_available_hardware_resources``
+          first and size the workload to the machine.
 
         # How NOT to use this tool
         - Don't retry the same failing code verbatim — address the structured error before retrying.
@@ -235,7 +258,11 @@ def create_coding_tools(sandbox: BaseSandbox) -> list[BaseTool]:
             return "\n".join(parts) if parts else "Code executed successfully (no output)"
         return _format_exec_error(code, exec_result.error or "")
 
-    return [execute_python_code, list_python_libs]
+    return [
+        execute_python_code,
+        get_available_hardware_resources,
+        list_python_libs
+    ]
 
 
 def create_cli_tools(

@@ -10,6 +10,7 @@ The phases describe what tends to matter at each stage, the knowledge that infor
 - The shape of the campaign — how many days for baseline, EDA, feature work, model development, ensembling, final-week consolidation — is set in this phase; without an explicit cadence, single phases tend to absorb disproportionate time
 - The deliverable from this phase is a working end-to-end pipeline (load → split → train → predict → submission file) and an experiment log; later phases iterate on individual steps without rebuilding the harness
 - Compute and time budgets influence model choice as much as data does; framing them up front avoids late discovery that the chosen architecture is untrainable in the available window
+- Those budgets start from the actual machine: checking the available hardware resources (CPU cores, free RAM, GPU and VRAM, free disk) before the campaign plan is set grounds every later choice — an architecture or tuning plan sized for a GPU workstation is unexecutable in the available window on a modest CPU box
 - Teaming, when permitted, multiplies compute, diversity of ideas, and the volume of experiments that can be run in parallel — many winning solutions are ensemble products of multiple collaborators' independent pipelines; the decision is best made early because team dynamics and shared infrastructure benefit from time to develop, while solo competition remains viable and sometimes preferable when fast iteration matters more than diversity and coordination overhead would slow decisions down
 
 **Knowledge & Information**
