@@ -6,6 +6,7 @@ to execute (plus a heads-up when the action could harm their device or active
 work), and resumes with the user's yes/no decision.
 """
 
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
@@ -14,11 +15,19 @@ from langgraph.types import interrupt
 from pydantic import BaseModel, Field
 
 from opendatasci.configs import OpenDataSciConfig
-from opendatasci.models.factory import create_model
+from opendatasci.models.factory import create_secondary_model
+
+logger = logging.getLogger(__name__)
 
 APPROVAL_INTERRUPT_KIND = "command_approval"
 
 _APPROVAL_ANSWER_YES = "yes"
+
+_FALLBACK_HEADS_UP = (
+    "I tried to assess what this command could do to your device or your active "
+    "work, but the check failed temporarily. If you are not sure the command is "
+    "safe, play it safe and decline it."
+)
 
 
 class _CommandImpactAssessment(BaseModel):
@@ -103,9 +112,16 @@ class HumanApprovalBaseManager(ABC):
 class HumanApprovalManager(HumanApprovalBaseManager):
     """LLM-backed approval manager using LangGraph's ``interrupt()`` mechanism.
 
-    The primary model generates a :class:`CommandImpactAssessment` for the
+    The secondary model generates a :class:`CommandImpactAssessment` for the
     command, then the graph is paused with an interrupt payload carrying the
-    assessment; the caller resumes it with the user's answer.
+    assessment; the caller resumes it with the user's answer.  The secondary
+    model is used because it has extended thinking disabled: structured output
+    forces ``tool_choice``, which providers such as Anthropic reject when
+    thinking is enabled (as it is on the primary model).
+
+    If the assessment call fails, approval is still requested — the prompt
+    falls back to showing the raw command with a warning instead of silently
+    skipping the user's consent.
 
     Stateless: nothing is cached between calls. Note that LangGraph replays the
     interrupted tool call on resume, so the assessment LLM call runs once more
@@ -113,10 +129,22 @@ class HumanApprovalManager(HumanApprovalBaseManager):
     """
 
     def __init__(self, config: OpenDataSciConfig) -> None:
-        self._llm = create_model(config).with_structured_output(_CommandImpactAssessment)
+        self._llm = create_secondary_model(config).with_structured_output(
+            _CommandImpactAssessment
+        )
 
     async def ask_for_command_approval(self, command: str) -> bool:
-        assessment = await self._assess(command)
+        try:
+            assessment = await self._assess(command)
+        except Exception:
+            logger.warning(
+                "Command impact assessment failed; asking for approval with the raw command.",
+                exc_info=True,
+            )
+            assessment = CommandImpactAssessment(
+                description=f"The agent wants to run this command in your workspace: {command}",
+                heads_up=_FALLBACK_HEADS_UP,
+            )
         answer: str = interrupt(
             {
                 "kind": APPROVAL_INTERRUPT_KIND,

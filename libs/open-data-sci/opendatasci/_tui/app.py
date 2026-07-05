@@ -48,9 +48,9 @@ def _get_version() -> str:
         return importlib.metadata.version("open-data-sci")
     except importlib.metadata.PackageNotFoundError:
         logging.getLogger(__name__).warning(
-            "open-data-sci package not found; falling back to hardcoded version '0.1.0'"
+            "open-data-sci package not found; falling back to hardcoded version '0.2.0'"
         )
-        return "0.1.0"
+        return "0.2.0"
 
 
 class OpenDataSciApp(App[None]):

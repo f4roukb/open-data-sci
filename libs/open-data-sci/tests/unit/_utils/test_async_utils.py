@@ -25,7 +25,7 @@ class TestRunInExecutor:
         import threading
 
         caller_thread = threading.current_thread()
-        executor_thread: list[threading.Thread] = []
+        executor_thread: list[threading.SessionThread] = []
 
         def capture_thread() -> None:
             executor_thread.append(threading.current_thread())

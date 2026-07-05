@@ -16,6 +16,10 @@ if TYPE_CHECKING:
 
 
 def _route_after_llm_call(state: AgentState) -> str:
+    # ``messages`` can be empty when a maintenance ``update_state`` (compact,
+    # rewind) wipes the turn; there is no pending work in that case.
+    if not state.messages:
+        return "end"
     return "end" if is_final_ai_message(state.messages[-1]) else "tools"
 
 

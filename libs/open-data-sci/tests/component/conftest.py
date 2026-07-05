@@ -247,7 +247,7 @@ async def _build_entered_service(
 
     with (
         patch("opendatasci.tools.coding.create_model", return_value=coding_llm),
-        patch("opendatasci.human_inputs.human_approval.create_model", return_value=coding_llm),
+        patch("opendatasci.human_inputs.human_approval.create_secondary_model", return_value=coding_llm),
     ):
         tools = create_agent_tools(
             workspace,

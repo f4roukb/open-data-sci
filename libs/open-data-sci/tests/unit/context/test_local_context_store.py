@@ -282,3 +282,24 @@ class TestLocalContextStorePlans:
 
         # No in-memory fallback — get_current_plan always resolves fresh from disk.
         assert result is None
+
+    def test_clear_plans_removes_all_session_plans(self, store: LocalContextStore) -> None:
+        plans = store._plans_root
+        plans.mkdir(parents=True)
+        (plans / "s1_20240101T000000Z.json").write_text(json.dumps({"content": "old", "metadata": {}}))
+        (plans / "s1_20240101T000001Z.json").write_text(json.dumps({"content": "new", "metadata": {}}))
+        store.clear_plans("s1")
+        assert store.get_current_plan("s1") is None
+        assert list(plans.glob("s1_*.json")) == []
+
+    def test_clear_plans_preserves_other_sessions(self, store: LocalContextStore) -> None:
+        store.save_plan("s1", "mine")
+        store.save_plan("other", "theirs")
+        store.clear_plans("s1")
+        assert store.get_current_plan("s1") is None
+        other = store.get_current_plan("other")
+        assert other is not None
+        assert other.content == "theirs"
+
+    def test_clear_plans_no_op_when_dir_missing(self, store: LocalContextStore) -> None:
+        store.clear_plans("s1")  # Must not raise

@@ -26,7 +26,7 @@ class TestGetVersion:
             "version",
             side_effect=importlib.metadata.PackageNotFoundError,
         ):
-            assert _get_version() == "0.1.0"
+            assert _get_version() == "0.2.0"
 
 
 # ---------------------------------------------------------------------------
