@@ -113,6 +113,22 @@ class InputRequiredEvent(BaseAgentStreamEvent):
 
 
 @dataclass
+class ApprovalRequiredEvent(BaseAgentStreamEvent):
+    """The agent is paused waiting for the user to approve a command.
+
+    ``description`` is an LLM-generated plain-language summary of what the
+    command does; ``heads_up`` warns about potential negative impact and is
+    empty when none was identified.  Call ``astream`` again with ``"yes"`` or
+    ``"no"`` to resume.
+    """
+
+    type: ClassVar[str] = "approval_required"
+    command: str = ""
+    description: str = ""
+    heads_up: str = ""
+
+
+@dataclass
 class UsageEvent(BaseAgentStreamEvent):
     """Per-call token usage.
 
@@ -153,6 +169,7 @@ AgentStreamEvent = (
     | WorkerDoneEvent
     | SubagentEvent
     | InputRequiredEvent
+    | ApprovalRequiredEvent
     | UsageEvent
     | ResponseEvent
     | ErrorEvent

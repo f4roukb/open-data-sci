@@ -23,6 +23,7 @@ from .controller import CLIController
 from .widgets import (
     AppHeader,
     ChatPane,
+    CommandApprovalPrompt,
     CompletionPopup,
     MessageBubble,
     PendingMessageBubble,
@@ -150,6 +151,9 @@ class OpenDataSciApp(App[None]):
     def show_workspace_panel(self, files: list[str]) -> None:
         self.query_one(ChatPane).show_workspace_panel(files)
 
+    def show_approval_prompt(self, description: str, heads_up: str) -> None:
+        self.query_one(ChatPane).show_approval_prompt(description, heads_up)
+
     def show_attachment(self, label: str) -> None:
         self.query_one(ChatPane).show_attachment(label)
 
@@ -201,6 +205,12 @@ class OpenDataSciApp(App[None]):
             self._run_agent(query)
         elif action == "quit":
             self.exit()
+
+    @on(CommandApprovalPrompt.Decision)
+    def on_approval_decision(self, event: CommandApprovalPrompt.Decision) -> None:
+        resume_input = self._controller.resolve_approval(event.approved)
+        self.query_one("#user-input", Input).focus()
+        self._run_agent(resume_input)
 
     @on(events.Key)
     def on_input_key(self, event: events.Key) -> None:

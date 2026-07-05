@@ -2,11 +2,15 @@
 
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from langchain_core.tools import BaseTool
 
+from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.base import BaseContextStore
+from opendatasci.human_inputs.human_approval import (
+    HumanApprovalBaseManager,
+    HumanApprovalManager,
+)
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory
 from opendatasci.skills import BaseSkillStore
 from opendatasci.skills.local import LocalSkillStore
@@ -26,9 +30,6 @@ from opendatasci.tools.workers import create_worker_tools
 from opendatasci.tools.workspace import create_workspace_tools
 from opendatasci.workspace.base import BaseWorkspace
 from opendatasci.workspace.local import LocalWorkspace
-
-if TYPE_CHECKING:
-    from opendatasci.configs import OpenDataSciConfig
 
 
 class ToolName(str, Enum):
@@ -56,13 +57,14 @@ class ToolName(str, Enum):
 def _base_tools(
     workspace: BaseWorkspace,
     sandbox: BaseSandbox,
-    context: "BaseContextStore | None",
+    context: BaseContextStore | None,
     store: BaseSkillStore,
     persist: bool = True,
+    approval_manager: HumanApprovalBaseManager | None = None,
 ) -> list[BaseTool]:
     tools: list[BaseTool] = [
         *create_coding_tools(sandbox),
-        *create_cli_tools(sandbox),
+        *create_cli_tools(sandbox, approval_manager=approval_manager),
         *create_data_context_tools(context, sandbox, persist=persist),
         *create_skill_tools(store),
     ]
@@ -73,7 +75,7 @@ def _base_tools(
 
 def create_worker_agent_tools(
     workspace: BaseWorkspace,
-    context: "BaseContextStore | None",
+    context: BaseContextStore | None,
     sandbox: BaseSandbox | None = None,
     store: BaseSkillStore | None = None,
 ) -> list[BaseTool]:
@@ -95,23 +97,25 @@ def create_worker_agent_tools(
 def create_agent_tools(
     workspace: BaseWorkspace,
     sandbox: BaseSandbox,
-    context: "BaseContextStore | None",
+    context: BaseContextStore | None,
     sandbox_factory: BaseSandboxFactory,
     session_id: str | None = None,
     store: BaseSkillStore | None = None,
-    datasci_config: "OpenDataSciConfig | None" = None,
+    datasci_config: OpenDataSciConfig | None = None,
 ) -> list[BaseTool]:
     """Return the tool list for the main agent.
 
     Extends the worker tool set with planning, worker spawning, web access,
     and user interaction.
     """
+    datasci_config = datasci_config or OpenDataSciConfig()
     if store is None:
         user_skills_dir = Path(context.root) / "skills" if context is not None else None
         store = LocalSkillStore([user_skills_dir] if user_skills_dir is not None else None)
-    tools = _base_tools(workspace, sandbox, context, store)
-    if datasci_config is not None:
-        tools.extend(create_code_verification_tools(datasci_config))
+    # A single manager instance is shared by every tool that supports human approval.
+    approval_manager: HumanApprovalBaseManager = HumanApprovalManager(datasci_config)
+    tools = _base_tools(workspace, sandbox, context, store, approval_manager=approval_manager)
+    tools.extend(create_code_verification_tools(datasci_config))
     if context is not None and session_id is not None:
         tools.extend(create_planning_tools(context, session_id))
     tools.extend(create_critic_tools(store))
@@ -125,12 +129,9 @@ def create_agent_tools(
         )
     )
     tools.extend(
-        create_web_tools(
-            datasci_config.extra_web_domains if datasci_config else (),
-            datasci_config.override_web_domains if datasci_config else None,
-        )
+        create_web_tools(datasci_config.extra_web_domains, datasci_config.override_web_domains)
     )
     tools.extend(create_user_interaction_tools())
-    if datasci_config is not None and datasci_config.mcp_servers:
+    if datasci_config.mcp_servers:
         tools.extend(create_mcp_tools(datasci_config.mcp_servers))
     return tools

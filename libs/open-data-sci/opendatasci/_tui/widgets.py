@@ -654,6 +654,114 @@ class WorkspacePanel(Widget):
             pass
 
 
+class CommandApprovalPrompt(Widget):
+    """Yes/no prompt asking the user to approve a command the agent wants to run.
+
+    Shows the LLM-generated description of the command, then a heads-up warning
+    (only when a potential negative impact was identified), then Yes / No
+    options. Up/Down moves the selection, Enter confirms, Esc declines.
+    Posts a ``Decision`` message with the outcome and freezes afterwards.
+    """
+
+    DEFAULT_CSS = """
+    CommandApprovalPrompt {
+        height: auto;
+        padding: 0 2;
+        margin-bottom: 1;
+        border-left: thick $ods-warning;
+    }
+    """
+
+    BINDINGS = [
+        Binding("up", "move_up", show=False),
+        Binding("down", "move_down", show=False),
+        Binding("enter", "confirm", show=False),
+        Binding("escape", "decline", show=False),
+    ]
+
+    can_focus = True
+
+    _OPTIONS = ("Yes", "No")
+
+    class Decision(Message):
+        """Posted when the user confirms a choice (``approved`` True for Yes)."""
+
+        def __init__(self, approved: bool) -> None:
+            self.approved = approved
+            super().__init__()
+
+    def __init__(self, description: str, heads_up: str = "") -> None:
+        super().__init__()
+        self._description = description
+        self._heads_up = heads_up
+        self._selected = 0
+        self._resolved = False
+
+    def compose(self) -> ComposeResult:
+        yield Static(id="approval-prompt-content")
+
+    def on_mount(self) -> None:
+        self.focus()
+        self._refresh_content()
+
+    def _refresh_content(self) -> None:
+        lines = [
+            f"[bold {theme['warning']}]🛡 Approval required[/bold {theme['warning']}]",
+            "",
+            f"[{theme['text_primary']}]{escape(self._description)}[/{theme['text_primary']}]",
+        ]
+        if self._heads_up:
+            lines += [
+                "",
+                f"[bold {theme['warning']}]⚠️ Heads-up[/bold {theme['warning']}]  "
+                f"[{theme['warning']}]{escape(self._heads_up)}[/{theme['warning']}]",
+            ]
+        lines.append("")
+        for idx, option in enumerate(self._OPTIONS):
+            if self._resolved:
+                if idx == self._selected:
+                    lines.append(
+                        f"[bold {theme['tool_done']}]✓ {option}[/bold {theme['tool_done']}]"
+                    )
+                continue
+            if idx == self._selected:
+                lines.append(f"[bold {theme['accent']}]▸ {option}[/bold {theme['accent']}]")
+            else:
+                lines.append(f"  [{theme['text_secondary']}]{option}[/{theme['text_secondary']}]")
+        if not self._resolved:
+            lines += [
+                "",
+                f"[dim {theme['text_secondary']}]↑↓ select  Enter confirm  "
+                f"Esc decline[/dim {theme['text_secondary']}]",
+            ]
+        self.query_one("#approval-prompt-content", Static).update(
+            Text.from_markup("\n".join(lines))
+        )
+
+    def action_move_up(self) -> None:
+        if not self._resolved and self._selected > 0:
+            self._selected -= 1
+            self._refresh_content()
+
+    def action_move_down(self) -> None:
+        if not self._resolved and self._selected < len(self._OPTIONS) - 1:
+            self._selected += 1
+            self._refresh_content()
+
+    def action_confirm(self) -> None:
+        if self._resolved:
+            return
+        self._resolved = True
+        self._refresh_content()
+        self.post_message(self.Decision(approved=self._selected == 0))
+
+    def action_decline(self) -> None:
+        if self._resolved:
+            return
+        self._selected = self._OPTIONS.index("No")
+        self.action_confirm()
+
+
 class ThinkingBlock(Static):
     """Ephemeral 'Thinking...' indicator shown while the LLM is processing.
 
@@ -859,6 +967,11 @@ class ChatPane(Widget):
 
     def show_workspace_panel(self, files: list[str]) -> None:
         self.query_one("#workspace-panel", WorkspacePanel).show_files(files)
+
+    def show_approval_prompt(self, description: str, heads_up: str) -> "CommandApprovalPrompt":
+        widget = CommandApprovalPrompt(description, heads_up)
+        self._mount_in_messages(widget)
+        return widget
 
     def show_attachment(self, label: str) -> None:
         self.query_one("#attachment-bar", AttachmentBar).show_pill(label)

@@ -1,5 +1,6 @@
 from opendatasci.streaming.events import (
     AgentStreamEvent,
+    ApprovalRequiredEvent,
     BaseAgentStreamEvent,
     ErrorEvent,
     InputRequiredEvent,
@@ -18,6 +19,7 @@ from opendatasci.streaming.processors import AgentTurnStreamProcessor
 
 __all__ = [
     "AgentStreamEvent",
+    "ApprovalRequiredEvent",
     "BaseAgentStreamEvent",
     "ErrorEvent",
     "InputRequiredEvent",

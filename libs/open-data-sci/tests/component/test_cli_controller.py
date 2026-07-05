@@ -155,6 +155,7 @@ class _RecordingUI(UIAdapter):
         self.stop_agent_calls = 0
         self.input_values: list[tuple[str, int | None]] = []
         self.pending_messages: list[_RecordingPendingMessage] = []
+        self.approval_prompts: list[tuple[str, str]] = []
 
     def add_message(self, role: str, content: str = "") -> MessageHandle:
         h = _RecordingMessageHandle(role, content)
@@ -211,6 +212,9 @@ class _RecordingUI(UIAdapter):
 
     def show_workspace_panel(self, files: list[str]) -> None:
         self.workspace_panels.append(files)
+
+    def show_approval_prompt(self, description: str, heads_up: str) -> None:
+        self.approval_prompts.append((description, heads_up))
 
     def show_attachment(self, label: str) -> None:
         self.attachment_labels.append(label)

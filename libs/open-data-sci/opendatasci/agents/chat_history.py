@@ -111,7 +111,9 @@ class ChatHistoryBuilder(BaseChatHistoryBuilder):
 
     def _build_compaction_message(self, compaction: "ChatHistoryCompaction") -> CompactionMessage:
         """Convert *compaction* into a stamped recall message."""
-        return CompactionMessage(content=compaction.to_content(), created_at=compaction.compacted_at)
+        return CompactionMessage(
+            content=compaction.to_content(), created_at=compaction.compacted_at
+        )
 
     def _build_summary_messages(
         self, turn_summaries: list[ChatTurnSummary]

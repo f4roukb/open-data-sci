@@ -29,6 +29,7 @@ from opendatasci.agents.agents_factory import create_agent
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.streaming import BaseAgentStreamEvent
 from opendatasci.streaming.events import (
+    ApprovalRequiredEvent,
     ErrorEvent,
     InputRequiredEvent,
     ReasoningEvent,
@@ -88,6 +89,7 @@ class CLIController:
         self._boot_failed: bool = False
         self._exit_stack: AsyncExitStack = AsyncExitStack()
         self._awaiting_choice: bool = False
+        self._awaiting_approval: bool = False
         self._pending_choices: list[str] = []
         self._other_choice_label: str | None = None
         self._awaiting_custom_choice_input: bool = False
@@ -320,6 +322,13 @@ class CLIController:
                 return "run", answer
             return "", ""
 
+        if self._awaiting_approval:
+            # The decision is made in the approval prompt widget (↑/↓ + Enter);
+            # typed input is ignored except for quitting the app.
+            if raw.split() and raw.split()[0] == "/exit":
+                return "quit", ""
+            return "", ""
+
         if not raw and attachment is None:
             return "", ""
 
@@ -380,7 +389,7 @@ class CLIController:
 
         while True:
             await self._run_turn(query)
-            if self._awaiting_choice or self._pending_queue.is_empty():
+            if self._awaiting_choice or self._awaiting_approval or self._pending_queue.is_empty():
                 return
             query = self._dequeue_pending()
 
@@ -415,7 +424,7 @@ class CLIController:
             if self._active_turn_status is not None:
                 self._active_turn_status.stop()
                 self._active_turn_status = None
-            if not self._awaiting_choice:
+            if not self._awaiting_choice and not self._awaiting_approval:
                 self._ui.set_input_placeholder("Ask a question about your data…")
             self._ui.add_divider()
 
@@ -441,6 +450,8 @@ class CLIController:
             apply_usage_event(event, self._active_turn_status)
         elif isinstance(event, InputRequiredEvent):
             self._show_choice_prompt(event.content, list(event.choices))
+        elif isinstance(event, ApprovalRequiredEvent):
+            self._show_approval_prompt(event)
         elif isinstance(event, ResponseEvent):
             presenter.handle_response(event)
         elif isinstance(event, ErrorEvent):
@@ -542,6 +553,28 @@ class CLIController:
         self._ui.add_message("user", escape_markup(raw)).finish()
         return answer
 
+    # ── Approval handling ─────────────────────────────────────────────────────
+
+    @property
+    def awaiting_approval(self) -> bool:
+        return self._awaiting_approval
+
+    def _show_approval_prompt(self, event: ApprovalRequiredEvent) -> None:
+        self._ui.show_approval_prompt(event.description, event.heads_up)
+        self._awaiting_approval = True
+        self._ui.set_input_placeholder("↑/↓ to select Yes or No, Enter to confirm, Esc to decline…")
+
+    def resolve_approval(self, approved: bool) -> str:
+        """Record the user's approval decision and return the resume input.
+
+        The caller must pass the returned value to ``run_agent`` so the paused
+        graph resumes with the user's answer.
+        """
+        self._awaiting_approval = False
+        self._ui.set_input_placeholder("Ask a question about your data…")
+        self._ui.add_message("user", "Yes" if approved else "No").finish()
+        return "yes" if approved else "no"
+
     # ── Slash command dispatch ────────────────────────────────────────────────
 
     async def _handle_slash(self, raw: str) -> bool:
@@ -589,6 +622,7 @@ class CLIController:
 
     async def reset(self) -> None:
         """Reset agent session and reload data from disk."""
+        self._awaiting_approval = False  # the prompt widget is removed with the messages
         self._clear_pending_queue()
         self._ui.clear_messages()
         if self._service is not None:
@@ -602,6 +636,7 @@ class CLIController:
 
     async def clear_conv(self) -> None:
         """Clear conversation context (preserves session variables)."""
+        self._awaiting_approval = False  # the prompt widget is removed with the messages
         self._clear_pending_queue()
         self._ui.clear_messages()
         if self._service is not None:

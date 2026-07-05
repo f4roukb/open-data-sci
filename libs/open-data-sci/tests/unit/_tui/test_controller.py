@@ -8,6 +8,7 @@ import pytest
 
 from opendatasci.streaming import (
     AgentStreamEvent,
+    ApprovalRequiredEvent,
     ErrorEvent,
     ReasoningEvent,
     ResponseEvent,
@@ -577,6 +578,72 @@ class TestOnSubmit:
         action, payload = await controller.on_submit("A")
         assert action == "run"
         assert payload == "yes"
+
+
+# ---------------------------------------------------------------------------
+# CLIController — command approval flow
+# ---------------------------------------------------------------------------
+
+
+class TestApprovalFlow:
+    def _dispatch(self, controller: CLIController, heads_up: str = "") -> None:
+        event = ApprovalRequiredEvent(
+            command="rm tmp.txt", description="Deletes tmp.txt.", heads_up=heads_up
+        )
+        controller._dispatch_stream_event(event, MagicMock())
+
+    def test_approval_event_shows_prompt_and_sets_flag(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        self._dispatch(controller, heads_up="File is gone for good.")
+        mock_ui.show_approval_prompt.assert_called_once_with(
+            "Deletes tmp.txt.", "File is gone for good."
+        )
+        assert controller.awaiting_approval is True
+
+    def test_resolve_approval_yes_returns_yes(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        self._dispatch(controller)
+        assert controller.resolve_approval(True) == "yes"
+        assert controller.awaiting_approval is False
+        mock_ui.add_message.assert_called_with("user", "Yes")
+
+    def test_resolve_approval_no_returns_no(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        self._dispatch(controller)
+        assert controller.resolve_approval(False) == "no"
+        assert controller.awaiting_approval is False
+        mock_ui.add_message.assert_called_with("user", "No")
+
+    async def test_typed_input_is_ignored_while_awaiting_approval(
+        self, controller: CLIController
+    ) -> None:
+        controller._awaiting_approval = True
+        action, payload = await controller.on_submit("run it anyway")
+        assert (action, payload) == ("", "")
+
+    async def test_exit_still_quits_while_awaiting_approval(
+        self, controller: CLIController
+    ) -> None:
+        controller._awaiting_approval = True
+        action, _ = await controller.on_submit("/exit")
+        assert action == "quit"
+
+    async def test_reset_clears_awaiting_approval(
+        self, loaded_controller: CLIController
+    ) -> None:
+        loaded_controller._awaiting_approval = True
+        await loaded_controller.reset()
+        assert loaded_controller.awaiting_approval is False
+
+    async def test_clear_conv_clears_awaiting_approval(
+        self, loaded_controller: CLIController
+    ) -> None:
+        loaded_controller._awaiting_approval = True
+        await loaded_controller.clear_conv()
+        assert loaded_controller.awaiting_approval is False
 
 
 # ---------------------------------------------------------------------------
