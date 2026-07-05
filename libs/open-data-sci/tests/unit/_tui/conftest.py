@@ -14,7 +14,6 @@ def _make_message_handle() -> MagicMock:
     handle.append = MagicMock()
     handle.set_content = MagicMock()
     handle.finish = MagicMock()
-    handle.finish_with_summary = MagicMock()
     return handle
 
 

@@ -23,8 +23,10 @@ from opendatasci._tui.widgets import (
     ThinkingBlock,
     ToolCallBlock,
     TurnStatusBar,
+    MessagesContainer,
     WorkspacePanel,
     _InputHistory,
+    _scroll_is_at_bottom,
 )
 
 # ---------------------------------------------------------------------------
@@ -616,6 +618,46 @@ class TestToolCallBlockRefreshSpacing:
         assert lines[0] == "⣾ …"
 
 
+class TestToolCallBlockCommunicationOnly:
+    """Communication-only mode (label == summary == ""): used for hidden
+    (display_status=False) tools whose narration must stay visible while the tool
+    identity does not.  The narration is the whole block — spinner-prefixed
+    while running, plain text once finished, error glyph on failure."""
+
+    def _rendered_lines(self, block: ToolCallBlock) -> list[str]:
+        captured: list[Text] = []
+        with patch.object(block, "update", side_effect=captured.append):
+            block._refresh()
+        assert captured, "update() was never called"
+        return captured[-1].plain.splitlines()
+
+    def test_running_shows_spinner_prefixed_narration_only(self) -> None:
+        block = _make_block(communication="Checking dataset notes.", label="", summary="")
+        lines = self._rendered_lines(block)
+        # Single line: no separate status line, no blank separator.
+        assert lines == ["⣾ Checking dataset notes."]
+
+    def test_done_shows_plain_narration_without_status_styling(self) -> None:
+        block = _make_block(communication="Checking dataset notes.", label="", summary="")
+        block._done = True
+        lines = self._rendered_lines(block)
+        assert lines == ["Checking dataset notes."]
+
+    def test_error_shows_x_glyph_on_narration(self) -> None:
+        block = _make_block(communication="Checking dataset notes.", label="", summary="")
+        block._done = True
+        block._error = True
+        lines = self._rendered_lines(block)
+        assert lines == ["✗ Checking dataset notes."]
+
+    def test_upgrade_to_real_label_restores_two_part_layout(self) -> None:
+        block = _make_block(communication="Checking dataset notes.", label="", summary="")
+        with patch.object(block, "_refresh"):
+            block.upgrade("MyTool", "ran")
+        lines = self._rendered_lines(block)
+        assert lines == ["Checking dataset notes.", "", "⣾ ran"]
+
+
 class TestToolCallBlockWorkerRowRendering:
     """Worker block renders a subtree:
 
@@ -684,11 +726,7 @@ def _make_bubble(role: str, content: str = "") -> MessageBubble:
     bubble = MessageBubble.__new__(MessageBubble)
     bubble._role = role
     bubble._content = content
-    bubble._spin_idx = 0
-    bubble._spin_label = "Thinking"
-    bubble._spin_timer = None
     bubble._inner = None
-    bubble._summary_text = None
     bubble._flush_timer = None
     bubble._dirty = False
     bubble._flush_scheduled = False
@@ -735,11 +773,6 @@ class TestMessageBubbleCompose:
         inner = self._composed_inner(bubble)
         assert isinstance(inner, Static)
         assert not isinstance(inner, TUIMarkdown)
-
-    def test_thinking_role_yields_static_widget(self) -> None:
-        bubble = _make_bubble("thinking", "")
-        inner = self._composed_inner(bubble)
-        assert isinstance(inner, Static)
 
     def test_question_role_yields_static_widget(self) -> None:
         bubble = _make_bubble("question", "Choose")
@@ -810,39 +843,6 @@ class TestMessageBubbleOnMountSafetyNet:
         ):
             bubble.on_mount()
         schedule.assert_not_called()
-
-    def test_dirty_thinking_bubble_does_not_schedule_flush_on_mount(self) -> None:
-        bubble = _make_bubble("thinking", "")
-        bubble._dirty = True
-        with (
-            patch.object(bubble, "_schedule_final_flush") as schedule,
-            patch.object(bubble, "set_interval"),
-            patch.object(bubble, "_refresh_content"),
-        ):
-            bubble.on_mount()
-        schedule.assert_not_called()
-
-    def test_thinking_bubble_starts_spinner_on_mount(self) -> None:
-        bubble = _make_bubble("thinking", "")
-        with (
-            patch.object(bubble, "set_interval", return_value="timer-sentinel") as si,
-            patch.object(bubble, "_refresh_content"),
-        ):
-            bubble.on_mount()
-        si.assert_called_once()
-        assert bubble._spin_timer == "timer-sentinel"
-
-    def test_agent_bubble_does_not_start_spinner_on_mount(self) -> None:
-        bubble = _make_bubble("agent", "")
-        with (
-            patch.object(bubble, "set_interval") as si,
-            patch.object(bubble, "_refresh_content"),
-            patch.object(bubble, "_schedule_final_flush"),
-        ):
-            bubble.on_mount()
-        si.assert_not_called()
-        assert bubble._spin_timer is None
-
 
 class TestMessageBubbleScheduleFinalFlush:
     """_schedule_final_flush must be idempotent within one refresh cycle."""
@@ -938,73 +938,6 @@ class TestMessageBubbleFinish:
         assert bubble._dirty is True
         stop.assert_called_once()
         schedule.assert_called_once()
-
-    def test_thinking_finish_sets_done_summary_when_no_summary(self) -> None:
-        bubble = _make_bubble("thinking", "")
-        bubble._summary_text = None
-        with patch.object(bubble, "_refresh_content"):
-            bubble.finish()
-        assert bubble._summary_text == "Done thinking"
-
-
-class TestThinkingBubbleRefreshContent:
-    """_refresh_content for the 'thinking' role must render streamed content
-    (debug mode) instead of the spinner when _content is non-empty."""
-
-    def _make_mounted_thinking(self, content: str = "") -> MessageBubble:
-        bubble = _make_bubble("thinking", content)
-        bubble._inner = MagicMock(spec=Static)
-        return bubble
-
-    def test_empty_content_shows_spinner(self) -> None:
-        bubble = self._make_mounted_thinking("")
-        bubble._refresh_content()
-        rendered: Text = bubble._inner.update.call_args[0][0]
-        assert "Thinking" in rendered.plain
-
-    def test_non_empty_content_shows_content_not_spinner(self) -> None:
-        bubble = self._make_mounted_thinking("step one → step two")
-        bubble._refresh_content()
-        rendered: Text = bubble._inner.update.call_args[0][0]
-        assert "step one → step two" in rendered.plain
-        assert "Thinking" not in rendered.plain
-
-    def test_non_empty_content_stops_spin_timer(self) -> None:
-        bubble = self._make_mounted_thinking("some reasoning")
-        timer = MagicMock()
-        bubble._spin_timer = timer
-        bubble._refresh_content()
-        timer.stop.assert_called_once()
-        assert bubble._spin_timer is None
-
-    def test_spin_timer_stop_is_idempotent_when_already_none(self) -> None:
-        bubble = self._make_mounted_thinking("reasoning")
-        bubble._spin_timer = None
-        bubble._refresh_content()  # must not raise
-
-    def test_summary_takes_precedence_over_content(self) -> None:
-        bubble = self._make_mounted_thinking("reasoning text")
-        bubble._summary_text = "Thought for 3s"
-        bubble._refresh_content()
-        rendered: Text = bubble._inner.update.call_args[0][0]
-        assert "Thought for 3s" in rendered.plain
-        assert "reasoning text" not in rendered.plain
-
-    def test_content_rendered_in_muted_grey(self) -> None:
-        from opendatasci._tui import theme as _theme
-
-        bubble = self._make_mounted_thinking("ponder this")
-        bubble._refresh_content()
-        rendered: Text = bubble._inner.update.call_args[0][0]
-        muted_color = _theme.active["text_muted"]
-        assert any(muted_color in str(span.style) for span in rendered._spans)
-
-    def test_content_prefixed_with_thoughts(self) -> None:
-        bubble = self._make_mounted_thinking("step one")
-        bubble._refresh_content()
-        rendered: Text = bubble._inner.update.call_args[0][0]
-        assert rendered.plain.startswith("Reasoning:")
-        assert "step one" in rendered.plain
 
 
 class TestMessageBubbleFlushAgent:
@@ -2051,56 +1984,104 @@ class TestMessageBubbleRefreshContentNonAgent:
 
 
 # ---------------------------------------------------------------------------
-# MessageBubble.finish_with_summary — thinking bubble summary
+# Auto-scroll (2.1.1) — anchor detection and mount-time pinning
 # ---------------------------------------------------------------------------
 
 
-class TestMessageBubbleFinishWithSummary:
-    def _thinking_bubble(self) -> MessageBubble:
-        bubble = _make_bubble("thinking", "")
-        bubble._inner = MagicMock(spec=Static)
-        return bubble
+def _fake_scroll_container(offset_y: int, max_scroll_y: int) -> MagicMock:
+    container = MagicMock()
+    container.scroll_offset.y = offset_y
+    container.max_scroll_y = max_scroll_y
+    return container
 
-    def test_finish_with_summary_stops_spin_timer(self) -> None:
-        bubble = self._thinking_bubble()
-        timer = MagicMock()
-        bubble._spin_timer = timer
-        bubble.finish_with_summary("Thought for 5s")
-        timer.stop.assert_called_once()
-        assert bubble._spin_timer is None
 
-    def test_finish_with_summary_noop_stop_when_timer_already_none(self) -> None:
-        bubble = self._thinking_bubble()
-        bubble._spin_timer = None
-        bubble.finish_with_summary("Thought for 0s")  # must not raise
+class TestScrollIsAtBottom:
+    def test_true_when_exactly_at_bottom(self) -> None:
+        assert _scroll_is_at_bottom(_fake_scroll_container(10, 10)) is True
 
-    def test_finish_with_summary_sets_summary_text(self) -> None:
-        bubble = self._thinking_bubble()
-        bubble.finish_with_summary("Thought for 3s")
-        assert bubble._summary_text == "Thought for 3s"
+    def test_true_within_one_row_of_bottom(self) -> None:
+        assert _scroll_is_at_bottom(_fake_scroll_container(9, 10)) is True
 
-    def test_finish_with_summary_calls_inner_update(self) -> None:
-        bubble = self._thinking_bubble()
-        bubble.finish_with_summary("Thought for 3s")
-        bubble._inner.update.assert_called_once()
+    def test_false_when_scrolled_up(self) -> None:
+        assert _scroll_is_at_bottom(_fake_scroll_container(3, 10)) is False
 
-    def test_finish_with_summary_renders_checkmark_and_summary_text(self) -> None:
-        bubble = self._thinking_bubble()
-        bubble.finish_with_summary("Thought for 2s")
-        rendered: Text = bubble._inner.update.call_args[0][0]
-        assert "✓" in rendered.plain
-        assert "Thought for 2s" in rendered.plain
+    def test_true_when_content_fits_viewport(self) -> None:
+        # Nothing to scroll yet — the anchor must engage from the start.
+        assert _scroll_is_at_bottom(_fake_scroll_container(0, 0)) is True
 
-    def test_finish_with_summary_uses_dim_thinking_style(self) -> None:
-        from opendatasci._tui import theme as _theme
 
-        bubble = self._thinking_bubble()
-        bubble.finish_with_summary("Thought for 1s")
-        rendered: Text = bubble._inner.update.call_args[0][0]
-        thinking_color = _theme.active["thinking"]
-        assert any(thinking_color in str(span.style) for span in rendered._spans)
+class TestMessagesContainerAnchor:
+    """The anchor releases on user scroll-up and re-arms at the bottom."""
 
-    def test_finish_with_summary_noop_when_inner_is_none(self) -> None:
-        bubble = _make_bubble("thinking", "")
-        bubble._inner = None
-        bubble.finish_with_summary("summary")  # must not raise
+    def _update(self, container: MessagesContainer, old: float, new: float, max_y: int) -> None:
+        with patch.object(
+            MessagesContainer, "max_scroll_y", new_callable=PropertyMock, return_value=max_y
+        ):
+            container._update_anchor(old, new)
+
+    def test_anchored_by_default(self) -> None:
+        assert MessagesContainer._anchored is True
+
+    def test_scrolling_up_releases_anchor(self) -> None:
+        container = MessagesContainer.__new__(MessagesContainer)
+        self._update(container, old=10, new=5, max_y=10)
+        assert container._anchored is False
+
+    def test_reaching_bottom_rearms_anchor(self) -> None:
+        container = MessagesContainer.__new__(MessagesContainer)
+        container._anchored = False
+        self._update(container, old=5, new=10, max_y=10)
+        assert container._anchored is True
+
+    def test_content_shrink_to_empty_keeps_anchor(self) -> None:
+        # clear_messages collapses the scroll range; the view must stay anchored.
+        container = MessagesContainer.__new__(MessagesContainer)
+        self._update(container, old=74, new=0, max_y=0)
+        assert container._anchored is True
+
+    def test_pin_if_anchored_scrolls_when_anchored(self) -> None:
+        container = MessagesContainer.__new__(MessagesContainer)
+        container._anchored = True
+        container.scroll_end = MagicMock()  # type: ignore[method-assign]
+        container.pin_if_anchored()
+        container.scroll_end.assert_called_once_with(animate=False)
+
+    def test_pin_if_anchored_noop_when_released(self) -> None:
+        container = MessagesContainer.__new__(MessagesContainer)
+        container._anchored = False
+        container.scroll_end = MagicMock()  # type: ignore[method-assign]
+        container.pin_if_anchored()
+        container.scroll_end.assert_not_called()
+
+
+class TestChatPaneMountAutoScroll:
+    """_mount_in_messages mounts in #messages and pins while anchored."""
+
+    def _pane(self) -> tuple[ChatPane, MagicMock]:
+        pane = _make_chat_pane()
+        container = MagicMock()
+        pane.query_one = MagicMock(return_value=container)
+        return pane, container
+
+    def test_mounts_widget_in_messages_container(self) -> None:
+        pane, container = self._pane()
+        widget = MagicMock()
+        pane._mount_in_messages(widget)
+        container.mount.assert_called_once_with(widget)
+
+    def test_pins_to_bottom_via_anchor(self) -> None:
+        pane, container = self._pane()
+        pane._mount_in_messages(MagicMock())
+        container.pin_if_anchored.assert_called_once_with()
+
+    def test_add_message_uses_autoscroll_mount(self) -> None:
+        pane = _make_chat_pane()
+        pane._mount_in_messages = MagicMock()
+        bubble = pane.add_message("user", "hi")
+        pane._mount_in_messages.assert_called_once_with(bubble)
+
+    def test_add_ephemeral_block_uses_autoscroll_mount(self) -> None:
+        pane = _make_chat_pane()
+        pane._mount_in_messages = MagicMock()
+        block = pane.add_ephemeral_block("comm", "label", "summary")
+        pane._mount_in_messages.assert_called_once_with(block)

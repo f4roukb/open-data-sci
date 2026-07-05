@@ -21,19 +21,21 @@ class MessageOrigin(StrEnum):
 
     USER = auto()
     HARNESS = auto()
+    AGENT = auto()
 
 
 @final
 class UserMessage(HumanMessage, RenderableMessageMixin["UserMessage"]):
     """A message that originated directly from the user."""
 
+    origin: MessageOrigin = MessageOrigin.USER
     created_at: datetime = Field(default_factory=datetime_now)
     is_input_on_interrupt: bool = False
 
     def _get_content(self) -> str:
         tag = (
             f"<message_metadata>"
-            f"<origin>{MessageOrigin.USER}</origin>"
+            f"<origin>{self.origin}</origin>"
             f"<timestamp>{to_local_timezone(self.created_at).isoformat()}</timestamp>"
             f"</message_metadata>"
         )
@@ -44,21 +46,42 @@ class UserMessage(HumanMessage, RenderableMessageMixin["UserMessage"]):
 
 
 @final
-class HarnessMessage(HumanMessage, RenderableMessageMixin["HarnessMessage"]):
-    """A message constructed by the harness for internal LLM calls."""
+class CompactionMessage(HumanMessage, RenderableMessageMixin["CompactionMessage"]):
+    """A harness message carrying a compacted history recall block."""
 
+    origin: MessageOrigin = MessageOrigin.HARNESS
     created_at: datetime = Field(default_factory=datetime_now)
 
     def _get_content(self) -> str:
         tag = (
             f"<message_metadata>"
-            f"<origin>{MessageOrigin.HARNESS}</origin>"
+            f"<origin>{self.origin}</origin>"
             f"<timestamp>{to_local_timezone(self.created_at).isoformat()}</timestamp>"
             f"</message_metadata>"
         )
         return f"{tag}\n{self.content}"
 
-    def render(self) -> "HarnessMessage":
+    def render(self) -> "CompactionMessage":
+        return self.model_copy(update={"content": self._get_content()}, deep=True)
+
+
+@final
+class AgentToAgentMessage(HumanMessage, RenderableMessageMixin["AgentToAgentMessage"]):
+    """A message sent from one agent to another (e.g. orchestrator to ConcurrentWorkerAgent)."""
+
+    origin: MessageOrigin
+    created_at: datetime = Field(default_factory=datetime_now)
+
+    def _get_content(self) -> str:
+        tag = (
+            f"<message_metadata>"
+            f"<origin>{self.origin}</origin>"
+            f"<timestamp>{to_local_timezone(self.created_at).isoformat()}</timestamp>"
+            f"</message_metadata>"
+        )
+        return f"{tag}\n{self.content}"
+
+    def render(self) -> "AgentToAgentMessage":
         return self.model_copy(update={"content": self._get_content()}, deep=True)
 
 
@@ -66,6 +89,7 @@ class HarnessMessage(HumanMessage, RenderableMessageMixin["HarnessMessage"]):
 class SummaryMessage(HumanMessage, RenderableMessageMixin["SummaryMessage"]):
     """Harness-constructed message carrying a turn-summary recall."""
 
+    origin: MessageOrigin = MessageOrigin.HARNESS
     created_at: datetime = Field(default_factory=datetime_now)
     turn_start_timestamp: datetime
     turn_end_timestamp: datetime
@@ -73,7 +97,7 @@ class SummaryMessage(HumanMessage, RenderableMessageMixin["SummaryMessage"]):
     def _get_content(self) -> str:
         message_meta = (
             f"<message_metadata>"
-            f"<origin>{MessageOrigin.HARNESS}</origin>"
+            f"<origin>{self.origin}</origin>"
             f"<timestamp>{to_local_timezone(self.created_at).isoformat()}</timestamp>"
             f"</message_metadata>"
         )
@@ -93,12 +117,13 @@ class SummaryMessage(HumanMessage, RenderableMessageMixin["SummaryMessage"]):
 class PlanMessage(HumanMessage, RenderableMessageMixin["PlanMessage"]):
     """Harness-constructed message carrying the current session plan."""
 
+    origin: MessageOrigin = MessageOrigin.HARNESS
     created_at: datetime = Field(default_factory=datetime_now)
 
     def _get_content(self) -> str:
         tag = (
             f"<message_metadata>"
-            f"<origin>{MessageOrigin.HARNESS}</origin>"
+            f"<origin>{self.origin}</origin>"
             f"<timestamp>{to_local_timezone(self.created_at).isoformat()}</timestamp>"
             f"</message_metadata>"
         )
@@ -112,6 +137,7 @@ class PlanMessage(HumanMessage, RenderableMessageMixin["PlanMessage"]):
 class AgentMessage(AIMessage):
     """A message produced by the LLM agent."""
 
+    origin: MessageOrigin = MessageOrigin.AGENT
     created_at: datetime = Field(default_factory=datetime_now)
 
     @classmethod

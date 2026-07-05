@@ -28,6 +28,28 @@ from .tools_display import REGISTRY, ToolDisplay
 logger = logging.getLogger(__name__)
 
 
+def apply_usage_event(event: UsageEvent, turn_status: TurnStatusHandle | None) -> None:
+    """Push token/cache counts from *event* onto *turn_status*, if present.
+
+    Not a presenter method: it only touches the turn status handle passed in
+    and has no dependency on any per-turn presenter state.
+    """
+    if turn_status is None:
+        return
+
+    input_tokens = event.input_tokens
+    output_tokens = event.output_tokens
+    cache_read_tokens = event.cache_read_tokens
+
+    context_tokens: int | None = None
+    if input_tokens is not None or output_tokens is not None:
+        context_tokens = int(input_tokens or 0) + int(output_tokens or 0)
+
+    cached_tokens: int | None = int(cache_read_tokens) if cache_read_tokens is not None else None
+
+    turn_status.update_context(context_tokens, cached_tokens)
+
+
 class _TurnPresenter:
     """Manages ephemeral UI state (bubbles, tool blocks, thinking) for one turn.
 
@@ -48,7 +70,7 @@ class _TurnPresenter:
         self._worker_block: EphemeralHandle | None = None
         # tool_call_id → latest communication text (buffered until block is ready)
         self._comm_buffers: dict[str, str] = {}
-        # tool_call_ids for tools with display=False — no UI created, result silently ignored
+        # tool_call_ids for tools with display_status=False — no UI created, result silently ignored
         self._hidden_tool_call_ids: set[str] = set()
         # Ephemeral "Thinking..." spinner shown while the LLM is processing
         self._thinking_block: ThinkingHandle | None = None
@@ -103,6 +125,8 @@ class _TurnPresenter:
         self._agent_msg.append(event.content)
 
     def handle_tool_communication(self, event: ToolCommunicationEvent) -> None:
+        tool_display = REGISTRY.get(event.tool_name) if event.tool_name else None
+        hidden = tool_display is not None and not tool_display.display_status
         self._finish_thinking()
         tc_id = event.tool_call_id
         comm = event.content
@@ -113,8 +137,11 @@ class _TurnPresenter:
             if target.is_running():
                 target.set_communication(comm)
         elif tc_id and tc_id not in self._ephemerals_by_id:
-            # First comm token — pre-mount a placeholder ephemeral.
-            block = self._ui.add_ephemeral_block(comm, "…", "")
+            # First comm token — pre-mount a placeholder ephemeral.  Hidden
+            # tools (display_status=False) get a communication-only block (empty
+            # label): the narration is shown so the user still gets updates,
+            # but no tool-status line ever appears for them.
+            block = self._ui.add_ephemeral_block(comm, "" if hidden else "…", "")
             self._pending_ephemerals[tc_id] = block
             self._ephemerals.append(block)
             self._ephemerals_by_id[tc_id] = block
@@ -124,13 +151,21 @@ class _TurnPresenter:
         existing = self._pending_ephemerals.pop(tool_call_id, None) if tool_call_id else None
         tool_display = REGISTRY.get(str(event.tool))
 
-        if tool_display is not None and not tool_display.display:
-            # Tool is hidden — discard any pending comm block and never create a new one.
+        if tool_display is not None and not tool_display.display_status:
+            # Hidden tool — never show a tool-status line, but keep its
+            # communication on screen (communication-only block) so the user
+            # still gets updates while the tool runs.  The block stays
+            # registered so tool_result finalises it like any other.
+            self._comm_buffers.pop(tool_call_id, None)
+            if existing is not None and self._agent_msg is None:
+                existing.upgrade("", "")  # drop any "…" placeholder status line
+                return
             if existing is not None:
+                # Agent narration already covers what's happening — the comm
+                # block is redundant, so retract it.
                 existing.dismiss()
                 self._ephemerals = [e for e in self._ephemerals if e is not existing]
                 self._ephemerals_by_id.pop(tool_call_id, None)
-            self._comm_buffers.pop(tool_call_id, None)
             if tool_call_id:
                 self._hidden_tool_call_ids.add(tool_call_id)
             return
@@ -214,22 +249,6 @@ class _TurnPresenter:
                 tool_call_id,
             )
         self._show_thinking_block()
-
-    def handle_usage(self, event: UsageEvent, turn_status: TurnStatusHandle | None) -> None:
-        input_tokens = event.input_tokens
-        output_tokens = event.output_tokens
-        cache_read_tokens = event.cache_read_tokens
-
-        context_tokens: int | None = None
-        if input_tokens is not None or output_tokens is not None:
-            context_tokens = int(input_tokens or 0) + int(output_tokens or 0)
-
-        cached_tokens: int | None = (
-            int(cache_read_tokens) if cache_read_tokens is not None else None
-        )
-
-        if turn_status is not None:
-            turn_status.update_context(context_tokens, cached_tokens)
 
     def handle_response(self, event: ResponseEvent) -> None:
         self._finish_thinking()

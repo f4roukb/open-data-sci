@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from langchain_core.messages import BaseMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from opendatasci._utils.message_utils import (
@@ -15,7 +15,6 @@ from opendatasci._utils.message_utils import (
 )
 from opendatasci._utils.mixins import LLMDigestibleMixin
 from opendatasci.memory.messages import (
-    HarnessMessage,
     get_turn_end_timestamp,
     get_turn_start_timestamp,
     is_user_message,
@@ -115,7 +114,7 @@ class ChatTurnSummarizer:
     def _build_llm_context(self, turn_messages: list[BaseMessage]) -> list[BaseMessage]:
         return [
             SystemMessage(content=TURN_SUMMARIZER_SYSTEM_PROMPT),
-            HarnessMessage(content=render_turn(turn_messages)),
+            HumanMessage(content=render_turn(turn_messages)),
         ]
 
     async def summarize_turn(self, turn_messages: list[BaseMessage]) -> ChatTurnSummary | None:
@@ -206,7 +205,7 @@ class ChatHistoryCompactor:
             parts.append(render_turn(completed_messages))
         return [
             SystemMessage(content=CHAT_COMPACTOR_SYSTEM_PROMPT),
-            HarnessMessage(content="\n\n".join(parts)),
+            HumanMessage(content="\n\n".join(parts)),
         ]
 
     async def compact(

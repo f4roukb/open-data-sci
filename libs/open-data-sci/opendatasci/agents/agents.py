@@ -32,8 +32,9 @@ from opendatasci.agents.states import AgentState
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.base import BaseContextStore
 from opendatasci.context.local import LocalContextStore
+from opendatasci.human_inputs.human_approval import APPROVAL_INTERRUPT_KIND
 from opendatasci.memory.chat_memory import ChatHistoryCompactor
-from opendatasci.memory.messages import HarnessMessage, UserMessage
+from opendatasci.memory.messages import AgentToAgentMessage, MessageOrigin, UserMessage
 from opendatasci.memory.turn_memory import TurnRewinder
 from opendatasci.models.factory import (
     _RetryRunnable,
@@ -50,6 +51,7 @@ from opendatasci.skills.base import Skill
 from opendatasci.streaming import (
     AgentStreamEvent,
     AgentTurnStreamProcessor,
+    ApprovalRequiredEvent,
     ErrorEvent,
     InputRequiredEvent,
     MessageEvent,
@@ -278,10 +280,17 @@ class Agent(BaseOpenDataSciAgent):
         graph_state = self._graph.get_state(config)
         if is_interrupt_state_snapshot(graph_state):
             intr_value = graph_state.tasks[0].interrupts[0].value
-            yield InputRequiredEvent(
-                content=intr_value["question"],
-                choices=intr_value["choices"],
-            )
+            if isinstance(intr_value, dict) and intr_value.get("kind") == APPROVAL_INTERRUPT_KIND:
+                yield ApprovalRequiredEvent(
+                    command=intr_value["command"],
+                    description=intr_value["description"],
+                    heads_up=intr_value["heads_up"],
+                )
+            else:
+                yield InputRequiredEvent(
+                    content=intr_value["question"],
+                    choices=intr_value["choices"],
+                )
             return
 
         completed_turn_messages = graph_state.values["messages"]
@@ -406,7 +415,7 @@ class ConcurrentWorkerAgent:
         """Execute *task* to completion and return the final text response."""
         self._current_system_prompt = system_prompt
         initial_state = AgentState(
-            messages=[HarnessMessage(content=task)],
+            messages=[AgentToAgentMessage(content=task, origin=MessageOrigin.AGENT)],
             active_skills=list(initial_active_skills or []),
         )
         invoke_config: RunnableConfig = {

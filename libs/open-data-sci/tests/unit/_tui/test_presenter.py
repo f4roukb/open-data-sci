@@ -15,7 +15,7 @@ from opendatasci.streaming.events import (
     UsageEvent,
     WorkerDoneEvent,
 )
-from opendatasci._tui.presenter import _TurnPresenter
+from opendatasci._tui.presenter import _TurnPresenter, apply_usage_event
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -27,7 +27,6 @@ def _make_ui() -> MagicMock:
     msg = MagicMock()
     msg.append = MagicMock()
     msg.finish = MagicMock()
-    msg.finish_with_summary = MagicMock()
     ui.add_message.return_value = msg
     ui.add_thinking_block.return_value = MagicMock()
     return ui
@@ -125,52 +124,44 @@ class TestCleanup:
 # ---------------------------------------------------------------------------
 
 
-class TestHandleUsage:
-    def _presenter(self) -> _TurnPresenter:
-        return _TurnPresenter(_make_ui())
-
+class TestApplyUsageEvent:
     def _usage(self, **kwargs: object) -> UsageEvent:
         return UsageEvent(**kwargs)  # type: ignore[arg-type]
 
     def test_context_tokens_is_input_plus_output(self) -> None:
-        p = self._presenter()
         bar = MagicMock()
-        p.handle_usage(self._usage(input_tokens=1200, output_tokens=300), bar)
+        apply_usage_event(self._usage(input_tokens=1200, output_tokens=300), bar)
         bar.update_context.assert_called_once_with(1500, None)
 
     def test_cache_read_tokens_forwarded(self) -> None:
-        p = self._presenter()
         bar = MagicMock()
-        p.handle_usage(
+        apply_usage_event(
             self._usage(input_tokens=1000, output_tokens=200, cache_read_tokens=600), bar
         )
         bar.update_context.assert_called_once_with(1200, 600)
 
     def test_missing_token_keys_yields_none_context(self) -> None:
-        p = self._presenter()
         bar = MagicMock()
-        p.handle_usage(self._usage(), bar)
+        apply_usage_event(self._usage(), bar)
         bar.update_context.assert_called_once_with(None, None)
 
     def test_missing_cache_key_yields_none_cached(self) -> None:
-        p = self._presenter()
         bar = MagicMock()
-        p.handle_usage(self._usage(input_tokens=500, output_tokens=100), bar)
+        apply_usage_event(self._usage(input_tokens=500, output_tokens=100), bar)
         _, cached = bar.update_context.call_args.args
         assert cached is None
 
     def test_none_turn_status_does_not_raise(self) -> None:
-        p = self._presenter()
-        p.handle_usage(self._usage(input_tokens=100, output_tokens=50), None)
+        apply_usage_event(self._usage(input_tokens=100, output_tokens=50), None)
 
 
 # ---------------------------------------------------------------------------
-# display=False — tool calls must be invisible to the user
+# display_status=False — tool calls must be invisible to the user
 # ---------------------------------------------------------------------------
 
 
 def _hidden_tool_call(tool_call_id: str = "h1") -> ToolCallEvent:
-    # ask_user_mcq is registered with display=False in _tui/tools_display.py
+    # ask_user_mcq is registered with display_status=False in _tui/tools_display.py
     return ToolCallEvent(
         tool="ask_user_mcq",
         tool_call_id=tool_call_id,
@@ -223,7 +214,10 @@ class TestDisplayFalse:
         p.handle_tool_result(ToolResultEvent(tool_call_id="h1"))
         ui.add_thinking_block.assert_not_called()
 
-    def test_pending_comm_ephemeral_dismissed_when_tool_is_hidden(self) -> None:
+    def test_pending_comm_block_kept_as_comm_only_when_tool_is_hidden(self) -> None:
+        """No flash: a pre-mounted comm block (unregistered tool_name at comm
+        time) must be KEPT when the tool turns out to be hidden — downgraded to
+        communication-only (empty label/summary), not dismissed."""
         p, ui = self._setup()
         comm_block = MagicMock()
         comm_block.is_running.return_value = True
@@ -237,9 +231,71 @@ class TestDisplayFalse:
             )
         )
         assert ui.add_ephemeral_block.call_count == 1
-        # tool_call fires with display=False — pending block must be dismissed
+        # tool_call fires with display_status=False — block survives without a status line
+        p.handle_tool_call(_hidden_tool_call("h1"))
+        comm_block.dismiss.assert_not_called()
+        comm_block.upgrade.assert_called_once_with("", "")
+
+    def test_pending_comm_block_dismissed_when_hidden_and_narration_present(self) -> None:
+        """When the agent already narrated in a regular message, the hidden
+        tool's comm block is redundant and must be retracted."""
+        p, ui = self._setup()
+        comm_block = MagicMock()
+        comm_block.is_running.return_value = True
+        ui.add_ephemeral_block.return_value = comm_block
+        p.handle_token(TokenEvent(content="I'm saving my notes now."))
+        p.handle_tool_communication(
+            ToolCommunicationEvent(
+                content="Saving notes…",
+                tool_call_id="h1",
+                tool_name="internal_action",
+            )
+        )
         p.handle_tool_call(_hidden_tool_call("h1"))
         comm_block.dismiss.assert_called_once()
+        comm_block.upgrade.assert_not_called()
+
+    def test_comm_for_registered_hidden_tool_creates_comm_only_block(self) -> None:
+        """The user must still get updates for hidden tools: their comm
+        pre-mounts a communication-only block (empty label, empty summary)."""
+        p, ui = self._setup()
+        p.handle_tool_communication(
+            ToolCommunicationEvent(
+                content="Reading dataset notes…",
+                tool_call_id="h1",
+                tool_name="read_dataset_info",  # display_status=False in tools_display.py
+            )
+        )
+        ui.add_ephemeral_block.assert_called_once_with("Reading dataset notes…", "", "")
+
+    def test_full_hidden_tool_lifecycle_shows_narration_without_status_line(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """comm → tool_call → tool_result for a hidden tool: the narration
+        block is created once, never dismissed (no flash), finalised on the
+        result, and the thinking spinner returns afterwards."""
+        import logging
+
+        p, ui = self._setup()
+        comm_block = MagicMock()
+        comm_block.is_running.return_value = True
+        ui.add_ephemeral_block.return_value = comm_block
+        p.handle_tool_communication(
+            ToolCommunicationEvent(
+                content="Profiling…",
+                tool_call_id="h1",
+                tool_name="profile_dataset",  # display_status=False in tools_display.py
+            )
+        )
+        p.handle_tool_call(ToolCallEvent(tool="profile_dataset", tool_call_id="h1", summary=""))
+        ui.add_thinking_block.reset_mock()
+        with caplog.at_level(logging.WARNING):
+            p.handle_tool_result(ToolResultEvent(tool_call_id="h1"))
+        ui.add_ephemeral_block.assert_called_once()
+        comm_block.dismiss.assert_not_called()
+        comm_block.set_done.assert_called_once()
+        ui.add_thinking_block.assert_called_once()
+        assert not caplog.records
 
     def test_visible_tool_after_hidden_tool_still_creates_ephemeral(self) -> None:
         p, ui = self._setup()

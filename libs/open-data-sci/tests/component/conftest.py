@@ -245,7 +245,10 @@ async def _build_entered_service(
     coding_llm = MagicMock()
     coding_llm.with_structured_output = MagicMock(return_value=AsyncMock())
 
-    with patch("opendatasci.tools.coding.create_model", return_value=coding_llm):
+    with (
+        patch("opendatasci.tools.coding.create_model", return_value=coding_llm),
+        patch("opendatasci.human_inputs.human_approval.create_model", return_value=coding_llm),
+    ):
         tools = create_agent_tools(
             workspace,
             sandbox,

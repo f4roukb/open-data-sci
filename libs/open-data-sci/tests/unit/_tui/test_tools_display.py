@@ -25,9 +25,9 @@ class TestToolDisplay:
         display = ToolDisplay(label="Tool")
         assert display.summary_arg is None
 
-    def test_display_defaults_to_true(self) -> None:
+    def test_display_status_defaults_to_true(self) -> None:
         display = ToolDisplay(label="Tool")
-        assert display.display is True
+        assert display.display_status is True
 
     def test_custom_icon(self) -> None:
         display = ToolDisplay(label="Python", icon="🐍")
@@ -37,9 +37,9 @@ class TestToolDisplay:
         display = ToolDisplay(label="Tool", summary_arg="summary")
         assert display.summary_arg == "summary"
 
-    def test_display_false(self) -> None:
-        display = ToolDisplay(label="Quiet Tool", display=False)
-        assert display.display is False
+    def test_display_status_false(self) -> None:
+        display = ToolDisplay(label="Quiet Tool", display_status=False)
+        assert display.display_status is False
 
     def test_is_frozen_immutable(self) -> None:
         display = ToolDisplay(label="Tool")
@@ -123,8 +123,8 @@ class TestRegistryContents:
     def test_execute_python_summary_arg(self) -> None:
         assert REGISTRY["execute_python_code"].summary_arg == "summary"
 
-    def test_execute_python_display_true(self) -> None:
-        assert REGISTRY["execute_python_code"].display is True
+    def test_execute_python_display_status_true(self) -> None:
+        assert REGISTRY["execute_python_code"].display_status is True
 
     def test_execute_cli_label(self) -> None:
         assert REGISTRY["execute_cli_command"].label == "Command"
@@ -194,8 +194,8 @@ class TestRegistryContents:
     def test_update_dataset_info_label(self) -> None:
         assert REGISTRY["update_dataset_info"].label == "Updating dataset notes"
 
-    def test_update_dataset_info_display_false(self) -> None:
-        assert REGISTRY["update_dataset_info"].display is False
+    def test_update_dataset_info_display_status_false(self) -> None:
+        assert REGISTRY["update_dataset_info"].display_status is False
 
     def test_profile_dataset_label(self) -> None:
         assert REGISTRY["profile_dataset"].label == "Profiling dataset"
@@ -236,8 +236,8 @@ class TestRegistryContents:
     def test_ask_user_mcq_label(self) -> None:
         assert REGISTRY["ask_user_mcq"].label == "Question"
 
-    def test_ask_user_mcq_display_false(self) -> None:
-        assert REGISTRY["ask_user_mcq"].display is False
+    def test_ask_user_mcq_display_status_false(self) -> None:
+        assert REGISTRY["ask_user_mcq"].display_status is False
 
     # ── Self-review ───────────────────────────────────────────────────────────
 
