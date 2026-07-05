@@ -635,7 +635,11 @@ class CLIController:
             self._ui.add_message("agent", "Not loaded yet.").finish()
 
     async def clear_conv(self) -> None:
-        """Clear conversation context (preserves session variables)."""
+        """Clear all conversation context (preserves session variables)."""
+        if self._agent_running:
+            # A still-running turn would write the cleared conversation back
+            # into state (and schedule its summarization) when it finishes.
+            self._ui.stop_agent()
         self._awaiting_approval = False  # the prompt widget is removed with the messages
         self._clear_pending_queue()
         self._ui.clear_messages()

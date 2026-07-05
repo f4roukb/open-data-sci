@@ -196,6 +196,16 @@ class LocalContextStore(BaseContextStore):
             return
         self.prune()
 
+    def clear_plans(self, session_id: str) -> None:
+        """Delete every persisted plan for *session_id*."""
+        if not self._plans_root.exists():
+            return
+        for path in self._plans_root.glob(f"{session_id}_*.json"):
+            try:
+                path.unlink()
+            except OSError:
+                logger.warning("Could not delete plan file: %s", path, exc_info=True)
+
     def prune(self) -> None:
         if not self._plans_root.exists():
             return
