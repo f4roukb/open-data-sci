@@ -3,9 +3,7 @@ from pathlib import Path
 from opendatasci.skills.base import BaseSkillStore, Skill, SkillDomain
 
 _BUILTIN_SKILLS_DIRECTORY = Path(__file__).resolve().parents[1] / "resources" / "skills"
-_BUILTIN_DOMAINS_DIRECTORY = (
-    Path(__file__).resolve().parents[1] / "resources" / "skill_domains"
-)
+_BUILTIN_DOMAINS_DIRECTORY = Path(__file__).resolve().parents[1] / "resources" / "skill_domains"
 
 _BUILTIN_NAMES = [
     "data_science",
@@ -143,4 +141,3 @@ class LocalSkillStore(BaseSkillStore):
                 name=sub.name, content=manifest_file.read_text(encoding="utf-8")
             )
         return result
-

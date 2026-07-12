@@ -8,10 +8,10 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from opendatasci.models.providers import Provider
-from opendatasci.skills.local import _BUILTIN_SKILLS_DIRECTORY as _DEFAULT_BUILTIN_SKILLS_DIRECTORY
 from opendatasci.skills.local import (
     _BUILTIN_DOMAINS_DIRECTORY as _DEFAULT_BUILTIN_DOMAINS_DIRECTORY,
 )
+from opendatasci.skills.local import _BUILTIN_SKILLS_DIRECTORY as _DEFAULT_BUILTIN_SKILLS_DIRECTORY
 
 DEFAULT_MODEL: MappingProxyType[Provider, str] = MappingProxyType(
     {

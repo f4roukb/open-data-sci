@@ -57,9 +57,7 @@ class SystemContextBuilder:
         if active_skill_domain is not None:
             messages.append(
                 SystemMessage(
-                    content=cached_system_prompt(
-                        active_skill_domain.content, self._config.provider
-                    )  # type: ignore[arg-type]
+                    content=cached_system_prompt(active_skill_domain.content, self._config.provider)  # type: ignore[arg-type]
                 )
             )
 
