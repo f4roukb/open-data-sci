@@ -28,6 +28,7 @@ class TestToolName:
             "execute_python_code",
             "execute_cli_command",
             "load_skill",
+            "list_skills",
             "enter_plan_mode",
             "exit_plan_mode",
             "enter_self_review_mode",
@@ -147,6 +148,7 @@ class TestWorkerToolSetExact:
             "read_dataset_info",
             "profile_dataset",
             "load_skill",
+            "list_skills",
         }
     )
 

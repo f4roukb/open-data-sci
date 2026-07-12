@@ -39,6 +39,7 @@ class ToolName(str, Enum):
     EXECUTE_CLI = "execute_cli_command"
     LIST_PYTHON_LIBS = "list_python_libs"
     LOAD_SKILL = "load_skill"
+    LIST_SKILLS = "list_skills"
     ENTER_PLAN_MODE = "enter_plan_mode"
     EXIT_PLAN_MODE = "exit_plan_mode"
     ENTER_SELF_REVIEW_MODE = "enter_self_review_mode"
@@ -90,7 +91,11 @@ def create_worker_agent_tools(
         sandbox = SRTSandbox(workspace_path=Path(workspace.get_reference()))
     if store is None:
         user_skills_dir = Path(context.root) / "skills" if context is not None else None
-        store = LocalSkillStore([user_skills_dir] if user_skills_dir is not None else None)
+        user_domains_dir = Path(context.root) / "skill_domains" if context is not None else None
+        store = LocalSkillStore(
+            [user_skills_dir] if user_skills_dir is not None else None,
+            [user_domains_dir] if user_domains_dir is not None else None,
+        )
     return _base_tools(workspace, sandbox, context, store, persist=False)
 
 
@@ -111,7 +116,11 @@ def create_agent_tools(
     datasci_config = datasci_config or OpenDataSciConfig()
     if store is None:
         user_skills_dir = Path(context.root) / "skills" if context is not None else None
-        store = LocalSkillStore([user_skills_dir] if user_skills_dir is not None else None)
+        user_domains_dir = Path(context.root) / "skill_domains" if context is not None else None
+        store = LocalSkillStore(
+            [user_skills_dir] if user_skills_dir is not None else None,
+            [user_domains_dir] if user_domains_dir is not None else None,
+        )
     # A single manager instance is shared by every tool that supports human approval.
     approval_manager: HumanApprovalBaseManager = HumanApprovalManager(datasci_config)
     tools = _base_tools(workspace, sandbox, context, store, approval_manager=approval_manager)

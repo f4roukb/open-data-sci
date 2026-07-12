@@ -1,12 +1,11 @@
-import json
-import logging
 from pathlib import Path
 
-from opendatasci.skills.base import BaseSkillStore, Skill
-
-logger = logging.getLogger(__name__)
+from opendatasci.skills.base import BaseSkillStore, Skill, SkillDomain
 
 _BUILTIN_SKILLS_DIRECTORY = Path(__file__).resolve().parents[1] / "resources" / "skills"
+_BUILTIN_DOMAINS_DIRECTORY = (
+    Path(__file__).resolve().parents[1] / "resources" / "skill_domains"
+)
 
 _BUILTIN_NAMES = [
     "data_science",
@@ -27,105 +26,121 @@ SKILL_LABELS: dict[str, str] = {
 }
 
 
+def _parse_skill_file(file: Path) -> tuple[str, str] | None:
+    """Return ``(name, content)`` for ``.md`` files, or ``None`` for all others.
+
+    The filename stem is used as the skill name and the file body as the prompt
+    content. Files with any other extension are silently skipped.
+    """
+    if file.suffix != ".md":
+        return None
+    return file.stem, file.read_text(encoding="utf-8")
+
+
 class LocalSkillStore(BaseSkillStore):
-    """Loads skills from one or more local filesystem directories.
+    """Loads skills and skill domains from local filesystem directories.
 
-    Directories are scanned in order; later directories override earlier ones when
-    skill names clash.  Each directory may contain:
+    Layout convention:
 
-    - ``.md`` files — loaded directly (filename stem used as skill name).
-    - ``.yaml`` / ``.yml`` / ``.json`` files — parsed for ``name`` and ``prompt`` keys.
+    - A *skills* directory may contain standalone ``.md`` skill files directly
+      (``<skills_dir>/<skill_name>.md``) and/or subdirectories that group the
+      skills belonging to a skill domain (``<skills_dir>/<domain_name>/<skill_name>.md``).
+      Skills that belong to a skill domain are keyed by the qualified name
+      ``"<domain_name>::<skill_name>"``.
+    - A *skill domain* directory contains one subdirectory per domain, each
+      holding a ``manifest.md`` file (``<domains_dir>/<domain_name>/manifest.md``).
 
-    When *paths* is ``None``, only the built-in skills directory is scanned.
+    Directories are scanned in order; later directories override earlier ones
+    when names clash. Files with extensions other than ``.md`` are silently
+    skipped. When *paths* / *domain_paths* is ``None``, only the built-in
+    directories are scanned.
 
     Args:
-        paths: Ordered list of directories to scan.  ``None`` loads only the
-            built-in skills bundled with the package.
-        strict: When ``True``, raise ``ValueError``
-            instead of warning if any structured skill file cannot be parsed.
+        paths: Ordered list of skills directories to scan. ``None`` loads only
+            the built-in skills bundled with the package.
+        domain_paths: Ordered list of skill-domain directories to scan.
+            ``None`` loads only the built-in domains bundled with the package.
     """
 
     def __init__(
         self,
         paths: list[Path] | None = None,
-        *,
-        strict: bool = True,
+        domain_paths: list[Path] | None = None,
     ) -> None:
         self._paths: list[Path] = paths if paths is not None else [_BUILTIN_SKILLS_DIRECTORY]
-        self._strict = strict
+        self._domain_paths: list[Path] = (
+            domain_paths if domain_paths is not None else [_BUILTIN_DOMAINS_DIRECTORY]
+        )
+
+    # ------------------------------------------------------------------
+    # BaseSkillStore
+    # ------------------------------------------------------------------
 
     def load(self, name: str) -> Skill | None:
-        return self.list().get(name)
+        return self.list_skills().get(name)
 
-    def list(self) -> dict[str, Skill]:
+    def load_domain(self, name: str) -> SkillDomain | None:
+        return self.list_domains().get(name)
+
+    def list_skills(self) -> dict[str, Skill]:
         result: dict[str, Skill] = {}
         for d in self._paths:
-            result.update(self._load_from_dir(d))
+            result.update(self._scan_skills_dir(d))
+        return result
+
+    def list_domains(self) -> dict[str, SkillDomain]:
+        result: dict[str, SkillDomain] = {}
+        for d in self._domain_paths:
+            result.update(self._scan_domains_dir(d))
         return result
 
     def load_user_defined(self) -> dict[str, Skill]:
         """Return skills from all directories except the built-in skills directory."""
         result: dict[str, Skill] = {}
         for d in self._paths:
-            if d != _BUILTIN_SKILLS_DIRECTORY:
-                result.update(self._load_from_dir(d))
+            if d == _BUILTIN_SKILLS_DIRECTORY:
+                continue
+            result.update(self._scan_skills_dir(d))
         return result
 
-    def _load_from_dir(self, path: Path) -> dict[str, Skill]:
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+
+    def _scan_skills_dir(self, path: Path) -> dict[str, Skill]:
+        """Scan *path* for standalone skills and one level of skill-domain subdirectories."""
         if not path.is_dir():
             return {}
 
-        result: dict[str, Skill] = {}
-        failures: list[tuple[Path, str]] = []
-
-        for file in sorted(path.iterdir()):
-            if file.suffix == ".md":
-                result[file.stem] = Skill(name=file.stem, content=file.read_text(encoding="utf-8"))
-                continue
-
-            if file.suffix not in {".yaml", ".yml", ".json"}:
-                continue
-
-            try:
-                if file.suffix == ".json":
-                    data = json.loads(file.read_text(encoding="utf-8"))
-                else:
-                    try:
-                        import yaml  # type: ignore[import-untyped]
-
-                        data = yaml.safe_load(file.read_text(encoding="utf-8"))
-                    except ImportError:
-                        data = json.loads(file.read_text(encoding="utf-8"))
-            except Exception as exc:  # noqa: BLE001
-                failures.append((file, f"parse error: {exc}"))
-                continue
-
-            if not isinstance(data, dict):
-                failures.append(
-                    (file, f"expected a mapping at the top level, got {type(data).__name__}")
-                )
-                continue
-
-            name = data.get("name")
-            prompt = data.get("prompt")
-            missing = [k for k, v in (("name", name), ("prompt", prompt)) if not v]
-            if missing:
-                failures.append((file, f"missing required key(s): {', '.join(missing)}"))
-                continue
-
-            result[str(name)] = Skill(name=str(name), content=str(prompt))
-
-        if failures:
-            summary = "; ".join(f"{f.name}: {reason}" for f, reason in failures)
-            if self._strict:
-                raise ValueError(
-                    f"{len(failures)} skill file(s) in '{path}' could not be loaded: {summary}"
-                )
-            logger.warning(
-                "%d skill file(s) in '%s' could not be loaded: %s",
-                len(failures),
-                path,
-                summary,
-            )
-
+        result: dict[str, Skill] = self._load_skill_files(path)
+        for sub in sorted(p for p in path.iterdir() if p.is_dir()):
+            result.update(self._load_skill_files(sub, prefix=sub.name))
         return result
+
+    def _load_skill_files(self, path: Path, *, prefix: str | None = None) -> dict[str, Skill]:
+        result: dict[str, Skill] = {}
+        for file in sorted(path.iterdir()):
+            if file.is_dir():
+                continue
+            parsed = _parse_skill_file(file)
+            if parsed is None:
+                continue
+            base_name, content = parsed
+            qualified = f"{prefix}::{base_name}" if prefix else base_name
+            result[qualified] = Skill(name=qualified, content=content)
+        return result
+
+    def _scan_domains_dir(self, path: Path) -> dict[str, SkillDomain]:
+        if not path.is_dir():
+            return {}
+
+        result: dict[str, SkillDomain] = {}
+        for sub in sorted(p for p in path.iterdir() if p.is_dir()):
+            manifest_file = sub / "manifest.md"
+            if not manifest_file.is_file():
+                continue
+            result[sub.name] = SkillDomain(
+                name=sub.name, content=manifest_file.read_text(encoding="utf-8")
+            )
+        return result
+

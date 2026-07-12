@@ -165,7 +165,11 @@ def create_worker_tools(
     """
     if store is None:
         user_skills_dir = Path(context.root) / "skills" if context is not None else None
-        store = LocalSkillStore([user_skills_dir] if user_skills_dir is not None else None)
+        user_domains_dir = Path(context.root) / "skill_domains" if context is not None else None
+        store = LocalSkillStore(
+            [user_skills_dir] if user_skills_dir is not None else None,
+            [user_domains_dir] if user_domains_dir is not None else None,
+        )
 
     @tool
     async def spawn_workers(

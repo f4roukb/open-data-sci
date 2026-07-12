@@ -9,6 +9,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from opendatasci.models.providers import Provider
 from opendatasci.skills.local import _BUILTIN_SKILLS_DIRECTORY as _DEFAULT_BUILTIN_SKILLS_DIRECTORY
+from opendatasci.skills.local import (
+    _BUILTIN_DOMAINS_DIRECTORY as _DEFAULT_BUILTIN_DOMAINS_DIRECTORY,
+)
 
 DEFAULT_MODEL: MappingProxyType[Provider, str] = MappingProxyType(
     {
@@ -96,6 +99,14 @@ class OpenDataSciConfig(BaseSettings):
                          the same name.
         builtin_skills_directory: Path to the built-in skills bundled with
                          the package (``BUILTIN_SKILLS_DIRECTORY``).  Override
+                         only if you need to replace the defaults entirely.
+        skill_domains_directory: Path to a directory of custom skill
+                         domains (``SKILL_DOMAINS_DIRECTORY``).  Loaded in
+                         addition to the built-in skill domains; custom
+                         domains override built-ins of the same name.
+        builtin_skill_domains_directory: Path to the built-in skill
+                         domains bundled with the package
+                         (``BUILTIN_SKILL_DOMAINS_DIRECTORY``).  Override
                          only if you need to replace the defaults entirely.
         extra_web_domains: Additional hostnames the ``fetch_url`` tool may
                          retrieve, on top of the built-in allowlist.
@@ -202,6 +213,14 @@ class OpenDataSciConfig(BaseSettings):
     builtin_skills_directory: Path = Field(
         default=_DEFAULT_BUILTIN_SKILLS_DIRECTORY,
         alias="BUILTIN_SKILLS_DIRECTORY",
+    )
+    skill_domains_directory: Path | None = Field(
+        default=None,
+        alias="SKILL_DOMAINS_DIRECTORY",
+    )
+    builtin_skill_domains_directory: Path = Field(
+        default=_DEFAULT_BUILTIN_DOMAINS_DIRECTORY,
+        alias="BUILTIN_SKILL_DOMAINS_DIRECTORY",
     )
 
     # ── Worker configuration ───────────────────────────────────────────────────────

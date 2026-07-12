@@ -245,12 +245,18 @@ class TestAgentConversation:
         async with _make_agent_ctx() as agent:
             agent.graph.update_state(
                 agent._graph_config,
-                {"is_plan_mode": True, "is_self_review_mode": True, "active_skills": []},
+                {
+                    "is_plan_mode": True,
+                    "is_self_review_mode": True,
+                    "active_skills": [],
+                    "active_skill_domains": [],
+                },
             )
             await agent.clear_chat_history()
             assert _get_state_value(agent, "is_plan_mode", False) is False
             assert _get_state_value(agent, "is_self_review_mode", False) is False
             assert _get_state_value(agent, "active_skills", []) == []
+            assert _get_state_value(agent, "active_skill_domains", []) == []
 
     async def test_clear_chat_history_clears_session_plan(self) -> None:
         context_store = MagicMock(spec=BaseContextStore)

@@ -48,7 +48,7 @@ from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory
 from opendatasci.sandbox.srt import SRTSandboxFactory
 from opendatasci.session import BaseSessionManager, LocalSessionManager
 from opendatasci.skills import BaseSkillStore, LocalSkillStore
-from opendatasci.skills.base import Skill
+from opendatasci.skills.base import Skill, SkillDomain
 from opendatasci.streaming import (
     AgentStreamEvent,
     AgentTurnStreamProcessor,
@@ -233,6 +233,9 @@ class Agent(BaseOpenDataSciAgent):
     def _build_system_context(self, state: AgentState) -> list[SystemMessage]:
         return self._system_context_builder.build(
             active_skills=state.active_skills,
+            active_skill_domain=(
+                state.active_skill_domains[0] if state.active_skill_domains else None
+            ),
             is_plan_mode=state.is_plan_mode,
             is_self_review_mode=state.is_self_review_mode,
         )
@@ -275,6 +278,7 @@ class Agent(BaseOpenDataSciAgent):
             graph_input = {
                 "messages": [user_msg],
                 "active_skills": [],
+                "active_skill_domains": [],
                 "is_plan_mode": False,
                 "is_self_review_mode": False,
             }
@@ -415,6 +419,14 @@ class ConcurrentWorkerAgent:
                 content=cached_system_prompt(self._current_system_prompt, self._config.provider)  # type: ignore[arg-type]
             )
         ]
+        if state.active_skill_domains:
+            messages.append(
+                SystemMessage(
+                    content=cached_system_prompt(
+                        state.active_skill_domains[0].content, self._config.provider
+                    )  # type: ignore[arg-type]
+                )
+            )
         for skill in state.active_skills:
             messages.append(
                 SystemMessage(
@@ -430,12 +442,14 @@ class ConcurrentWorkerAgent:
         on_event: OnEventCallback | None = None,
         messages_out: "list[Any] | None" = None,
         initial_active_skills: "list[Skill] | None" = None,
+        initial_active_skill_domains: "list[SkillDomain] | None" = None,
     ) -> str:
         """Execute *task* to completion and return the final text response."""
         self._current_system_prompt = system_prompt
         initial_state = AgentState(
             messages=[AgentToAgentMessage(content=task, origin=MessageOrigin.AGENT)],
             active_skills=list(initial_active_skills or []),
+            active_skill_domains=list(initial_active_skill_domains or []),
         )
         invoke_config: RunnableConfig = {
             "tags": [SUBAGENT_TAG],
@@ -478,7 +492,14 @@ class ConcurrentWorkerAgent:
         if messages_out is not None and final_state is not None:
             final_messages = final_state.get("messages", [])
             final_active_skills: list[Skill] = final_state.get("active_skills", [])
-            dummy_state = AgentState(messages=[], active_skills=final_active_skills)
+            final_active_skill_domains: list[SkillDomain] = final_state.get(
+                "active_skill_domains", []
+            )
+            dummy_state = AgentState(
+                messages=[],
+                active_skills=final_active_skills,
+                active_skill_domains=final_active_skill_domains,
+            )
             sys_messages = self._build_system_context(dummy_state)
             messages_out.extend([*sys_messages, *final_messages])
 
