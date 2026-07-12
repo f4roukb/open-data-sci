@@ -304,7 +304,7 @@ def create_cli_tools(
             summary:          3-4 word status label (e.g. "Listing workspace files").
             communication:    Brief message to the user about what you're doing
                               (e.g. "Let me see what files are available.").
-            request_approval: Set to True when the command could affect the user's
+            request_approval: Set to True when the command could disrupt the user's
                               device or active work in any way; execution then pauses
                               until the user explicitly approves it. Leave False for
                               trivially safe read-only commands.

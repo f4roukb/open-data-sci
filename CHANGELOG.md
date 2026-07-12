@@ -6,6 +6,45 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-05
+
+### Added
+
+- **Human-in-the-loop command approval** — `execute_cli_command` (main agent only) gains a `request_approval` flag: before a potentially impactful command runs, `HumanApprovalManager` generates a plain-language impact assessment (description plus a heads-up when the command could harm the user's device or active work) and pauses the graph via a LangGraph interrupt until the user answers. Declined commands return a message steering the agent toward safer alternatives. New `opendatasci.human_inputs` package with the `HumanApprovalBaseManager` extension point.
+- **`ApprovalRequiredEvent` stream event** — SDK consumers receive the pending command, its description, and heads-up, and resume by calling `astream` again with `"yes"`/`"no"`. The TUI renders it as an interactive approval prompt (arrow-key selection, Enter to confirm, Esc to decline).
+- **Typed chat messages with provenance** — new `opendatasci/memory/` package with LangChain message subclasses (`UserMessage`, `HarnessMessage`, `SummaryMessage`, `PlanMessage`, `AgentMessage`, `AgentToAgentMessage`), each carrying a `created_at` timestamp and rendering itself with provenance metadata tags (user vs. harness vs. interrupt resume) via `RenderableMessageMixin`. A single `render_messages_for_llm` chokepoint tags messages before they reach the LLM without touching stored state.
+- **Chat history compaction record** — dedicated `ChatHistoryCompaction` dataclass (`compacted_at`, `timespan`, `content`) stored in `AgentState.chat_history_compaction`; `compact_chat_history()` folds the previous compaction, all turn summaries, and the current turn into a single record, and the compaction is dropped from context automatically once the turn-summary window fills up.
+- **Session plans as context** — new `Plan` context object (`context/plans.py`) that renders into a recall message stamped with its creation timestamp, so committed plans survive history compaction.
+- **TUI message queue** — messages submitted while the agent is busy are queued (`PendingMessageQueue`), shown in a pending panel, and drained turn-by-turn; new `/cancel-message` and `/cancel-all-messages` commands.
+- **Skill domains** — a new layer above skills: a `SkillDomain` is the map of a broad task domain (which skills exist under it and when each applies) without itself carrying task-execution know-how. The `load_skill` tool now accepts `skill_domain_name` alongside `skill_name`, loading either or both independently (each replaces its own predecessor); a new `list_skills` tool reports the available skill domains and standalone skills. New built-in domains: `competitive_data_science`, `data_science`, `data_science_education`, `deep_learning`, `machine_learning`, `quantitative_analysis`. Skill names belonging to a domain are qualified as `"<domain>::<skill>"`. `OpenDataSciConfig` gains `skill_domains_directory` / `builtin_skill_domains_directory` (`SKILL_DOMAINS_DIRECTORY` / `BUILTIN_SKILL_DOMAINS_DIRECTORY`), loaded with the same precedence as skills.
+- **`opendatasci.session` package** — `BaseSessionManager` / `LocalSessionManager` track a session's conversation threads in the graph checkpointer, decoupling thread identity from the `Agent` so a stateless deployment can supply its own storage-backed manager. `Agent` accepts an optional `session_manager`, defaulting to a file-backed manager persisted at `.opendatasci/session.json`.
+
+### Changed
+
+- **Turn-scoped agent state** — `AgentState.messages` now holds only the in-progress turn; completed turns are folded into `turn_summaries` (window raised from 3 to 10, capped at 25) instead of accumulating raw messages indefinitely.
+- **TUI theming via CSS variables** — theme palettes are exported as Textual CSS variables, so every registered theme (including the color-blind-safe `visible` palette) restyles the entire app; the separate `styles_visible.tcss` stylesheet is gone.
+- **TUI interrupt handling** — Ctrl+C and Esc during a running turn now stop the agent (like `/stop`) instead of quitting; quitting remains a deliberate double Ctrl+C while idle.
+- **TUI auto-scroll** — the message pane pins to the bottom with a releasable anchor: new content keeps the view pinned until the user scrolls up, and scrolling back down re-engages it.
+- **Sandbox command timeout** — default raised from 30 minutes to 12 hours to accommodate long-running training and hyperparameter-search jobs.
+- **Quieter tool display** — low-signal tools (`list_python_libs`, `read_dataset_info`, `profile_dataset`, `list_workspace_files`, `fetch_url`, `verify_python_code`) no longer clutter the TUI transcript.
+- **Database connectivity** — swapped `connectorx` for `duckdb`.
+- **`/compact`** no longer echoes the generated summary back; it simply confirms completion.
+- **`/clear`** now starts a brand-new checkpointer thread instead of patching the existing one, so it fully drops conversation history, turn summaries, compaction, active skills/skill domains, mode flags, and any pending interrupt in one step; it also cancels pending turn-summarization tasks and deletes the session's persisted plan. A turn still streaming when `/clear` is invoked is stopped first so it can't write the cleared conversation back on completion.
+- `midturn_compaction_threshold` default raised from 80,000 to 96,000 tokens.
+
+### Fixed
+
+- Command approval now uses the secondary model for the impact assessment: the primary model has extended thinking enabled, which Anthropic rejects in combination with the forced `tool_choice` that structured output requires, so every assessment call failed and the approval prompt was silently skipped. Assessment failures now also fail closed — the approval prompt still appears, showing the raw command with a fallback warning, instead of letting the command run unapproved.
+- Compaction no longer masquerades as a `ChatTurnSummary` with `turn=None`; it is modeled and stored explicitly, and `clear_chat_history()` now also resets it.
+- The agent graph no longer errors when a maintenance `update_state` (compact, rewind) empties `messages` mid-route.
+- `verify_python_code` sends its review request with the correct message role for provider compatibility.
+- Agent replies are wrapped in `AgentMessage` so they carry timestamps like every other message.
+- `get_message_text_content()` strips whitespace from all text parts.
+
+### Removed
+
+- Dead `prompts/message_templates.py` module and unused message-utility helpers (`get_last_turn_messages`, `get_ongoing_turn_messages`, `render_turns`).
+
 ## [0.1.0] - 2026-06-21
 
 Initial public release.
@@ -35,5 +74,6 @@ Initial public release.
 - **Context summarisation** — automatic background compression of long conversation history to stay within model context limits.
 - **Workspace loading** — load a single file or an entire directory as the agent's working dataset.
 
-[Unreleased]: https://github.com/f4roukb/open-data-sci/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/f4roukb/open-data-sci/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/f4roukb/open-data-sci/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/f4roukb/open-data-sci/releases/tag/v0.1.0
