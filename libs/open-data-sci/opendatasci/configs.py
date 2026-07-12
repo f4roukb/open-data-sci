@@ -120,7 +120,7 @@ class OpenDataSciConfig(BaseSettings):
         midturn_compaction_threshold: Token count after which the agent's
                          context is compacted mid-turn (during a single turn's
                          reasoning/acting loop).  Must be strictly positive.
-                         Defaults to ``80000``.
+                         Defaults to ``96000``.
         local_code_exec_timeout: Maximum seconds allowed for a single
                          code-execution run in the local sandbox
                          (``CODE_EXEC_TIMEOUT``).  Defaults to
