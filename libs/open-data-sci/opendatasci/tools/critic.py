@@ -73,7 +73,7 @@ def _create_enter_tool(store: BaseSkillStore) -> BaseTool:
         if skill is not None:
             loaded = store.load(skill)
             if loaded is None:
-                available = ", ".join(sorted(store.list()))
+                available = ", ".join(sorted(store.list_skills()))
                 return Command(
                     update={
                         "messages": [

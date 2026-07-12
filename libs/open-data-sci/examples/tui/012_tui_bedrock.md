@@ -77,7 +77,7 @@ REGION=us-west-2 opendatasci sales.csv --provider bedrock \
   --model us.anthropic.claude-sonnet-4-6
 
 # Load config from file (region set inside the file)
-opendatasci sales.csv --config examples/config_bedrock.yaml
+opendatasci sales.csv --config examples/configs/config_bedrock.yaml
 ```
 
 ### Cross-region inference model IDs

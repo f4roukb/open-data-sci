@@ -33,10 +33,11 @@ from opendatasci import (
 | Page | What it covers |
 |------|---------------|
 | [create_agent](open_data_sci.md) | `create_agent()` — the recommended way to build an agent |
-| [Agent](agent.md) | Full agent class: `astream`, `rewind_turn`, `compact_chat_history`, … |
+| [Agent](agent.md) | Full agent class: `astream`, `rewind_turn`, `compact_chat_history`, `BaseSessionManager`, … |
 | [OpenDataSciConfig](config.md) | All configuration fields and environment variable mappings |
 | [TUI Service](session_manager.md) | `OpenDataSciTuiService` — service layer used by the terminal UI |
 | [Memory](memory.md) | `ChatTurnContext`, `ChatTurnSummary`, `ChatHistoryCompaction`, message provenance tagging |
 | [Workspace](workbench.md) | `BaseWorkspace`, `LocalWorkspace` |
+| [Skills](skills.md) | `Skill`, `SkillDomain`, `BaseSkillStore`, `LocalSkillStore` |
 | [Sandbox & Execution](session.md) | `BaseSandbox`, `SandboxExecResult`, TUI command allowlist |
 | [Events & Types](types.md) | `AgentStreamEvent` — all event types explained |

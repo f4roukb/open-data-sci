@@ -15,7 +15,7 @@ from langchain_core.messages import SystemMessage
 from opendatasci.prompts.prompt_templates import PLAN_MODE_SYSTEM_PROMPT, MAIN_SYSTEM_PROMPT
 from opendatasci.prompts.builders import SystemContextBuilder as SystemPromptBuilder
 from opendatasci.configs import OpenDataSciConfig
-from opendatasci.skills.base import Skill
+from opendatasci.skills.base import Skill, SkillDomain
 
 
 def _make_active_skills(skill_prompt: str | None) -> list[Skill]:
@@ -142,6 +142,53 @@ class TestSystemPromptBuilderBuild:
         builder = self._make(skill_prompt="skill instructions")
         messages = builder.build()
         assert len(messages) == 2
+
+
+class TestSystemPromptBuilderDomain:
+    def _make(
+        self,
+        provider: str = "anthropic",
+        domain_content: str | None = None,
+        skill_prompt: str | None = None,
+    ) -> SystemPromptBuilder:
+        config = OpenDataSciConfig(provider=provider)  # type: ignore[arg-type]
+        builder = SystemPromptBuilder(config=config)
+        active_skills = _make_active_skills(skill_prompt)
+        domain = SkillDomain(name="m", content=domain_content) if domain_content else None
+        builder.build = partial(
+            builder.build, active_skills=active_skills, active_skill_domain=domain
+        )
+        return builder
+
+    def test_no_domain_message_when_none(self) -> None:
+        builder = self._make()
+        assert len(builder.build()) == 1
+
+    def test_includes_domain_prompt(self) -> None:
+        builder = self._make(domain_content="## My Skill Domain\nPoints to skills.")
+        text = _all_text(builder.build())
+        assert "My Skill Domain" in text
+
+    def test_domain_is_immediately_after_base(self) -> None:
+        builder = self._make(domain_content="domain body")
+        messages = builder.build()
+        assert "domain body" in _extract_text(messages[1].content)
+
+    def test_domain_before_skill_when_both_loaded(self) -> None:
+        builder = self._make(domain_content="domain body", skill_prompt="skill body")
+        messages = builder.build()
+        assert len(messages) == 3
+        assert "domain body" in _extract_text(messages[1].content)
+        assert "skill body" in _extract_text(messages[2].content)
+
+    @pytest.mark.parametrize("provider", ["anthropic", "bedrock"])
+    def test_three_cache_markers_when_domain_and_skill_loaded(self, provider: str) -> None:
+        builder = self._make(
+            provider=provider, domain_content="domain body", skill_prompt="skill body"
+        )
+        messages = builder.build()
+        marked = [m for m in messages if _has_cache_marker(m.content)]
+        assert len(marked) == 3
 
 
 def _has_cache_marker(content: object) -> bool:

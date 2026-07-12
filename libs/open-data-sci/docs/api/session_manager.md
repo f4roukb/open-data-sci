@@ -8,27 +8,19 @@ You do not normally instantiate this class directly — the TUI creates it for y
 
 ```python
 from opendatasci._tui.service import OpenDataSciTuiService
-from opendatasci.agents.agents import Agent
-from opendatasci.sandbox.srt import SRTSandboxFactory
-from opendatasci.workspace.local import LocalWorkspace
-from opendatasci import OpenDataSciConfig
+from opendatasci import create_agent, OpenDataSciConfig
 from pathlib import Path
 
-workspace = LocalWorkspace("data.csv")
 config = OpenDataSciConfig()
-sandbox_factory = SRTSandboxFactory()
 
-# Acquire the sandbox manually
-async with sandbox_factory.create(workspace_path=Path(workspace.get_reference())) as sandbox:
-    agent = Agent(workspace=workspace, config=config)
-    async with agent:
-        service = OpenDataSciTuiService(
-            agent=agent,
-            sandbox=sandbox,
-            workspace_path=Path(workspace.get_reference()),
-        )
-        async for event in service.astream("Describe this dataset"):
-            print(event)
+async with create_agent("data.csv", config=config) as agent:
+    service = OpenDataSciTuiService(
+        agent=agent,
+        sandbox=agent._sandbox,
+        workspace_path=Path(agent._workspace.get_reference()),
+    )
+    async for event in service.astream("Describe this dataset"):
+        print(event)
 ```
 
 ## Key responsibilities
