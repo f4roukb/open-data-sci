@@ -101,16 +101,3 @@ if compaction is not None:
       show_root_heading: true
       show_source: false
 
----
-
-::: opendatasci.memory.turn_memory.AgentLoopCompactor
-    options:
-      show_root_heading: true
-      show_source: false
-
----
-
-::: opendatasci.memory.turn_memory.TurnRewinder
-    options:
-      show_root_heading: true
-      show_source: false

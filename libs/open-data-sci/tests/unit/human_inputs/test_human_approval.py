@@ -31,7 +31,7 @@ def _make_manager(
     mock_structured_llm.ainvoke = AsyncMock(return_value=raw)
     mock_base_llm = MagicMock()
     mock_base_llm.with_structured_output.return_value = mock_structured_llm
-    with patch(f"{_MODULE}.create_model", return_value=mock_base_llm):
+    with patch(f"{_MODULE}.create_secondary_model", return_value=mock_base_llm):
         manager = HumanApprovalManager(MagicMock())
     return manager, mock_structured_llm
 
@@ -47,15 +47,18 @@ class TestBaseManagerContract:
 
 
 class TestManagerConstruction:
-    def test_creates_model_from_config_once(self) -> None:
+    def test_creates_secondary_model_from_config_once(self) -> None:
+        """The secondary model must be used: structured output forces tool_choice,
+        which providers such as Anthropic reject when extended thinking is
+        enabled (as it is on the primary model)."""
         config = MagicMock()
-        with patch(f"{_MODULE}.create_model") as mock_create:
+        with patch(f"{_MODULE}.create_secondary_model") as mock_create:
             HumanApprovalManager(config)
         mock_create.assert_called_once_with(config)
 
     def test_with_structured_output_uses_private_schema(self) -> None:
         mock_base_llm = MagicMock()
-        with patch(f"{_MODULE}.create_model", return_value=mock_base_llm):
+        with patch(f"{_MODULE}.create_secondary_model", return_value=mock_base_llm):
             HumanApprovalManager(MagicMock())
         mock_base_llm.with_structured_output.assert_called_once_with(_CommandImpactAssessment)
 
@@ -126,6 +129,28 @@ class TestAskForCommandApproval:
             m for m in mock_structured_llm.ainvoke.call_args[0][0] if isinstance(m, HumanMessage)
         )
         assert "grep -r secret ." in human_msg.content
+
+    @pytest.mark.asyncio
+    async def test_assessment_failure_still_requests_approval(self) -> None:
+        """An assessment error must fail closed: the interrupt still fires,
+        showing the raw command and a fallback warning."""
+        manager, mock_structured_llm = _make_manager()
+        mock_structured_llm.ainvoke.side_effect = RuntimeError("LLM unavailable")
+        with patch(f"{_MODULE}.interrupt", return_value="yes") as mock_intr:
+            approved = await manager.ask_for_command_approval("rm tmp.txt")
+        assert approved is True
+        payload = mock_intr.call_args[0][0]
+        assert payload["kind"] == APPROVAL_INTERRUPT_KIND
+        assert payload["command"] == "rm tmp.txt"
+        assert "rm tmp.txt" in payload["description"]
+        assert payload["heads_up"]  # fallback warning is always present
+
+    @pytest.mark.asyncio
+    async def test_assessment_failure_respects_decline(self) -> None:
+        manager, mock_structured_llm = _make_manager()
+        mock_structured_llm.ainvoke.side_effect = RuntimeError("LLM unavailable")
+        with patch(f"{_MODULE}.interrupt", return_value="no"):
+            assert await manager.ask_for_command_approval("rm tmp.txt") is False
 
     @pytest.mark.asyncio
     async def test_manager_is_stateless_across_calls(self) -> None:

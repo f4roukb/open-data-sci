@@ -78,6 +78,46 @@ print("Compacted:", summary)
 
 ---
 
+## Session manager
+
+A session manager tracks the mapping from a session to its conversation threads in the graph checkpointer. Clearing the conversation (`clear_chat_history`) creates a new thread, so no prior state is visible to the LLM on the next turn.
+
+The default `LocalSessionManager` persists this mapping to `.opendatasci/session.json` inside the workspace. For cloud or multi-process deployments — where two agent instances must share a conversation — replace it with a custom `BaseSessionManager` backed by shared storage:
+
+```python
+import uuid
+from opendatasci.session.session_manager import BaseSessionManager
+
+class RedisSessionManager(BaseSessionManager):
+    def get_or_create_thread(self) -> uuid.UUID: ...
+    def create_thread(self) -> uuid.UUID: ...
+    def get_current_thread(self) -> uuid.UUID: ...
+
+from opendatasci.agents.agents import Agent
+from opendatasci import LocalWorkspace, OpenDataSciConfig
+
+async with Agent(
+    workspace=LocalWorkspace("data/"),
+    session_manager=RedisSessionManager(),
+    config=OpenDataSciConfig(),
+) as agent:
+    ...
+```
+
+::: opendatasci.session.session_manager.BaseSessionManager
+    options:
+      show_root_heading: true
+      show_source: false
+
+---
+
+::: opendatasci.session.session_manager.LocalSessionManager
+    options:
+      show_root_heading: true
+      show_source: false
+
+---
+
 ## ConcurrentWorkerAgent
 
 `ConcurrentWorkerAgent` is the sub-agent spawned internally when the orchestrator delegates subtasks to concurrent workers. You do not normally construct this directly.

@@ -66,6 +66,10 @@ register(
 register("enter_plan_mode", ToolDisplay(label="Planning the next steps", icon="🎯"))
 register("exit_plan_mode", ToolDisplay(label="Planning complete", icon="✅"))
 register("load_skill", ToolDisplay(label="Loading skill", icon="🧠", summary_arg="summary"))
+register(
+    "list_skills",
+    ToolDisplay(label="Checking available skills", icon="🧭", display_status=False),
+)
 register("spawn_workers", ToolDisplay(label="Spawning workers", icon="⚙️"))
 register(
     "read_dataset_info",

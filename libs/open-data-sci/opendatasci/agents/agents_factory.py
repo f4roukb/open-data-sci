@@ -47,14 +47,25 @@ def create_agent(
 
     session_id = session_id or uuid.uuid4().hex
 
-    # Skills are loaded in increasing order of precedence: the bundled built-in
-    # skills, then the workspace's own ``.opendatasci/skills/`` directory, then an
-    # explicit ``SKILLS_DIRECTORY`` override. Missing directories are skipped.
+    # Skills and skill domains are loaded in increasing order of precedence:
+    # the bundled built-ins, then the workspace's own ``.opendatasci/skills/``
+    # (resp. ``.opendatasci/skill_domains/``) directory, then an explicit
+    # ``SKILLS_DIRECTORY`` (resp. ``SKILL_DOMAINS_DIRECTORY``) override.
+    # Missing directories are skipped.
     workspace_skills_directory = context_store.root / "skills"
     paths: list[Path] = [config.builtin_skills_directory, workspace_skills_directory]
     if config.skills_directory is not None:
         paths.append(config.skills_directory)
-    skill_store = LocalSkillStore(paths)
+
+    workspace_domains_directory = context_store.root / "skill_domains"
+    domain_paths: list[Path] = [
+        config.builtin_skill_domains_directory,
+        workspace_domains_directory,
+    ]
+    if config.skill_domains_directory is not None:
+        domain_paths.append(config.skill_domains_directory)
+
+    skill_store = LocalSkillStore(paths, domain_paths)
 
     checkpointer = MemorySaver()
 

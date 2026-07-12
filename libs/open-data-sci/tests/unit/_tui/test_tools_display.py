@@ -169,6 +169,12 @@ class TestRegistryContents:
     def test_load_skill_summary_arg(self) -> None:
         assert REGISTRY["load_skill"].summary_arg == "summary"
 
+    def test_list_skills_label(self) -> None:
+        assert REGISTRY["list_skills"].label == "Checking available skills"
+
+    def test_list_skills_display_status_false(self) -> None:
+        assert REGISTRY["list_skills"].display_status is False
+
     # ── Workers ───────────────────────────────────────────────────────────────
 
     def test_spawn_workers_label(self) -> None:

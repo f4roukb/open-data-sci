@@ -695,6 +695,19 @@ class TestClearConv:
         await loaded_controller.clear_conv()  # should not raise
         mock_ui.clear_messages.assert_called_once()
 
+    async def test_clear_conv_stops_running_agent(
+        self, loaded_controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        loaded_controller._agent_running = True
+        await loaded_controller.clear_conv()
+        mock_ui.stop_agent.assert_called_once()
+
+    async def test_clear_conv_does_not_stop_idle_agent(
+        self, loaded_controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await loaded_controller.clear_conv()
+        mock_ui.stop_agent.assert_not_called()
+
 
 class TestCompact:
     async def test_compact_no_service_shows_not_loaded(

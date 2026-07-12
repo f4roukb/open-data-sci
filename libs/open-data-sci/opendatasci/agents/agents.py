@@ -46,8 +46,9 @@ from opendatasci.prompts.builders import SystemContextBuilder
 from opendatasci.prompts.caching import cached_system_prompt
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory
 from opendatasci.sandbox.srt import SRTSandboxFactory
+from opendatasci.session import BaseSessionManager, LocalSessionManager
 from opendatasci.skills import BaseSkillStore, LocalSkillStore
-from opendatasci.skills.base import Skill
+from opendatasci.skills.base import Skill, SkillDomain
 from opendatasci.streaming import (
     AgentStreamEvent,
     AgentTurnStreamProcessor,
@@ -112,6 +113,9 @@ class Agent(BaseOpenDataSciAgent):
             local file-based store is created when omitted.
         skill_store: Registry that the agent queries to resolve named skills
             at runtime.  Defaults to the built-in :class:`LocalSkillStore`.
+        session_manager: Tracks the session's conversation threads in the
+            graph checkpointer; clearing the conversation creates a new
+            thread.  Defaults to a file-backed :class:`LocalSessionManager`.
         sandbox_factory: Factory used to create the execution sandbox.
             The sandbox lifetime is tied to the agent's context manager scope.
             Defaults to :class:`SRTSandboxFactory`.
@@ -133,6 +137,7 @@ class Agent(BaseOpenDataSciAgent):
         checkpointer: BaseCheckpointSaver[Any] | None = None,
         tools: list[BaseTool] | None = None,
         session_id: str | None = None,
+        session_manager: BaseSessionManager | None = None,
         config: OpenDataSciConfig | None = None,
     ) -> None:
         self._workspace = workspace
@@ -142,6 +147,7 @@ class Agent(BaseOpenDataSciAgent):
         self._sandbox_factory = sandbox_factory
         self._skill_store = skill_store
         self._context_store = context_store
+        self._session_manager = session_manager
         self._checkpointer = checkpointer
 
     async def __aenter__(self) -> "Agent":
@@ -156,6 +162,11 @@ class Agent(BaseOpenDataSciAgent):
         if self._context_store is None:
             workspace_path = Path(self._workspace.get_reference())
             self._context_store = LocalContextStore(workspace_path=workspace_path)
+        if self._session_manager is None:
+            self._session_manager = LocalSessionManager(
+                workspace_path=Path(self._workspace.get_reference()),
+                session_id=self._session_id,
+            )
         checkpointer = self._checkpointer or MemorySaver()
 
         self._llm: BaseChatModel = create_model(self._config)
@@ -205,7 +216,8 @@ class Agent(BaseOpenDataSciAgent):
 
     @property
     def _graph_config(self) -> RunnableConfig:
-        return {"configurable": {"thread_id": self._session_id}}
+        thread_id = self._session_manager.get_or_create_thread()  # type: ignore[union-attr]
+        return {"configurable": {"thread_id": str(thread_id)}}
 
     @property
     def graph(self) -> CompiledStateGraph:
@@ -221,6 +233,9 @@ class Agent(BaseOpenDataSciAgent):
     def _build_system_context(self, state: AgentState) -> list[SystemMessage]:
         return self._system_context_builder.build(
             active_skills=state.active_skills,
+            active_skill_domain=(
+                state.active_skill_domains[0] if state.active_skill_domains else None
+            ),
             is_plan_mode=state.is_plan_mode,
             is_self_review_mode=state.is_self_review_mode,
         )
@@ -248,9 +263,10 @@ class Agent(BaseOpenDataSciAgent):
         If the previous call ended with an :class:`~opendatasci.streaming.InputRequiredEvent`,
         pass the user's answer here to resume; otherwise *user_input* starts a new turn.
         """
+        thread_id = self._session_manager.get_or_create_thread()  # type: ignore[union-attr]
         config: RunnableConfig = {
             "recursion_limit": AGENT_RECURSION_LIMIT,
-            "configurable": {"thread_id": self._session_id},
+            "configurable": {"thread_id": str(thread_id)},
         }
 
         graph_state = self._graph.get_state(config)
@@ -262,6 +278,7 @@ class Agent(BaseOpenDataSciAgent):
             graph_input = {
                 "messages": [user_msg],
                 "active_skills": [],
+                "active_skill_domains": [],
                 "is_plan_mode": False,
                 "is_self_review_mode": False,
             }
@@ -297,7 +314,10 @@ class Agent(BaseOpenDataSciAgent):
         final_ai_msg = get_final_ai_message(completed_turn_messages)
         final_response = get_message_text_content(final_ai_msg).strip()
 
-        self._chat_history_builder.schedule_turn_summarization(completed_turn_messages)
+        # A clear_chat_history() issued while this turn was streaming created
+        # a new thread; summarizing the cleared turn would leak it back in.
+        if thread_id == self._session_manager.get_current_thread():  # type: ignore[union-attr]
+            self._chat_history_builder.schedule_turn_summarization(completed_turn_messages)
 
         yield ResponseEvent(content=final_response)
 
@@ -318,14 +338,17 @@ class Agent(BaseOpenDataSciAgent):
             )
 
     async def clear_chat_history(self) -> None:
-        """Clear conversation history and rolling memory (preserves session state)."""
-        snapshot = await self._graph.aget_state(self._graph_config)
-        ongoing_turn_messages = snapshot.values.get("messages", [])
+        """Clear all conversation context (preserves session state such as the sandbox).
+
+        Drops the conversation history, turn summaries, compaction, active
+        skills, mode flags, and any pending interrupt by starting a fresh
+        checkpointer thread; cancels any in-flight turn summarization; and
+        deletes the session's persisted plan so it is no longer recalled.
+        """
         self._chat_history_builder.cancel_pending_tasks()
-        updates: dict[str, Any] = {"turn_summaries": [], "chat_history_compaction": None}
-        if ongoing_turn_messages:
-            updates["messages"] = [RemoveMessage(id=msg.id) for msg in ongoing_turn_messages]
-        self._graph.update_state(self._graph_config, updates)
+        self._session_manager.create_thread()  # type: ignore[union-attr]
+        if self._context_store is not None:
+            self._context_store.clear_plans(self._session_id)
 
     async def compact_chat_history(self) -> str:
         """Fold the rolling turn summaries into a single compaction summary.
@@ -396,6 +419,14 @@ class ConcurrentWorkerAgent:
                 content=cached_system_prompt(self._current_system_prompt, self._config.provider)  # type: ignore[arg-type]
             )
         ]
+        if state.active_skill_domains:
+            messages.append(
+                SystemMessage(
+                    content=cached_system_prompt(
+                        state.active_skill_domains[0].content, self._config.provider
+                    )  # type: ignore[arg-type]
+                )
+            )
         for skill in state.active_skills:
             messages.append(
                 SystemMessage(
@@ -411,12 +442,14 @@ class ConcurrentWorkerAgent:
         on_event: OnEventCallback | None = None,
         messages_out: "list[Any] | None" = None,
         initial_active_skills: "list[Skill] | None" = None,
+        initial_active_skill_domains: "list[SkillDomain] | None" = None,
     ) -> str:
         """Execute *task* to completion and return the final text response."""
         self._current_system_prompt = system_prompt
         initial_state = AgentState(
             messages=[AgentToAgentMessage(content=task, origin=MessageOrigin.AGENT)],
             active_skills=list(initial_active_skills or []),
+            active_skill_domains=list(initial_active_skill_domains or []),
         )
         invoke_config: RunnableConfig = {
             "tags": [SUBAGENT_TAG],
@@ -459,7 +492,14 @@ class ConcurrentWorkerAgent:
         if messages_out is not None and final_state is not None:
             final_messages = final_state.get("messages", [])
             final_active_skills: list[Skill] = final_state.get("active_skills", [])
-            dummy_state = AgentState(messages=[], active_skills=final_active_skills)
+            final_active_skill_domains: list[SkillDomain] = final_state.get(
+                "active_skill_domains", []
+            )
+            dummy_state = AgentState(
+                messages=[],
+                active_skills=final_active_skills,
+                active_skill_domains=final_active_skill_domains,
+            )
             sys_messages = self._build_system_context(dummy_state)
             messages_out.extend([*sys_messages, *final_messages])
 

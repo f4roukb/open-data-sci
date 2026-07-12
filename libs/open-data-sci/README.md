@@ -14,6 +14,7 @@ A production-grade AI agent for data science and machine learning. See the [proj
 - [Python SDK](#python-sdk)
 - [Models](#models)
 - [Configuration](#configuration)
+- [Custom Skills](#custom-skills)
 - [Environment Variables](#environment-variables)
 
 ---
@@ -352,6 +353,60 @@ Place these files inside your workspace's `.opendatasci/` directory:
     "another":     { "url": "http://localhost:9000" }
   }
 }
+```
+
+---
+
+## Custom Skills
+
+Skills are Markdown (or YAML/JSON) files that give the agent a specialised persona and instruction set. OpenDataSci ships several built-in skills; you can add your own at the workspace level or point the agent at any directory you choose.
+
+### Workspace skills (recommended)
+
+Place skill files inside `.opendatasci/skills/` in your workspace directory — they are picked up automatically, no configuration needed:
+
+```
+<workspace>/
+└── .opendatasci/
+    ├── skills/
+    │   ├── my_skill.md              # standalone skill named "my_skill"
+    │   └── my_domain/
+    │       └── specialist.md        # domain-scoped skill: "my_domain::specialist"
+    └── skill_domains/
+        └── my_domain/
+            └── manifest.md          # optional domain manifest
+```
+
+Subdirectories create *domain-scoped* skills. The agent refers to them with the `domain::skill` naming convention (e.g. `my_domain::specialist`).
+
+### File format
+
+Skill files must be `.md`. The filename stem becomes the skill name and the file body is the prompt content. Files with any other extension are silently ignored.
+
+```markdown
+<!-- .opendatasci/skills/forecasting.md -->
+You are a time-series forecasting specialist. When analysing data, always...
+```
+
+### Global skills directory
+
+To share skills across workspaces, set `SKILLS_DIRECTORY` in your environment or `.env` file:
+
+```bash
+SKILLS_DIRECTORY=/home/user/my-skills
+```
+
+This directory is scanned *in addition to* the workspace `.opendatasci/skills/` directory and the built-in skills. When two sources define a skill with the same name, the later source wins (built-ins → workspace → `SKILLS_DIRECTORY`).
+
+You can also pass `skills_directory` directly when using the Python SDK:
+
+```python
+from opendatasci import OpenDataSciConfig, create_agent
+
+config = OpenDataSciConfig(skills_directory="/home/user/my-skills")
+
+async with create_agent("data.csv", config=config) as agent:
+    ...
 ```
 
 ### Environment variables

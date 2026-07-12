@@ -12,7 +12,7 @@ from opendatasci.memory.chat_memory import (
     ChatHistoryCompaction,
     ChatTurnSummary,
 )
-from opendatasci.skills.base import Skill
+from opendatasci.skills.base import Skill, SkillDomain
 
 
 def _reduce_turn_summaries(
@@ -69,6 +69,9 @@ class AgentState(BaseAgentState):
     )
     chat_history_compaction: ChatHistoryCompaction | None = None
     active_skills: list[Skill] = field(default_factory=list)
+    # Never more than one element for now — a list to allow multiple
+    # concurrently active skill domains in the future.
+    active_skill_domains: list[SkillDomain] = field(default_factory=list)
     is_plan_mode: bool = False
     is_self_review_mode: bool = False
 
@@ -79,3 +82,6 @@ class WorkerAgentState(BaseAgentState):
 
     messages: list[Any] = field(default_factory=list)
     active_skills: list[Skill] = field(default_factory=list)
+    # Never more than one element for now — a list to allow multiple
+    # concurrently active skill domains in the future.
+    active_skill_domains: list[SkillDomain] = field(default_factory=list)
