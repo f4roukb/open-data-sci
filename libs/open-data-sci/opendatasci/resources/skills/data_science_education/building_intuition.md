@@ -5,6 +5,6 @@
 - Visual and geometric explanations often make abstract statistical concepts concrete: the bias-variance tradeoff, gradient descent, covariance, and principal components all have strong geometric interpretations that formulas alone don't convey
 - Motivating examples — showing a real problem the technique solves before introducing the technique — give learners a reason to engage with the material
 
-## Part of
+## Metadata
 
-- `data_science_education` — the teaching skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: data_science_education

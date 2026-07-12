@@ -9,6 +9,6 @@ The same evaluation principles from classical ML apply: appropriate split strate
 - Test-time augmentation (averaging predictions over augmented copies of each test input) provides small but consistent gains for image tasks and sometimes for other modalities
 - When ensembling neural models with classical models (gradient boosting, linear), the diversity of the neural model's errors relative to the classical model's errors is what drives ensemble gains — even a weaker neural model can improve an ensemble if its mistakes are uncorrelated
 
-## Part of
+## Metadata
 
-- `deep_learning` — the deep learning skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: deep_learning

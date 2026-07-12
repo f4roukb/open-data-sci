@@ -8,6 +8,6 @@
 - Slicing metrics by relevant subgroups or prediction ranges often reveals where a model underperforms in ways aggregate numbers conceal
 - When combining multiple models, diversity of predictions is what drives ensemble gains — architecturally similar models (e.g., XGBoost, LightGBM, and CatBoost) are likely to produce highly correlated outputs and make the same mistakes, so blending them yields little improvement; meaningful gains come from ensembling models from different families (tree-based, linear, neural) or models trained on different feature sets or subsets of the data
 
-## Part of
+## Metadata
 
-- `data_science` — the general data science skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: data_science

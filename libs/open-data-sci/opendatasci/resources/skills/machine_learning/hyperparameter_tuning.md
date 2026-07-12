@@ -6,6 +6,6 @@
 - Reporting the distribution of CV scores across configurations, not just the best, gives a clearer picture of sensitivity to hyperparameter choices
 - All stochastic components should have fixed random seeds to ensure results are stable across runs
 
-## Part of
+## Metadata
 
-- `machine_learning` — the machine learning skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: machine_learning

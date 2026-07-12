@@ -6,6 +6,6 @@
 - Correlation analysis (linear and monotonic) helps map feature relationships; high pairwise correlation can matter for model interpretability even when it doesn't hurt predictive accuracy
 - Time-indexed data rewards a chronological view before any aggregation — gaps, seasonality, trend breaks, and data collection artefacts tend to show up immediately and change how the data should be handled
 
-## Part of
+## Metadata
 
-- `data_science` — the general data science skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: data_science

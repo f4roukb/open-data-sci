@@ -16,6 +16,6 @@
 - Storing OOF predictions and feature importances from the baseline produces an immediate map of which features matter and where the model is uncertain — both feed directly into Phase 4
 - A baseline ablation (one feature removed at a time, scored against CV) is cheap and surfaces leakage candidates and dead features before serious feature work begins
 
-## Part of
+## Metadata
 
-- `competitive_data_science` — the phased competition playbook this phase belongs to; load it for the full campaign overview, phase sequencing, and the cross-phase loop-back wiring.
+- parent domain: competitive_data_science

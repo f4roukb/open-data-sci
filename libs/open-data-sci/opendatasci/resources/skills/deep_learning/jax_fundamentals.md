@@ -18,6 +18,6 @@ JAX programs are built from pure functions transformed by a small set of composa
 - Default dtype promotion in JAX follows its own rules, not NumPy's; float32 is the standard training dtype, and explicit dtype management avoids silent precision loss or promotion to float64
 - JAX's NumPy API (`jax.numpy`) mirrors NumPy closely but not identically — in particular, out-of-bounds indexing clamps rather than raising, and some operations behave differently under `jit` when control flow depends on array values
 
-## Part of
+## Metadata
 
-- `deep_learning` — the deep learning skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: deep_learning

@@ -5,6 +5,6 @@
 - Explicitly naming the key idea being taught helps learners organise new knowledge into their existing mental model
 - Checking for understanding at intermediate steps is more efficient than waiting for a final question; confusion compounds if uncorrected
 
-## Part of
+## Metadata
 
-- `data_science_education` — the teaching skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: data_science_education

@@ -5,6 +5,6 @@
 - The data modality (tabular, text, image, time series, graph) and available volume should inform the range of approaches worth considering
 - Leakage — features computed using information that wouldn't be available at prediction time — is the most common source of over-optimistic evaluation results; it's worth tracing feature provenance carefully before trusting any metrics
 
-## Part of
+## Metadata
 
-- `machine_learning` — the machine learning skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: machine_learning

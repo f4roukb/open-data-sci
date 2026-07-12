@@ -5,6 +5,6 @@
 - Multiple testing inflates apparent strategy performance; the more configurations that are tried on the same historical period, the more likely the best-performing one succeeds by chance
 - Transaction costs, slippage, and capacity constraints routinely close the gap between theoretical and realised performance; a backtest that ignores them is optimistic by construction
 
-## Part of
+## Metadata
 
-- `quantitative_analysis` — the quantitative analysis skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: quantitative_analysis

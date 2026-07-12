@@ -22,6 +22,6 @@ Architecture choice should be driven by the data modality, the nature of the pre
 - Pre-norm (layer norm before attention and feedforward) tends to train more stably than post-norm, especially for deeper models
 - Positional encoding (sinusoidal, learned, or rotary) is essential — without it, the attention mechanism is permutation-invariant and cannot distinguish token order
 
-## Part of
+## Metadata
 
-- `deep_learning` — the deep learning skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: deep_learning

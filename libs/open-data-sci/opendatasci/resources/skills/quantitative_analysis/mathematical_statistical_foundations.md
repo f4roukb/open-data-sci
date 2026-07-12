@@ -6,6 +6,6 @@
 - Stationarity assumptions underlie much of classical time series analysis; checking for non-stationarity (unit roots, structural breaks, regime changes) before applying methods that assume it prevents misleading inference
 - Heavy tails and extreme events are often the quantities that matter most in risk-sensitive applications; thin-tail distributional assumptions systematically underestimate tail risk
 
-## Part of
+## Metadata
 
-- `quantitative_analysis` — the quantitative analysis skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: quantitative_analysis

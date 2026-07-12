@@ -24,6 +24,6 @@ Flax NNX is the module API for defining neural network architectures on JAX. It 
 **Train/eval mode**
 - Modules that behave differently during training versus inference (dropout, batch norm) are controlled by flags passed to their `__call__` method (`deterministic`, `use_running_average`) or set globally — always ensure the correct mode is active before each forward pass
 
-## Part of
+## Metadata
 
-- `deep_learning` — the deep learning skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: deep_learning

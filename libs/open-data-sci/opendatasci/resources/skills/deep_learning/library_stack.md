@@ -5,6 +5,6 @@
 - Flax NNX (modules, state, lifting): https://flax.readthedocs.io/en/latest/nnx_basics.html
 - Optax (optimisers, schedules, losses): https://optax.readthedocs.io/en/latest/
 
-## Part of
+## Metadata
 
-- `deep_learning` — the deep learning skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: deep_learning

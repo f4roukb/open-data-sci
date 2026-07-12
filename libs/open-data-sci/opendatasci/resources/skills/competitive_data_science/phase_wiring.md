@@ -14,6 +14,6 @@ When signals from a later phase challenge the assumptions of an earlier one, loo
 
 The loops are bounded by time: late in the campaign, the cost of redesigning validation or pruning load-bearing features is high, and Phase 8's diversification across CV and LB is the pragmatic hedge against decisions that can no longer be unwound.
 
-## Part of
+## Metadata
 
-- `competitive_data_science` — the phased competition playbook this phase belongs to; load it for the full campaign overview, phase sequencing, and the individual phase files.
+- parent domain: competitive_data_science

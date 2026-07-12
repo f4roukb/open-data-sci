@@ -26,6 +26,6 @@
 - Is the public LB improvement consistent with the CV improvement? If not, the blend is overfitting OOF — return to Phase 2 to inspect CV structure
 - Has the meta-learner been validated on a fold disjoint from the one used to fit base models? If not, the stacking estimate is optimistic
 
-## Part of
+## Metadata
 
-- `competitive_data_science` — the phased competition playbook this phase belongs to; load it for the full campaign overview, phase sequencing, and the cross-phase loop-back wiring.
+- parent domain: competitive_data_science

@@ -18,6 +18,6 @@
 - A coarse-to-fine schedule — a wide search with few trials, then a narrow search around the best region — is more efficient than a single broad search
 - Tuning multiple models in parallel using independent studies, then ensembling, often yields more total signal than exhaustively tuning a single model
 
-## Part of
+## Metadata
 
-- `competitive_data_science` — the phased competition playbook this phase belongs to; load it for the full campaign overview, phase sequencing, and the cross-phase loop-back wiring.
+- parent domain: competitive_data_science

@@ -18,6 +18,6 @@
 - A short pre-submission checklist (correct rows, correct column order, no NaN, range plausible, file size sane, file opens in the platform's preview) catches the most embarrassing mistakes
 - Test-time augmentation and multi-seed inference averaging for image and neural pipelines apply naturally at the final stage and tend to nudge the score upward without changing any other component
 
-## Part of
+## Metadata
 
-- `competitive_data_science` — the phased competition playbook this phase belongs to; load it for the full campaign overview, phase sequencing, and the cross-phase loop-back wiring.
+- parent domain: competitive_data_science

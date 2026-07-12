@@ -24,6 +24,6 @@
 - Knowledge distillation (training a smaller or differently-architected student on the soft predictions of a strong teacher) produces useful diversity for ensembling when the student family is genuinely different from the teacher's
 - For any neural training, starting with a low number of epochs (one or two), monitoring train and validation curves, and continuing only when results warrant it avoids wasted compute on unpromising architectures and surfaces data or pipeline issues early
 
-## Part of
+## Metadata
 
-- `competitive_data_science` — the phased competition playbook this phase belongs to; load it for the full campaign overview, phase sequencing, and the cross-phase loop-back wiring.
+- parent domain: competitive_data_science

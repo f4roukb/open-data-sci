@@ -5,6 +5,6 @@
 - When a learner is ready for more depth, signals include: correct use of the concept in a new context, productive questions about edge cases, and spontaneous generalisation
 - Acknowledging genuine complexity honestly — "this part is actually subtle and here's why" — is more useful than false simplicity that will confuse the learner later
 
-## Part of
+## Metadata
 
-- `data_science_education` — the teaching skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: data_science_education

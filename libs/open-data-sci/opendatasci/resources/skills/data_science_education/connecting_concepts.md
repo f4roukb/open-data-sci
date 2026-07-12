@@ -5,6 +5,6 @@
 - Pointing out when two apparently different ideas are the same thing in disguise (e.g., ridge regression and MAP estimation with a Gaussian prior) builds a richer, more compact mental model
 - Explicitly flagging common confusions between related concepts (precision vs. accuracy, correlation vs. causation, validation set vs. test set) reduces the chance they take root
 
-## Part of
+## Metadata
 
-- `data_science_education` — the teaching skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: data_science_education

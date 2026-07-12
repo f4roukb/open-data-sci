@@ -12,6 +12,6 @@
 - Run the search on a representative subsample of the data to cut per-trial cost; validate the winning configuration on the full dataset before committing
 - Fix random seeds across trials so differences in score reflect hyperparameter choices, not initialisation variance
 
-## Part of
+## Metadata
 
-- `deep_learning` — the deep learning skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: deep_learning

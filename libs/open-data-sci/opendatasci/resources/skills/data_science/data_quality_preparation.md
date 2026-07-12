@@ -6,6 +6,6 @@
 - Encoding choices interact with the model: ordered features carry ordinal meaning, nominal features don't — treating them the same can introduce spurious relationships
 - Scaling matters for methods sensitive to feature magnitude and is irrelevant for others; knowing which is which avoids unnecessary transformation
 
-## Part of
+## Metadata
 
-- `data_science` — the general data science skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: data_science

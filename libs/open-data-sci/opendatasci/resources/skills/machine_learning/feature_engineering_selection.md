@@ -7,6 +7,6 @@
 - More features is not always better: irrelevant or redundant features add noise and variance, can hurt distance-based models, and make models harder to interpret and debug; feature selection (variance-based filtering, correlation-based pruning, importance-based selection) is often worth doing before fitting complex models
 - Training/inference skew — features computed differently at training time versus inference time — is a common source of silent degradation
 
-## Part of
+## Metadata
 
-- `machine_learning` — the machine learning skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: machine_learning

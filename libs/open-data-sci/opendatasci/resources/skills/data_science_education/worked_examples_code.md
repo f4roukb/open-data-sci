@@ -5,6 +5,6 @@
 - Common mistakes deserve explicit treatment: explaining what goes wrong when a concept is misapplied teaches the boundaries of the idea, not just the centre
 - Showing the same concept in two different representations (mathematical notation and code, or two different coding styles) reinforces understanding and accommodates different learning styles
 
-## Part of
+## Metadata
 
-- `data_science_education` — the teaching skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: data_science_education

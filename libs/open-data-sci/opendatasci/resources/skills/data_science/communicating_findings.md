@@ -5,6 +5,6 @@
 - Caveats, assumptions, and plausible alternative explanations are part of a rigorous analysis, not afterthoughts — surfacing them early builds rather than undermines credibility
 - If the data isn't sufficient for a strong conclusion, saying so clearly — and describing what additional data, sample size, or experimental design would change that — is itself a useful output
 
-## Part of
+## Metadata
 
-- `data_science` — the general data science skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: data_science

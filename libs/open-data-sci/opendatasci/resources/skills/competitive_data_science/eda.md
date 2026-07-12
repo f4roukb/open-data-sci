@@ -21,6 +21,6 @@
 - A short "data dictionary" file summarising column meaning, grain, and observed quirks pays for itself many times over when feature engineering ramps up
 - Visualising row-level NaN patterns (e.g. as a sorted boolean matrix) often reveals structural missingness tied to entity type, time period, or recording source
 
-## Part of
+## Metadata
 
-- `competitive_data_science` — the phased competition playbook this phase belongs to; load it for the full campaign overview, phase sequencing, and the cross-phase loop-back wiring.
+- parent domain: competitive_data_science

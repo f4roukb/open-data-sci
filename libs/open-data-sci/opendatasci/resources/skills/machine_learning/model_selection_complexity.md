@@ -11,6 +11,6 @@
 - The right level of complexity depends on data volume, feature richness, signal-to-noise ratio, and interpretability requirements; many real problems are solved well by simple models, and complexity beyond what the signal supports hurts rather than helps
 - Ensemble and stacking strategies can narrow the gap between model families and are most effective when combining architecturally distinct model families (e.g., gradient boosting + neural network + linear model) or models trained on different feature sets or data samples — ensembling similar frameworks (e.g., XGBoost, LightGBM, CatBoost) produces highly correlated predictions and therefore little diversity benefit
 
-## Part of
+## Metadata
 
-- `machine_learning` — the machine learning skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: machine_learning

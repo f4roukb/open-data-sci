@@ -6,6 +6,6 @@
 - Learning curves (performance as a function of training set size) are a useful diagnostic: poor performance that improves with more data suggests a data problem; a persistent train/val gap that doesn't close suggests a regularisation or capacity problem
 - Underfitting — where even training performance is poor — points in the opposite direction: the model may lack the capacity or the features to capture the signal
 
-## Part of
+## Metadata
 
-- `machine_learning` — the machine learning skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: machine_learning

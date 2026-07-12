@@ -6,6 +6,6 @@
 - Stratified splits preserve class distribution across folds and are particularly important when classes are rare
 - The test set should be treated as a one-time evaluation; tuning against it invalidates it as an unbiased estimate
 
-## Part of
+## Metadata
 
-- `machine_learning` — the machine learning skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: machine_learning

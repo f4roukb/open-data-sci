@@ -179,7 +179,7 @@ class TestBuiltinDomains:
     def test_domain_content_points_to_its_skills(self) -> None:
         domain = LocalSkillStore().load_domain("competitive_data_science")
         assert domain is not None
-        assert "skill_name: reconnaissance" in domain.content
+        assert "skill: competitive_data_science::reconnaissance" in domain.content
 
     def test_load_domain_unknown_returns_none(self) -> None:
         assert LocalSkillStore().load_domain("nonexistent") is None

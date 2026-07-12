@@ -7,6 +7,6 @@
 - P-values and effect sizes answer different questions: significance says whether an effect is detectable given sample size; effect size says whether it's large enough to matter — both are needed to judge a result
 - Confidence intervals communicate uncertainty more directly than p-values alone and translate more naturally into business language
 
-## Part of
+## Metadata
 
-- `data_science` — the general data science skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: data_science

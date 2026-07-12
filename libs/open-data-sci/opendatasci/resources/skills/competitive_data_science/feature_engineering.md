@@ -33,6 +33,6 @@
 - Is the CV-LB gap consistent with the pre-feature-work baseline? A sudden divergence is a leak signal or a CV scheme problem — if persistent, return to Phase 2
 - Has redundancy been pruned? Highly correlated features add noise without value and slow training; a brief correlation review at the end of the phase pays off in later iteration speed
 
-## Part of
+## Metadata
 
-- `competitive_data_science` — the phased competition playbook this phase belongs to; load it for the full campaign overview, phase sequencing, and the cross-phase loop-back wiring.
+- parent domain: competitive_data_science

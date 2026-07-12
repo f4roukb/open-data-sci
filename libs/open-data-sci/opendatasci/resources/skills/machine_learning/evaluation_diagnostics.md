@@ -7,6 +7,6 @@
 - Residual analysis for regression surfaces systematic patterns — heteroscedasticity, non-linearity, outlier influence — that aggregate error metrics don't capture
 - Cross-validation spread (mean ± std across folds) characterises how stable performance is, not just what the best-case number is
 
-## Part of
+## Metadata
 
-- `machine_learning` — the machine learning skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: machine_learning

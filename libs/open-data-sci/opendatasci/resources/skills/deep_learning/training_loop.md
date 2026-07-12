@@ -24,6 +24,6 @@ The training loop ties JAX, Flax, and Optax together. Getting the structure righ
 - Deterministic data shuffling (seeded permutation of indices) ensures the same batch order across runs
 - JAX's XLA compilation is deterministic given the same inputs and platform, but results may differ across hardware (CPU vs GPU) due to floating-point non-associativity in parallel reductions
 
-## Part of
+## Metadata
 
-- `deep_learning` — the deep learning skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: deep_learning

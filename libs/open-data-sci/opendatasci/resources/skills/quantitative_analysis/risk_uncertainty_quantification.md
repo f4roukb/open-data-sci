@@ -6,6 +6,6 @@
 - Tail risk measures (VaR, CVaR/Expected Shortfall) answer different questions: VaR describes a threshold, CVaR describes what to expect when that threshold is breached — for many purposes CVaR is the more informative measure
 - Monte Carlo simulation provides a flexible framework for propagating uncertainty through complex models; the quality of the output depends entirely on the quality of the input distribution assumptions
 
-## Part of
+## Metadata
 
-- `quantitative_analysis` — the quantitative analysis skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: quantitative_analysis

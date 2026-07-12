@@ -8,6 +8,6 @@ Deep learning is the right choice when:
 
 Prefer scikit-learn or gradient boosting (LightGBM, CatBoost, XGBoost) over deep learning when data is tabular and moderate in size, when interpretability and iteration speed matter more than squeezing out the last percentage point, or when the data volume is too small to support the capacity of a neural model without severe overfitting.
 
-## Part of
+## Metadata
 
-- `deep_learning` — the deep learning skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: deep_learning

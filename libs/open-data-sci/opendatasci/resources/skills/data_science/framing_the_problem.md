@@ -4,6 +4,6 @@
 - Understanding what a "good" answer looks like up front (decision to be made, threshold for action, audience) prevents wasted analysis
 - Distinguishing exploratory work (generating hypotheses) from confirmatory work (testing them) matters — mixing the two silently inflates false discovery rates
 
-## Part of
+## Metadata
 
-- `data_science` — the general data science skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: data_science

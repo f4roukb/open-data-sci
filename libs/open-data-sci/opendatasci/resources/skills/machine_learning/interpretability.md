@@ -5,6 +5,6 @@
 - Impurity-based importance measures are known to favour high-cardinality features and can be misleading; permutation-based importance and gradient-based attribution methods are generally more reliable
 - Interpretability requirements should inform model choice early; post-hoc approximations of black-box models have their own failure modes
 
-## Part of
+## Metadata
 
-- `machine_learning` — the machine learning skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: machine_learning

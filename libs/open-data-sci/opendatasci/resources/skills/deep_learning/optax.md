@@ -33,6 +33,6 @@ Optax provides the optimiser, learning rate schedule, and gradient transformatio
 - `optax.inject_hyperparams` wraps an optimiser to make hyperparameters (learning rate, weight decay) accessible and modifiable in the optimiser state — useful for logging the current learning rate or implementing custom schedule logic
 - Optimiser state is a pytree that mirrors the parameter structure; it is initialised with `opt.init(params)` and updated with `opt.update(grads, opt_state, params)`
 
-## Part of
+## Metadata
 
-- `deep_learning` — the deep learning skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: deep_learning

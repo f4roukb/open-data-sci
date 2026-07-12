@@ -5,6 +5,6 @@
 - Selection bias and survivorship bias are pervasive: the data available is often not a random sample of the population of interest (e.g., only active customers, only completed transactions, only surviving products); the conclusions drawn are only as valid as that sample
 - Simpson's paradox is surprisingly common: a trend visible in aggregate can reverse when broken down by a subgroup — always worth checking whether aggregate results hold across meaningful partitions before drawing conclusions
 
-## Part of
+## Metadata
 
-- `data_science` — the general data science skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: data_science

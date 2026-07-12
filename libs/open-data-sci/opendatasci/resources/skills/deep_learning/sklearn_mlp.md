@@ -7,6 +7,6 @@ Use `MLPClassifier` / `MLPRegressor` when:
 
 Monitor training loss via `loss_curve_` after fitting. Use early stopping (`early_stopping=True`) with a validation fraction to avoid overfitting. For anything beyond shallow feedforward networks — convolutional layers, recurrent layers, attention, custom loss functions, fine-grained training control — use the JAX stack instead.
 
-## Part of
+## Metadata
 
-- `deep_learning` — the deep learning skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: deep_learning

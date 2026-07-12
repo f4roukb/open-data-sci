@@ -5,6 +5,6 @@
 - Resampling techniques change the training distribution and should only ever be applied within the training fold — contaminating validation or test data with synthetic samples invalidates evaluation
 - Extreme imbalance changes the problem framing: precision at a given recall threshold or anomaly detection approaches may be more appropriate than standard classification evaluation
 
-## Part of
+## Metadata
 
-- `machine_learning` — the machine learning skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: machine_learning

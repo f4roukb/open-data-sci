@@ -26,6 +26,6 @@
 - Has at least one baseline submission anchored the CV-LB correspondence? If not, defer further work until it has
 - Have OOF predictions and fold assignments been persisted so they can be reused throughout the campaign?
 
-## Part of
+## Metadata
 
-- `competitive_data_science` — the phased competition playbook this phase belongs to; load it for the full campaign overview, phase sequencing, and the cross-phase loop-back wiring.
+- parent domain: competitive_data_science

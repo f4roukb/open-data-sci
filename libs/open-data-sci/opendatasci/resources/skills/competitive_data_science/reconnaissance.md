@@ -21,6 +21,6 @@
 - Pre-committing to file naming conventions for predictions, OOF arrays, and submission files (e.g. `oof_<model>_<seed>.npy`, `sub_<model>_<date>.csv`) removes friction when many experiments coexist
 - Fixing random seeds for every stochastic component from the start ensures later comparisons reflect genuine improvements rather than variance
 
-## Part of
+## Metadata
 
-- `competitive_data_science` — the phased competition playbook this phase belongs to; load it for the full campaign overview, phase sequencing, and the cross-phase loop-back wiring.
+- parent domain: competitive_data_science

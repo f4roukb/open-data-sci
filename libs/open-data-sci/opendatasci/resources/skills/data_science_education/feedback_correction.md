@@ -5,6 +5,6 @@
 - Asking the learner to explain a concept back in their own words surfaces misunderstandings that a nodded agreement conceals
 - When a learner is stuck, the most useful intervention is often a hint that narrows the search space rather than a complete solution — preserving the problem-solving experience
 
-## Part of
+## Metadata
 
-- `data_science_education` — the teaching skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: data_science_education

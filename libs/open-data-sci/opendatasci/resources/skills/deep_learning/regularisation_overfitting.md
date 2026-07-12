@@ -20,6 +20,6 @@ The gap between training and validation performance is the primary diagnostic fo
 - When both losses plateau at a mediocre level: the feature representation may be insufficient, the architecture may be mismatched to the data structure, or the learning rate schedule may need adjustment
 - Learning curves (validation performance as a function of training set size) distinguish data-limited regimes from model-limited regimes and guide whether to invest in more data or more architecture
 
-## Part of
+## Metadata
 
-- `deep_learning` — the deep learning skill domain this belongs to; load it for the full map of skills and when to reach for each.
+- parent domain: deep_learning
