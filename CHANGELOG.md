@@ -16,6 +16,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Chat history compaction record** — dedicated `ChatHistoryCompaction` dataclass (`compacted_at`, `timespan`, `content`) stored in `AgentState.chat_history_compaction`; `compact_chat_history()` folds the previous compaction, all turn summaries, and the current turn into a single record, and the compaction is dropped from context automatically once the turn-summary window fills up.
 - **Session plans as context** — new `Plan` context object (`context/plans.py`) that renders into a recall message stamped with its creation timestamp, so committed plans survive history compaction.
 - **TUI message queue** — messages submitted while the agent is busy are queued (`PendingMessageQueue`), shown in a pending panel, and drained turn-by-turn; new `/cancel-message` and `/cancel-all-messages` commands.
+- **Skill domains** — a new layer above skills: a `SkillDomain` is the map of a broad task domain (which skills exist under it and when each applies) without itself carrying task-execution know-how. The `load_skill` tool now accepts `skill_domain_name` alongside `skill_name`, loading either or both independently (each replaces its own predecessor); a new `list_skills` tool reports the available skill domains and standalone skills. New built-in domains: `competitive_data_science`, `data_science`, `data_science_education`, `deep_learning`, `machine_learning`, `quantitative_analysis`. Skill names belonging to a domain are qualified as `"<domain>::<skill>"`. `OpenDataSciConfig` gains `skill_domains_directory` / `builtin_skill_domains_directory` (`SKILL_DOMAINS_DIRECTORY` / `BUILTIN_SKILL_DOMAINS_DIRECTORY`), loaded with the same precedence as skills.
+- **`opendatasci.session` package** — `BaseSessionManager` / `LocalSessionManager` track a session's conversation threads in the graph checkpointer, decoupling thread identity from the `Agent` so a stateless deployment can supply its own storage-backed manager. `Agent` accepts an optional `session_manager`, defaulting to a file-backed manager persisted at `.opendatasci/session.json`.
 
 ### Changed
 
@@ -27,11 +29,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Quieter tool display** — low-signal tools (`list_python_libs`, `read_dataset_info`, `profile_dataset`, `list_workspace_files`, `fetch_url`, `verify_python_code`) no longer clutter the TUI transcript.
 - **Database connectivity** — swapped `connectorx` for `duckdb`.
 - **`/compact`** no longer echoes the generated summary back; it simply confirms completion.
+- **`/clear`** now starts a brand-new checkpointer thread instead of patching the existing one, so it fully drops conversation history, turn summaries, compaction, active skills/skill domains, mode flags, and any pending interrupt in one step; it also cancels pending turn-summarization tasks and deletes the session's persisted plan. A turn still streaming when `/clear` is invoked is stopped first so it can't write the cleared conversation back on completion.
+- `midturn_compaction_threshold` default raised from 80,000 to 96,000 tokens.
 
 ### Fixed
 
 - Command approval now uses the secondary model for the impact assessment: the primary model has extended thinking enabled, which Anthropic rejects in combination with the forced `tool_choice` that structured output requires, so every assessment call failed and the approval prompt was silently skipped. Assessment failures now also fail closed — the approval prompt still appears, showing the raw command with a fallback warning, instead of letting the command run unapproved.
 - Compaction no longer masquerades as a `ChatTurnSummary` with `turn=None`; it is modeled and stored explicitly, and `clear_chat_history()` now also resets it.
+- The agent graph no longer errors when a maintenance `update_state` (compact, rewind) empties `messages` mid-route.
 - `verify_python_code` sends its review request with the correct message role for provider compatibility.
 - Agent replies are wrapped in `AgentMessage` so they carry timestamps like every other message.
 - `get_message_text_content()` strips whitespace from all text parts.
