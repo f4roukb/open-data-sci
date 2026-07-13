@@ -52,7 +52,7 @@ class OpenDataSciTuiService:
         await self._agent.clear_chat_history()
 
     async def clear_context(self) -> None:
-        """Clear all agent context: conversation history and memory summaries."""
+        """Clear all agent context: history, summaries, plan, and pending summarizations."""
         await self._agent.clear_chat_history()
 
     async def rewind_turn(self) -> None:

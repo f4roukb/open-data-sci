@@ -16,6 +16,7 @@ from opendatasci.streaming import (
     WorkerDoneEvent,
     SubagentEvent,
     InputRequiredEvent,
+    ApprovalRequiredEvent,
     UsageEvent,
     ResponseEvent,
     ErrorEvent,
@@ -32,12 +33,13 @@ existing `event.type == "token"` comparisons continue to work alongside
 |-------|--------|------------|-------------|
 | `ReasoningEvent` | `"reasoning"` | `content` | Extended-thinking token (Anthropic / Bedrock only) |
 | `TokenEvent` | `"token"` | `content` | Incremental response text |
-| `ToolCallEvent` | `"tool_call"` | `tool`, `tool_call_id`, `label`, `icon`, `display`, `summary`, `worker_summaries` | Agent is invoking a tool |
+| `ToolCallEvent` | `"tool_call"` | `content`, `tool`, `tool_call_id`, `summary`, `worker_summaries` | Agent is invoking a tool |
 | `ToolCommunicationEvent` | `"tool_communication"` | `content`, `tool_call_id`, `tool_name` | In-progress status from a long-running tool |
 | `ToolResultEvent` | `"tool_result"` | `content`, `tool_call_id`, `is_error` | Tool returned its result |
 | `WorkerDoneEvent` | `"worker_done"` | `worker_idx`, `success` | A concurrent worker finished |
 | `SubagentEvent` | `"subagent_event"` | `content`, `worker_idx`, `event_type`, `success`, `summary` | Lifecycle event from inside a running worker |
-| `InputRequiredEvent` | `"input_required"` | `content`, `choices` | Agent paused; call `astream(answer)` to resume |
+| `InputRequiredEvent` | `"input_required"` | `content`, `choices` | Agent paused at a free-text interrupt; call `astream(answer)` to resume |
+| `ApprovalRequiredEvent` | `"approval_required"` | `command`, `description`, `heads_up` | Agent paused waiting for command approval; call `astream("yes")` or `astream("no")` to resume |
 | `UsageEvent` | `"usage"` | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_creation_tokens` | Token usage update (fields are `int \| None`) |
 | `ResponseEvent` | `"response"` | `content` | End-of-turn marker with the full assembled response |
 | `ErrorEvent` | `"error"` | `content` | Unrecoverable error |
@@ -49,8 +51,8 @@ use in type annotations.
 
 ```python
 from opendatasci.streaming import (
-    InputRequiredEvent, ResponseEvent, TokenEvent, ToolCallEvent,
-    UsageEvent, WorkerDoneEvent, ErrorEvent,
+    ApprovalRequiredEvent, InputRequiredEvent, ResponseEvent, TokenEvent,
+    ToolCallEvent, UsageEvent, WorkerDoneEvent, ErrorEvent,
 )
 
 async for event in agent.astream("Analyse this dataset"):
@@ -58,7 +60,7 @@ async for event in agent.astream("Analyse this dataset"):
         print(event.content, end="", flush=True)
 
     elif isinstance(event, ToolCallEvent):
-        print(f"\n→ {event.label} …")
+        print(f"\n→ {event.tool} …")
 
     elif isinstance(event, WorkerDoneEvent):
         status = "done" if event.success else "failed"
@@ -67,6 +69,14 @@ async for event in agent.astream("Analyse this dataset"):
     elif isinstance(event, InputRequiredEvent):
         ans = input(f"{event.content} ({'/'.join(event.choices)}): ")
         async for follow_up in agent.astream(ans):
+            ...
+
+    elif isinstance(event, ApprovalRequiredEvent):
+        print(f"\nApproval required: {event.description}")
+        if event.heads_up:
+            print(f"Warning: {event.heads_up}")
+        answer = input("Allow? (yes/no): ")
+        async for follow_up in agent.astream(answer):
             ...
 
     elif isinstance(event, UsageEvent):
@@ -95,6 +105,7 @@ async for event in agent.astream("Analyse this dataset"):
         - WorkerDoneEvent
         - SubagentEvent
         - InputRequiredEvent
+        - ApprovalRequiredEvent
         - UsageEvent
         - ResponseEvent
         - ErrorEvent

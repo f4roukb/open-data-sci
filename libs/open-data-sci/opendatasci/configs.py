@@ -8,6 +8,9 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from opendatasci.models.providers import Provider
+from opendatasci.skills.local import (
+    _BUILTIN_DOMAINS_DIRECTORY as _DEFAULT_BUILTIN_DOMAINS_DIRECTORY,
+)
 from opendatasci.skills.local import _BUILTIN_SKILLS_DIRECTORY as _DEFAULT_BUILTIN_SKILLS_DIRECTORY
 
 DEFAULT_MODEL: MappingProxyType[Provider, str] = MappingProxyType(
@@ -97,6 +100,14 @@ class OpenDataSciConfig(BaseSettings):
         builtin_skills_directory: Path to the built-in skills bundled with
                          the package (``BUILTIN_SKILLS_DIRECTORY``).  Override
                          only if you need to replace the defaults entirely.
+        skill_domains_directory: Path to a directory of custom skill
+                         domains (``SKILL_DOMAINS_DIRECTORY``).  Loaded in
+                         addition to the built-in skill domains; custom
+                         domains override built-ins of the same name.
+        builtin_skill_domains_directory: Path to the built-in skill
+                         domains bundled with the package
+                         (``BUILTIN_SKILL_DOMAINS_DIRECTORY``).  Override
+                         only if you need to replace the defaults entirely.
         extra_web_domains: Additional hostnames the ``fetch_url`` tool may
                          retrieve, on top of the built-in allowlist.
                          Example: ``["internal.corp"]``.
@@ -109,7 +120,7 @@ class OpenDataSciConfig(BaseSettings):
         midturn_compaction_threshold: Token count after which the agent's
                          context is compacted mid-turn (during a single turn's
                          reasoning/acting loop).  Must be strictly positive.
-                         Defaults to ``80000``.
+                         Defaults to ``96000``.
         local_code_exec_timeout: Maximum seconds allowed for a single
                          code-execution run in the local sandbox
                          (``CODE_EXEC_TIMEOUT``).  Defaults to
@@ -188,7 +199,7 @@ class OpenDataSciConfig(BaseSettings):
 
     # ── Context management ───────────────────────────────────────────────────────
     midturn_compaction_threshold: int = Field(
-        default=64000,
+        default=96000,
         alias="MIDTURN_COMPACTION_THRESHOLD",
         gt=0,
         description="Token count after which the agent's context is compacted mid-turn. Only applies in execution mode.",
@@ -202,6 +213,14 @@ class OpenDataSciConfig(BaseSettings):
     builtin_skills_directory: Path = Field(
         default=_DEFAULT_BUILTIN_SKILLS_DIRECTORY,
         alias="BUILTIN_SKILLS_DIRECTORY",
+    )
+    skill_domains_directory: Path | None = Field(
+        default=None,
+        alias="SKILL_DOMAINS_DIRECTORY",
+    )
+    builtin_skill_domains_directory: Path = Field(
+        default=_DEFAULT_BUILTIN_DOMAINS_DIRECTORY,
+        alias="BUILTIN_SKILL_DOMAINS_DIRECTORY",
     )
 
     # ── Worker configuration ───────────────────────────────────────────────────────

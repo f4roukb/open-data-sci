@@ -1,15 +1,18 @@
-/* ─── OpenDataSci TUI Theme (Dark+) ─────────────────────────────────────────── */
+/* ─── OpenDataSci TUI stylesheet ────────────────────────────────────────────
+   All colors come from the active theme palette (theme.py), exported as
+   $ods-* CSS variables by OpenDataSciApp.get_css_variables(). Do not add
+   color literals here — add a palette key instead. */
 
 Screen {
-    background: #060a10;
-    color: #e6edf3;
+    background: $ods-background;
+    color: $ods-text-primary;
 }
 
 AppHeader {
     dock: top;
     height: 5;
-    background: #0d1117;
-    border-bottom: solid #1a2030;
+    background: $ods-surface;
+    border-bottom: solid $ods-separator;
 }
 
 #header-logo {
@@ -25,12 +28,6 @@ AppHeader {
     content-align: left middle;
 }
 
-#header-timer {
-    width: auto;
-    content-align: right middle;
-    padding-right: 1;
-}
-
 /* ─── Main layout ─────────────────────────────────────────────────────────── */
 
 #main {
@@ -43,29 +40,29 @@ AppHeader {
 ChatPane {
     width: 100%;
     layout: vertical;
-    background: #060a10;
+    background: $ods-background;
 }
 
 #messages {
     height: 1fr;
     padding: 1 2;
-    scrollbar-color: #4a6080 #0d1520;
-    scrollbar-background: #0d1520;
-    scrollbar-corner-color: #0d1520;
+    scrollbar-color: $ods-text-muted $ods-surface-alt;
+    scrollbar-background: $ods-surface-alt;
+    scrollbar-corner-color: $ods-surface-alt;
 }
 
 #input-bar {
     height: auto;
-    border-top: solid #1a2030;
+    border-top: solid $ods-separator;
     padding: 1 2 1 2;
-    background: #060a10;
+    background: $ods-background;
 }
 
 #completion-popup {
     display: none;
     height: auto;
-    background: #0d1117;
-    border: solid #30363d;
+    background: $ods-surface;
+    border: solid $ods-text-dim;
     padding: 0 1;
     margin-bottom: 1;
 }
@@ -86,20 +83,20 @@ ChatPane {
 }
 
 #user-input {
-    background: #0d1117;
-    border: solid #1a2030;
-    color: #e6edf3;
+    background: $ods-surface;
+    border: solid $ods-separator;
+    color: $ods-text-primary;
     padding: 0 1;
     width: 100%;
     height: 3;
 }
 
 #user-input:focus {
-    border: solid #79c0ff;
+    border: solid $ods-accent;
 }
 
 #user-input.awaiting-choice {
-    border: solid #c9963a;
+    border: solid $ods-warning;
 }
 
 
@@ -109,8 +106,8 @@ WorkspacePanel {
     display: none;
     height: auto;
     max-height: 10;
-    border-top: solid #1a2030;
-    background: #0d1117;
+    border-top: solid $ods-separator;
+    background: $ods-surface;
     padding: 0 2 1 2;
 }
 
@@ -127,20 +124,20 @@ MessageBubble {
 }
 
 MessageBubble.user {
-    background: #0e1520;
-    border-left: thick #79c0ff;
+    background: $ods-surface-alt;
+    border-left: thick $ods-accent;
     padding: 0 2;
 }
 
 MessageBubble.thinking {
-    background: #1e2228;
-    border-left: thick #6e7681;
+    background: $ods-muted-bg;
+    border-left: thick $ods-text-muted;
     padding: 0 2;
 }
 
 MessageBubble.question {
-    background: #1c1408;
-    border-left: thick #c9963a;
+    background: $ods-warning-bg;
+    border-left: thick $ods-warning;
     padding: 0 2;
 }
 
@@ -150,26 +147,26 @@ MessageBubble.agent {
 
 .msg-divider {
     height: 1;
-    color: #1a2030;
+    color: $ods-separator;
     margin: 0 0 1 0;
 }
 
 /* ─── Footer ──────────────────────────────────────────────────────────────── */
 
 Footer {
-    background: #0d1117;
-    color: #8b949e;
-    border-top: solid #1a2030;
+    background: $ods-surface;
+    color: $ods-text-secondary;
+    border-top: solid $ods-separator;
 }
 
 Footer > .footer--key {
-    background: #1a2030;
-    color: #e6edf3;
+    background: $ods-separator;
+    color: $ods-text-primary;
 }
 
 Footer > .footer--highlight {
-    background: #79c0ff26;
-    color: #79c0ff;
+    background: $ods-accent 15%;
+    color: $ods-accent;
 }
 
 /* ─── Markdown (agent response) ───────────────────────────────────────────── */
@@ -184,7 +181,7 @@ Markdown {
 MarkdownH1 {
     background: transparent;
     border: none;
-    color: #79c0ff;
+    color: $ods-accent;
     text-style: bold underline;
     padding: 0 0 1 0;
     margin: 0 0 1 0;
@@ -194,7 +191,7 @@ MarkdownH1 {
 MarkdownH2 {
     background: transparent;
     border: none;
-    color: #79c0ff;
+    color: $ods-accent;
     text-style: bold;
     padding: 0;
     margin: 0 0 1 0;
@@ -204,7 +201,7 @@ MarkdownH2 {
 MarkdownH3, MarkdownH4, MarkdownH5, MarkdownH6 {
     background: transparent;
     border: none;
-    color: #8b949e;
+    color: $ods-text-secondary;
     text-style: bold;
     padding: 0;
     margin: 0 0 1 0;
@@ -213,21 +210,21 @@ MarkdownH3, MarkdownH4, MarkdownH5, MarkdownH6 {
 
 MarkdownParagraph {
     background: transparent;
-    color: #e6edf3;
+    color: $ods-text-primary;
     padding: 0;
     margin: 0 0 1 0;
 }
 
 MarkdownFence {
-    background: #0d1117;
-    border: solid #1a2030;
+    background: $ods-surface;
+    border: solid $ods-separator;
     padding: 0 1;
     margin: 0 0 1 0;
 }
 
 MarkdownBlockQuote {
-    background: #0a1520;
-    border-left: thick #4caa5e;
+    background: $ods-surface-alt;
+    border-left: thick $ods-success;
     padding: 0 1;
     margin: 0 0 1 0;
 }
@@ -239,7 +236,7 @@ MarkdownBulletList, MarkdownOrderedList {
 }
 
 MarkdownHorizontalRule {
-    color: #1a2030;
+    color: $ods-separator;
     margin: 1 0;
 }
 

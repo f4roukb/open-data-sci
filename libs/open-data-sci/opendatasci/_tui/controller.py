@@ -29,6 +29,7 @@ from opendatasci.agents.agents_factory import create_agent
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.streaming import BaseAgentStreamEvent
 from opendatasci.streaming.events import (
+    ApprovalRequiredEvent,
     ErrorEvent,
     InputRequiredEvent,
     ReasoningEvent,
@@ -44,10 +45,12 @@ from opendatasci.streaming.events import (
 from opendatasci.tools.mcp import load_mcp_servers
 
 from . import theme as _theme
-from .adapter import EphemeralHandle, MessageHandle, TurnStatusHandle, UIAdapter
+from .adapter import (
+    PendingMessageHandle,
+    TurnStatusHandle,
+    UIAdapter,
+)
 from .commands import (
-    SLASH_COMMAND_DESCRIPTIONS,
-    SLASH_COMMANDS,
     format_help_message,
     format_models_message,
     format_themes_message,
@@ -57,38 +60,14 @@ from .file_refs import (
     PasteAttachment,
     _build_agent_query,
     _build_user_display,
-    _discover_files,
-    _FileRef,
-    _find_at_fragment,
-    _find_slash_fragment,
     _parse_file_refs,
     _split_existing_file_refs,
 )
-from .presenter import _TurnPresenter
+from .message_queue import PendingMessageQueue
+from .presenter import _TurnPresenter, apply_usage_event
 from .theme import active as theme
 
 logger = logging.getLogger(__name__)
-
-
-# Re-export handle ABCs so existing imports from this module keep working.
-__all__ = [
-    "CLIController",
-    "EphemeralHandle",
-    "MessageHandle",
-    "SLASH_COMMAND_DESCRIPTIONS",
-    "SLASH_COMMANDS",
-    "TurnStatusHandle",
-    "UIAdapter",
-    "_FileRef",
-    "_build_agent_query",
-    "_build_user_display",
-    "_discover_files",
-    "_find_at_fragment",
-    "_find_slash_fragment",
-    "_parse_file_refs",
-    "_split_existing_file_refs",
-    "PasteAttachment",
-]
 
 
 class CLIController:
@@ -107,13 +86,17 @@ class CLIController:
         self._base_config = datasci_config
         self._session_id = session_id
         self._service: OpenDataSciTuiService | None = None
+        self._boot_failed: bool = False
         self._exit_stack: AsyncExitStack = AsyncExitStack()
         self._awaiting_choice: bool = False
+        self._awaiting_approval: bool = False
         self._pending_choices: list[str] = []
         self._other_choice_label: str | None = None
         self._awaiting_custom_choice_input: bool = False
         self._active_turn_status: TurnStatusHandle | None = None
         self._agent_running: bool = False
+        self._pending_queue = PendingMessageQueue()
+        self._pending_handles: dict[int, PendingMessageHandle] = {}
         self._cfg: OpenDataSciConfig | None = None
         self._completion = (
             completion if completion is not None else CompletionState(extra_commands=[])
@@ -127,6 +110,16 @@ class CLIController:
     @property
     def model(self) -> str:
         return self._base_config.model
+
+    @property
+    def agent_running(self) -> bool:
+        """True while an agent turn is streaming."""
+        return self._agent_running
+
+    @property
+    def has_paste_attachment(self) -> bool:
+        """True when a multi-line paste is pending in the attachment bar."""
+        return self._paste_attachment is not None
 
     # ── Completion state delegation ───────────────────────────────────────────
     # These properties expose CompletionState internals under the names that
@@ -216,6 +209,7 @@ class CLIController:
             info = CLISessionInfo.from_path(self._workspace_path, workspace_path, cfg)
             ui.set_file_count(self._describe_data(info))
         except FileNotFoundError:
+            self._boot_failed = True
             hint = self._did_you_mean(self._workspace_path)
             msg_text = (
                 f"❌ File not found: `{escape_markup(self._workspace_path)}`\n\n"
@@ -225,14 +219,17 @@ class CLIController:
             msg.set_content(msg_text)
             msg.finish()
         except PermissionError:
+            self._boot_failed = True
             msg = ui.add_message("agent", "")
             msg.set_content(f"❌ Permission denied: `{escape_markup(self._workspace_path)}`")
             msg.finish()
         except ValueError as exc:
+            self._boot_failed = True
             msg = ui.add_message("agent", "")
             msg.set_content(f"❌ Provider error: {exc}")
             msg.finish()
         except Exception as exc:
+            self._boot_failed = True
             msg = ui.add_message("agent", "")
             msg.set_content(f"❌ Failed to load: {exc}")
             msg.finish()
@@ -316,7 +313,7 @@ class CLIController:
         if self._awaiting_choice:
             if not raw:
                 return "", ""
-            if raw in {"/exit", "/reset", "/clear"}:
+            if raw.split()[0] in {"/exit", "/reset", "/clear"}:
                 self._exit_choice_mode()
                 should_quit = await self._handle_slash(raw)
                 return ("quit" if should_quit else ""), ""
@@ -325,19 +322,19 @@ class CLIController:
                 return "run", answer
             return "", ""
 
+        if self._awaiting_approval:
+            # The decision is made in the approval prompt widget (↑/↓ + Enter);
+            # typed input is ignored except for quitting the app.
+            if raw.split() and raw.split()[0] == "/exit":
+                return "quit", ""
+            return "", ""
+
         if not raw and attachment is None:
             return "", ""
 
         if raw.startswith("/"):
             should_quit = await self._handle_slash(raw)
             return ("quit" if should_quit else ""), ""
-
-        if self._agent_running:
-            self._ui.add_message(
-                "agent",
-                "⏳ Agent is busy. Please wait for the current response to finish.",
-            ).finish()
-            return "", ""
 
         clean_text, refs = _parse_file_refs(raw)
         valid_refs, missing_refs = _split_existing_file_refs(refs)
@@ -354,19 +351,61 @@ class CLIController:
             display = attachment.pill_markup + ("\n" + display if display else "")
             agent_query = (agent_query + "\n\n" if agent_query else "") + attachment.xml_tag
 
+        if self._agent_running:
+            self._enqueue_pending(agent_query, display)
+            return "", ""
+
         self._ui.add_message("user", display)
         self._active_turn_status = self._ui.add_turn_status_bar()
         return "run", agent_query
 
+    def _enqueue_pending(self, agent_query: str, display: str) -> None:
+        """Pin *display* in the UI and queue *agent_query* for when the agent is free."""
+        message = self._pending_queue.enqueue(agent_query, display)
+        self._pending_handles[message.id] = self._ui.add_pending_message(display)
+
     # ── Agent run ─────────────────────────────────────────────────────────────
 
     async def run_agent(self, query: str) -> None:
+        """Run *query*, then keep draining the pending-message queue.
+
+        Each queued message is run as its own turn, in submission order,
+        as long as the previous turn didn't end on a choice prompt (which
+        requires the user's input before anything else can proceed).
+        """
         if self._service is None:
-            self._ui.add_message(
-                "agent", "⚠️ Still loading — please wait a moment and try again."
-            ).finish()
+            if self._boot_failed:
+                self._ui.add_message(
+                    "agent",
+                    "❌ Startup failed, so queries can't run in this session. "
+                    "Fix the problem shown above and restart the app "
+                    "(type `/exit` to quit).",
+                ).finish()
+            else:
+                self._ui.add_message(
+                    "agent", "⚠️ Still loading — please wait a moment and try again."
+                ).finish()
             return
 
+        while True:
+            await self._run_turn(query)
+            if self._awaiting_choice or self._awaiting_approval or self._pending_queue.is_empty():
+                return
+            query = self._dequeue_pending()
+
+    def _dequeue_pending(self) -> str:
+        """Pop the next queued message, surface it as a normal user turn, return its query."""
+        message = self._pending_queue.pop_next()
+        assert message is not None  # caller already checked the queue is non-empty
+        handle = self._pending_handles.pop(message.id, None)
+        if handle is not None:
+            handle.remove()
+        self._ui.add_message("user", message.display)
+        self._active_turn_status = self._ui.add_turn_status_bar()
+        return message.agent_query
+
+    async def _run_turn(self, query: str) -> None:
+        assert self._service is not None
         self._agent_running = True
         presenter = _TurnPresenter(self._ui)
         try:
@@ -385,7 +424,7 @@ class CLIController:
             if self._active_turn_status is not None:
                 self._active_turn_status.stop()
                 self._active_turn_status = None
-            if not self._awaiting_choice:
+            if not self._awaiting_choice and not self._awaiting_approval:
                 self._ui.set_input_placeholder("Ask a question about your data…")
             self._ui.add_divider()
 
@@ -408,9 +447,11 @@ class CLIController:
         elif isinstance(event, ToolResultEvent):
             presenter.handle_tool_result(event)
         elif isinstance(event, UsageEvent):
-            presenter.handle_usage(event, self._active_turn_status)
+            apply_usage_event(event, self._active_turn_status)
         elif isinstance(event, InputRequiredEvent):
             self._show_choice_prompt(event.content, list(event.choices))
+        elif isinstance(event, ApprovalRequiredEvent):
+            self._show_approval_prompt(event)
         elif isinstance(event, ResponseEvent):
             presenter.handle_response(event)
         elif isinstance(event, ErrorEvent):
@@ -512,10 +553,37 @@ class CLIController:
         self._ui.add_message("user", escape_markup(raw)).finish()
         return answer
 
+    # ── Approval handling ─────────────────────────────────────────────────────
+
+    @property
+    def awaiting_approval(self) -> bool:
+        return self._awaiting_approval
+
+    def _show_approval_prompt(self, event: ApprovalRequiredEvent) -> None:
+        self._ui.show_approval_prompt(event.description, event.heads_up)
+        self._awaiting_approval = True
+        self._ui.set_input_placeholder("↑/↓ to select Yes or No, Enter to confirm, Esc to decline…")
+
+    def resolve_approval(self, approved: bool) -> str:
+        """Record the user's approval decision and return the resume input.
+
+        The caller must pass the returned value to ``run_agent`` so the paused
+        graph resumes with the user's answer.
+        """
+        self._awaiting_approval = False
+        self._ui.set_input_placeholder("Ask a question about your data…")
+        self._ui.add_message("user", "Yes" if approved else "No").finish()
+        return "yes" if approved else "no"
+
     # ── Slash command dispatch ────────────────────────────────────────────────
 
-    async def _handle_slash(self, cmd: str) -> bool:
-        """Dispatch a slash command. Returns True if the app should quit."""
+    async def _handle_slash(self, raw: str) -> bool:
+        """Dispatch a slash command. Returns True if the app should quit.
+
+        Only the first whitespace-separated token is matched, so trailing
+        text ("/help x") doesn't turn a valid command into an unknown one.
+        """
+        cmd = raw.split()[0] if raw.split() else raw
         if cmd == "/exit":
             return True
         elif cmd == "/clear":
@@ -530,6 +598,10 @@ class CLIController:
             self.show_models()
         elif cmd == "/stop":
             await self.stop_agent()
+        elif cmd == "/cancel-all-messages":
+            self.cancel_pending_messages()
+        elif cmd == "/cancel-message":
+            self.cancel_last_pending_message()
         elif cmd == "/help":
             self.show_help()
         elif cmd == "/themes":
@@ -550,6 +622,8 @@ class CLIController:
 
     async def reset(self) -> None:
         """Reset agent session and reload data from disk."""
+        self._awaiting_approval = False  # the prompt widget is removed with the messages
+        self._clear_pending_queue()
         self._ui.clear_messages()
         if self._service is not None:
             try:
@@ -561,7 +635,13 @@ class CLIController:
             self._ui.add_message("agent", "Not loaded yet.").finish()
 
     async def clear_conv(self) -> None:
-        """Clear conversation context (preserves session variables)."""
+        """Clear all conversation context (preserves session variables)."""
+        if self._agent_running:
+            # A still-running turn would write the cleared conversation back
+            # into state (and schedule its summarization) when it finishes.
+            self._ui.stop_agent()
+        self._awaiting_approval = False  # the prompt widget is removed with the messages
+        self._clear_pending_queue()
         self._ui.clear_messages()
         if self._service is not None:
             try:
@@ -579,7 +659,7 @@ class CLIController:
         status.set_content("Compacting conversation…")
         compact_timer: TurnStatusHandle | None = self._ui.add_turn_status_bar()
         try:
-            summary = await self._service.compact_chat_history()
+            await self._service.compact_chat_history()
         except Exception as exc:
             status.set_content(f"❌ Compact failed: {exc}")
             if compact_timer is not None:
@@ -591,7 +671,7 @@ class CLIController:
             compact_timer = None  # removed from DOM by clear_messages()
             self._ui.add_message(
                 "agent",
-                f"**Conversation compacted.** Carried forward:\n\n{summary}",
+                "**✓ Compaction done.** You may continue the conversation.",
             ).finish()
         finally:
             status.finish()
@@ -631,6 +711,38 @@ class CLIController:
         if self._service is not None:
             await self._service.rewind_turn()
         self._ui.add_message("agent", "⏹ Agent stopped. You can continue from here.").finish()
+
+    def cancel_pending_messages(self) -> None:
+        """Discard every message currently queued behind a running agent turn."""
+        removed = self._pending_queue.cancel_all()
+        for message in removed:
+            self._discard_pending_handle(message.id)
+        if removed:
+            count = len(removed)
+            self._ui.add_message(
+                "agent", f"✓ Cancelled {count} pending message{'s' if count != 1 else ''}."
+            ).finish()
+        else:
+            self._ui.add_message("agent", "No pending messages to cancel.").finish()
+
+    def cancel_last_pending_message(self) -> None:
+        """Discard only the most recently queued message."""
+        message = self._pending_queue.cancel_last()
+        if message is None:
+            self._ui.add_message("agent", "No pending messages to cancel.").finish()
+            return
+        self._discard_pending_handle(message.id)
+        self._ui.add_message("agent", "✓ Cancelled last pending message.").finish()
+
+    def _discard_pending_handle(self, message_id: int) -> None:
+        handle = self._pending_handles.pop(message_id, None)
+        if handle is not None:
+            handle.remove()
+
+    def _clear_pending_queue(self) -> None:
+        """Silently drop all queued messages (used by /reset and /clear)."""
+        for message in self._pending_queue.cancel_all():
+            self._discard_pending_handle(message.id)
 
     def ls_workspace(self) -> None:
         if self._service is None:

@@ -1,6 +1,6 @@
-from opendatasci._utils.streaming_utils import format_stream_error
 from opendatasci.streaming.events import (
     AgentStreamEvent,
+    ApprovalRequiredEvent,
     BaseAgentStreamEvent,
     ErrorEvent,
     InputRequiredEvent,
@@ -19,8 +19,7 @@ from opendatasci.streaming.processors import AgentTurnStreamProcessor
 
 __all__ = [
     "AgentStreamEvent",
-    "AgentTurnStreamProcessor",
-    "format_stream_error",
+    "ApprovalRequiredEvent",
     "BaseAgentStreamEvent",
     "ErrorEvent",
     "InputRequiredEvent",
@@ -34,4 +33,5 @@ __all__ = [
     "ToolResultEvent",
     "UsageEvent",
     "WorkerDoneEvent",
+    "AgentTurnStreamProcessor",
 ]

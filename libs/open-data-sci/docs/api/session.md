@@ -18,7 +18,6 @@ result.stdout     # str  — captured stdout
 result.output     # Any  — the return value of the last expression (if any)
 result.error      # str | None — exception traceback on failure
 result.code       # str  — the code that was executed
-result.timestamp  # datetime — when execution started
 ```
 
 ## TUI command allowlist
@@ -52,8 +51,9 @@ class MyRemoteSandbox(BaseSandbox):
         ...
 
     async def execute_cli(self, command: str) -> SandboxExecResult: ...
-    def get_history(self) -> list[SandboxExecResult]: ...
     def reset(self) -> None: ...
+    # close() is optional — override it to release external resources
+    # (e.g. a remote connection); the default implementation is a no-op.
 
 class MyRemoteSandboxFactory(BaseSandboxFactory):
     @asynccontextmanager
@@ -103,6 +103,20 @@ async with Agent(
 ---
 
 ::: opendatasci.sandbox.base.validate_cli_command
+    options:
+      show_root_heading: true
+      show_source: false
+
+---
+
+::: opendatasci.sandbox.srt.SRTSandbox
+    options:
+      show_root_heading: true
+      show_source: false
+
+---
+
+::: opendatasci.sandbox.srt.SRTSandboxFactory
     options:
       show_root_heading: true
       show_source: false

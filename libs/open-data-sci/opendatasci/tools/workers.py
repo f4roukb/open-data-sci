@@ -35,7 +35,7 @@ async def _run_one(
     sandbox_factory: BaseSandboxFactory,
     workspace: BaseWorkspace,
     store: BaseSkillStore,
-    datasci_config: "OpenDataSciConfig | None",
+    datasci_config: "OpenDataSciConfig",
 ) -> str:
     """Run a single worker subtask inside its own sandbox.
 
@@ -89,8 +89,8 @@ async def _run_one(
         if subtask.allow_web_tools:
             tools.extend(
                 create_web_tools(
-                    datasci_config.extra_web_domains if datasci_config is not None else (),
-                    datasci_config.override_web_domains if datasci_config is not None else None,
+                    datasci_config.extra_web_domains,
+                    datasci_config.override_web_domains,
                 )
             )
         from opendatasci.agents.agents import (
@@ -141,7 +141,7 @@ class WorkerTask(BaseModel):
 def create_worker_tools(
     workspace: BaseWorkspace,
     context: "BaseContextStore | None",
-    datasci_config: "OpenDataSciConfig | None",
+    datasci_config: "OpenDataSciConfig",
     sandbox_factory: BaseSandboxFactory,
     store: BaseSkillStore | None = None,
 ) -> list[BaseTool]:
@@ -165,7 +165,11 @@ def create_worker_tools(
     """
     if store is None:
         user_skills_dir = Path(context.root) / "skills" if context is not None else None
-        store = LocalSkillStore([user_skills_dir] if user_skills_dir is not None else None)
+        user_domains_dir = Path(context.root) / "skill_domains" if context is not None else None
+        store = LocalSkillStore(
+            [user_skills_dir] if user_skills_dir is not None else None,
+            [user_domains_dir] if user_domains_dir is not None else None,
+        )
 
     @tool
     async def spawn_workers(
@@ -198,7 +202,7 @@ def create_worker_tools(
                            (e.g. "Running three checks in parallel.").
         """
         outer_config = ensure_config()
-        timeout = datasci_config.worker_timeout_seconds if datasci_config is not None else 300.0
+        timeout = datasci_config.worker_timeout_seconds if datasci_config is not None else None
         results = await asyncio.wait_for(
             asyncio.gather(
                 *[

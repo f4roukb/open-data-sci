@@ -91,13 +91,13 @@ class TestEnterSelfReviewMode:
         assert "active_skills" not in result.update
 
     def test_valid_skill_sets_active_skills(self) -> None:
-        result = _invoke_enter(_get_enter_tool(), skill="data_science")
+        result = _invoke_enter(_get_enter_tool(), skill="data_science::exploratory_analysis")
         skills = result.update.get("active_skills", [])
         assert len(skills) == 1
-        assert skills[0].name == "data_science"
+        assert skills[0].name == "data_science::exploratory_analysis"
 
     def test_valid_skill_still_enables_self_review_mode(self) -> None:
-        result = _invoke_enter(_get_enter_tool(), skill="data_science")
+        result = _invoke_enter(_get_enter_tool(), skill="data_science::exploratory_analysis")
         assert result.update.get("is_self_review_mode") is True
 
     def test_unknown_skill_returns_error(self) -> None:

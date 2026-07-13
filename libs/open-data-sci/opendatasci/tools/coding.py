@@ -10,6 +10,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool, tool
 from pydantic import BaseModel, Field
 
+from opendatasci.human_inputs.human_approval import HumanApprovalBaseManager
 from opendatasci.models.factory import create_model
 from opendatasci.sandbox.base import BaseSandbox, SandboxExecResult
 
@@ -17,6 +18,12 @@ if TYPE_CHECKING:
     from opendatasci.configs import OpenDataSciConfig
 
 PYPROJECT_TOML: Path = Path(__file__).parent.parent / "pyproject.toml"
+
+_COMMAND_DECLINED_MESSAGE = (
+    "The user declined to run this command. If the command had a potential security "
+    "risk, maybe you need to try a safer approach that the user may be more inclined "
+    "to accept. Never attempt to execute harmful commands."
+)
 
 
 @tool
@@ -231,11 +238,54 @@ def create_coding_tools(sandbox: BaseSandbox) -> list[BaseTool]:
     return [execute_python_code, list_python_libs]
 
 
-def create_cli_tools(sandbox: BaseSandbox) -> list[BaseTool]:
-    """Return the execute_cli_command tool bound to *sandbox* (main agent only)."""
+def create_cli_tools(
+    sandbox: BaseSandbox,
+    approval_manager: HumanApprovalBaseManager | None = None,
+) -> list[BaseTool]:
+    """Return the execute_cli_command tool bound to *sandbox*.
 
-    @tool
-    async def execute_cli_command(command: str, summary: str, communication: str) -> str:
+    When *approval_manager* is provided (main agent only — approval interrupts
+    require a checkpointed graph), the tool exposes a ``request_approval``
+    argument that pauses the agent for the user's explicit yes/no consent
+    before the command runs. Worker agents omit it and get the plain tool.
+    """
+    if approval_manager is None:
+
+        @tool
+        async def execute_cli_command(command: str, summary: str, communication: str) -> str:
+            """Run a read-oriented TUI command inside the active workspace directory.
+
+            Useful for inspecting the workspace without Python: listing files,
+            searching for patterns, counting lines, or diffing outputs.
+
+            # Permitted commands
+            ``ls``, ``cat``, ``grep``, ``wc``, ``find``, ``head``, ``tail``, ``cut``,
+            ``diff``, and others in the safe set. ``|`` and ``&&`` are allowed.
+
+            # When NOT to use this tool
+            - For write operations (file creation, deletion, or modification) — not permitted.
+            - When ``list_workspace_files`` already covers the need.
+
+            Args:
+                command:       TUI command to run (e.g. ``"ls -la"``, ``"grep -r 'keyword' ."``).
+                summary:       3-4 word status label (e.g. "Listing workspace files").
+                communication: Brief message to the user about what you're doing
+                               (e.g. "Let me see what files are available.").
+            """
+            cli_result = await sandbox.execute_cli(command)
+            return _format_cli_result(cli_result)
+
+        return [execute_cli_command]
+
+    manager = approval_manager
+
+    @tool("execute_cli_command")
+    async def execute_cli_command_with_approval(
+        command: str,
+        summary: str,
+        communication: str,
+        request_approval: bool = False,
+    ) -> str:
         """Run a read-oriented TUI command inside the active workspace directory.
 
         Useful for inspecting the workspace without Python: listing files,
@@ -250,12 +300,20 @@ def create_cli_tools(sandbox: BaseSandbox) -> list[BaseTool]:
         - When ``list_workspace_files`` already covers the need.
 
         Args:
-            command:       TUI command to run (e.g. ``"ls -la"``, ``"grep -r 'keyword' ."``).
-            summary:       3-4 word status label (e.g. "Listing workspace files").
-            communication: Brief message to the user about what you're doing
-                           (e.g. "Let me see what files are available.").
+            command:          TUI command to run (e.g. ``"ls -la"``, ``"grep -r 'keyword' ."``).
+            summary:          3-4 word status label (e.g. "Listing workspace files").
+            communication:    Brief message to the user about what you're doing
+                              (e.g. "Let me see what files are available.").
+            request_approval: Set to True when the command could disrupt the user's
+                              device or active work in any way; execution then pauses
+                              until the user explicitly approves it. Leave False for
+                              trivially safe read-only commands.
         """
+        if request_approval:
+            approved = await manager.ask_for_command_approval(command)
+            if not approved:
+                return _COMMAND_DECLINED_MESSAGE
         cli_result = await sandbox.execute_cli(command)
         return _format_cli_result(cli_result)
 
-    return [execute_cli_command]
+    return [execute_cli_command_with_approval]

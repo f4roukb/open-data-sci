@@ -2,6 +2,16 @@
   <img src="resources/logo/logo-light.png" alt="OpenDataSci" width="70%" />
 </div>
 
+<div align="center">
+
+[![CI](https://github.com/f4roukb/open-data-sci/actions/workflows/continuous-integration.yaml/badge.svg)](https://github.com/f4roukb/open-data-sci/actions/workflows/continuous-integration.yaml)
+[![PyPI version](https://img.shields.io/pypi/v/open-data-sci.svg)](https://pypi.org/project/open-data-sci/)
+[![Python versions](https://img.shields.io/pypi/pyversions/open-data-sci.svg)](https://pypi.org/project/open-data-sci/)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![GitHub release](https://img.shields.io/github/v/release/f4roukb/open-data-sci.svg)](https://github.com/f4roukb/open-data-sci/releases)
+
+</div>
+
 **OpenDataSci is a truly autonomous AI agent purpose-built for data science and machine learning.** Point it at a dataset (single file or directory), tell it what you need: it plans with scientific rigor, writes and executes code, self-reviews its progress, and iterates fast until it gets it right. **No data science knowledge required.**
 
 <div align="center">
@@ -45,6 +55,7 @@ Most "AI for data" tools turn you into the bottleneck. Every experiment starts w
 
 | | |
 |--|--|
+| **Rich TUI** | Interactive terminal interface for real-time progress, tool calls, and agent output |
 | **Full workflow** | EDA, cleaning, feature engineering, modelling, evaluation, visualisation, reporting |
 | **Real code execution** | Full Python in a native OS sandbox |
 | **Built-in DS methodology** | Leakage prevention, proper evaluation, causality awareness |
@@ -93,17 +104,19 @@ No setup friction. OpenDataSci ships with the complete stack a practitioner woul
 
 | Domain | Libraries |
 |--------|-----------|
-| DataFrames | Polars, Pandas, DuckDB, ConnectorX, PyArrow |
-| File formats | Excel (openpyxl, xlrd, fastexcel), Parquet, HDF5, JSON, XML |
+| DataFrames | Polars, Pandas |
+| Database connectivity | DuckDB |
+| File formats | Excel/Parquet/Feather (via Pandas), XML (lxml) |
+| Numerics | NumPy, SciPy |
 | Classical ML | scikit-learn, LightGBM, CatBoost, XGBoost, statsmodels |
-| Deep learning | JAX, Flax, Optax (optional) |
 | AutoML / tuning | Optuna |
-| Forecasting | Prophet, ARIMA, ETS |
+| Forecasting | Prophet |
 | Interpretability | SHAP |
 | Anomaly detection | PyOD |
 | Imbalanced data | imbalanced-learn |
 | Dimensionality reduction | UMAP |
-| Validation | pandera |
+| Graph analysis | NetworkX |
+| Feature engineering | category-encoders |
 | Visualisation | matplotlib, seaborn, plotly |
 
 ---

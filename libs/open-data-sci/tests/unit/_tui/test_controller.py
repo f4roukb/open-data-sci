@@ -8,6 +8,7 @@ import pytest
 
 from opendatasci.streaming import (
     AgentStreamEvent,
+    ApprovalRequiredEvent,
     ErrorEvent,
     ReasoningEvent,
     ResponseEvent,
@@ -17,8 +18,8 @@ from opendatasci.streaming import (
     UsageEvent,
     WorkerDoneEvent,
 )
-from opendatasci._tui.controller import (
-    CLIController,
+from opendatasci._tui.controller import CLIController
+from opendatasci._tui.file_refs import (
     PasteAttachment,
     _build_agent_query,
     _build_user_display,
@@ -522,13 +523,21 @@ class TestOnSubmit:
         call_args = mock_ui.add_message.call_args
         assert "Unknown command" in call_args[0][1]
 
-    async def test_agent_running_shows_busy(
+    async def test_agent_running_queues_message_instead_of_running(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         controller._agent_running = True
         action, _ = await controller.on_submit("do something")
         assert action == ""
         mock_ui.set_input_placeholder.assert_not_called()
+
+    async def test_agent_running_pins_message_in_ui(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        controller._agent_running = True
+        await controller.on_submit("do something")
+        mock_ui.add_pending_message.assert_called_once_with("do something")
+        assert len(controller._pending_queue) == 1
 
     async def test_normal_query_returns_run(
         self, controller: CLIController, mock_ui: MagicMock
@@ -569,6 +578,72 @@ class TestOnSubmit:
         action, payload = await controller.on_submit("A")
         assert action == "run"
         assert payload == "yes"
+
+
+# ---------------------------------------------------------------------------
+# CLIController — command approval flow
+# ---------------------------------------------------------------------------
+
+
+class TestApprovalFlow:
+    def _dispatch(self, controller: CLIController, heads_up: str = "") -> None:
+        event = ApprovalRequiredEvent(
+            command="rm tmp.txt", description="Deletes tmp.txt.", heads_up=heads_up
+        )
+        controller._dispatch_stream_event(event, MagicMock())
+
+    def test_approval_event_shows_prompt_and_sets_flag(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        self._dispatch(controller, heads_up="File is gone for good.")
+        mock_ui.show_approval_prompt.assert_called_once_with(
+            "Deletes tmp.txt.", "File is gone for good."
+        )
+        assert controller.awaiting_approval is True
+
+    def test_resolve_approval_yes_returns_yes(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        self._dispatch(controller)
+        assert controller.resolve_approval(True) == "yes"
+        assert controller.awaiting_approval is False
+        mock_ui.add_message.assert_called_with("user", "Yes")
+
+    def test_resolve_approval_no_returns_no(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        self._dispatch(controller)
+        assert controller.resolve_approval(False) == "no"
+        assert controller.awaiting_approval is False
+        mock_ui.add_message.assert_called_with("user", "No")
+
+    async def test_typed_input_is_ignored_while_awaiting_approval(
+        self, controller: CLIController
+    ) -> None:
+        controller._awaiting_approval = True
+        action, payload = await controller.on_submit("run it anyway")
+        assert (action, payload) == ("", "")
+
+    async def test_exit_still_quits_while_awaiting_approval(
+        self, controller: CLIController
+    ) -> None:
+        controller._awaiting_approval = True
+        action, _ = await controller.on_submit("/exit")
+        assert action == "quit"
+
+    async def test_reset_clears_awaiting_approval(
+        self, loaded_controller: CLIController
+    ) -> None:
+        loaded_controller._awaiting_approval = True
+        await loaded_controller.reset()
+        assert loaded_controller.awaiting_approval is False
+
+    async def test_clear_conv_clears_awaiting_approval(
+        self, loaded_controller: CLIController
+    ) -> None:
+        loaded_controller._awaiting_approval = True
+        await loaded_controller.clear_conv()
+        assert loaded_controller.awaiting_approval is False
 
 
 # ---------------------------------------------------------------------------
@@ -620,6 +695,19 @@ class TestClearConv:
         await loaded_controller.clear_conv()  # should not raise
         mock_ui.clear_messages.assert_called_once()
 
+    async def test_clear_conv_stops_running_agent(
+        self, loaded_controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        loaded_controller._agent_running = True
+        await loaded_controller.clear_conv()
+        mock_ui.stop_agent.assert_called_once()
+
+    async def test_clear_conv_does_not_stop_idle_agent(
+        self, loaded_controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await loaded_controller.clear_conv()
+        mock_ui.stop_agent.assert_not_called()
+
 
 class TestCompact:
     async def test_compact_no_service_shows_not_loaded(
@@ -628,13 +716,14 @@ class TestCompact:
         await controller.compact()
         mock_ui.add_message.assert_called_with("agent", "Not loaded yet.")
 
-    async def test_compact_success_shows_summary(
+    async def test_compact_success_shows_confirmation_without_summary(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
         mock_service.compact_chat_history = AsyncMock(return_value="key findings")
         await loaded_controller.compact()
         msg_calls = [c[0][1] for c in mock_ui.add_message.call_args_list]
-        assert any("key findings" in m for m in msg_calls)
+        assert not any("key findings" in m for m in msg_calls)
+        assert any("Compaction done" in m for m in msg_calls)
 
     async def test_compact_failure_shows_error(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
@@ -1411,3 +1500,117 @@ class TestCompactStopsTimer:
         mock_service.compact_chat_history = AsyncMock(side_effect=RuntimeError("boom"))
         await loaded_controller.compact()
         timer.stop.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# Slash commands with trailing text (2.1.3)
+# ---------------------------------------------------------------------------
+
+
+class TestSlashCommandArguments:
+    """_handle_slash matches only the head token, so trailing text is tolerated."""
+
+    async def test_help_with_trailing_text_still_runs_help(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        action, _ = await controller.on_submit("/help me please")
+        assert action == ""
+        content = mock_ui.add_message.call_args[0][1]
+        assert "Unknown command" not in content
+
+    async def test_exit_with_trailing_text_quits(self, controller: CLIController) -> None:
+        action, _ = await controller.on_submit("/exit now")
+        assert action == "quit"
+
+    async def test_models_with_trailing_text_dispatches(
+        self, loaded_controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await loaded_controller.on_submit("/models verbose")
+        content = mock_ui.add_message.call_args[0][1]
+        assert "Unknown command" not in content
+
+    async def test_unknown_command_with_args_reports_head_token(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await controller.on_submit("/bogus arg1 arg2")
+        content = mock_ui.add_message.call_args[0][1]
+        assert "Unknown command" in content
+        assert "/bogus" in content
+
+    async def test_awaiting_choice_exit_with_trailing_text_quits(
+        self, controller: CLIController
+    ) -> None:
+        controller._show_choice_prompt("Pick one", ["a", "b"])
+        action, _ = await controller.on_submit("/exit now")
+        assert action == "quit"
+
+
+# ---------------------------------------------------------------------------
+# Boot-failure dead state (2.1.5)
+# ---------------------------------------------------------------------------
+
+
+class TestBootFailedState:
+    def test_boot_failed_false_initially(self, controller: CLIController) -> None:
+        assert controller._boot_failed is False
+
+    async def test_boot_failure_sets_flag(self, mock_ui: MagicMock) -> None:
+        ctrl = _make_boot_ctrl(mock_ui)
+        with (
+            patch("pathlib.Path.is_file", return_value=False),
+            patch("pathlib.Path.is_dir", return_value=False),
+            patch("opendatasci._tui.controller.create_agent", side_effect=FileNotFoundError()),
+            patch("opendatasci._tui.controller.OpenDataSciTuiService"),
+            patch("opendatasci._tui.session.CLISessionInfo.from_path"),
+            patch("opendatasci.tools.mcp.load_mcp_servers", return_value=[]),
+            patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
+            patch("opendatasci._tui.controller.CLIController._did_you_mean", return_value=""),
+        ):
+            await ctrl.boot()
+
+        assert ctrl._boot_failed is True
+
+    async def test_run_agent_after_boot_failure_explains_dead_state(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        controller._boot_failed = True
+
+        await controller.run_agent("analyse this")
+
+        content = mock_ui.add_message.call_args[0][1]
+        assert "Startup failed" in content
+        assert "Still loading" not in content
+        assert "/exit" in content
+
+    async def test_run_agent_while_still_loading_keeps_wait_message(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await controller.run_agent("analyse this")
+
+        content = mock_ui.add_message.call_args[0][1]
+        assert "Still loading" in content
+
+
+# ---------------------------------------------------------------------------
+# Controller state properties used by app-level stop shortcuts (2.1.4)
+# ---------------------------------------------------------------------------
+
+
+class TestControllerStateProperties:
+    def test_agent_running_false_initially(self, controller: CLIController) -> None:
+        assert controller.agent_running is False
+
+    def test_agent_running_reflects_internal_flag(self, controller: CLIController) -> None:
+        controller._agent_running = True
+        assert controller.agent_running is True
+
+    def test_has_paste_attachment_false_initially(self, controller: CLIController) -> None:
+        assert controller.has_paste_attachment is False
+
+    def test_has_paste_attachment_tracks_paste_lifecycle(
+        self, controller: CLIController
+    ) -> None:
+        controller.on_paste("line1\nline2")
+        assert controller.has_paste_attachment is True
+        controller.clear_paste_attachment()
+        assert controller.has_paste_attachment is False

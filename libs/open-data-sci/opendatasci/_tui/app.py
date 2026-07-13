@@ -18,12 +18,15 @@ from opendatasci.configs import DEFAULT_MODEL, DEFAULT_SECONDARY_MODEL, OpenData
 from opendatasci.models.providers import Provider
 
 from . import theme as _theme
-from .controller import CLIController, UIAdapter
+from .adapter import UIAdapter
+from .controller import CLIController
 from .widgets import (
     AppHeader,
     ChatPane,
+    CommandApprovalPrompt,
     CompletionPopup,
     MessageBubble,
+    PendingMessageBubble,
     SmartInput,
     ThinkingBlock,
     ToolCallBlock,
@@ -45,9 +48,9 @@ def _get_version() -> str:
         return importlib.metadata.version("open-data-sci")
     except importlib.metadata.PackageNotFoundError:
         logging.getLogger(__name__).warning(
-            "open-data-sci package not found; falling back to hardcoded version '0.1.0'"
+            "open-data-sci package not found; falling back to hardcoded version '0.2.0'"
         )
-        return "0.1.0"
+        return "0.2.0"
 
 
 class OpenDataSciApp(App[None]):
@@ -56,7 +59,7 @@ class OpenDataSciApp(App[None]):
     CSS_PATH = "styles.tcss"
 
     BINDINGS = [
-        Binding("ctrl+c", "request_quit", "Quit"),
+        Binding("ctrl+c", "request_quit", "Stop/Quit"),
         Binding("ctrl+d", "quit", "Quit", show=False),
         Binding("ctrl+r", "reset", "Reset"),
         Binding("ctrl+l", "clear_conv", "Clear", show=False),
@@ -73,8 +76,6 @@ class OpenDataSciApp(App[None]):
         palette = _theme.THEMES.get(theme, _theme.DARK)
         _theme.active.update(palette)
         _theme.active_name = theme if theme in _theme.THEMES else "default"
-        if theme == "accessible":
-            self.CSS_PATH = str(Path(__file__).parent / "styles_visible.tcss")  # type: ignore[misc]
         super().__init__()
         self._controller = CLIController(
             ui=self,  # type: ignore[arg-type]
@@ -82,6 +83,18 @@ class OpenDataSciApp(App[None]):
             datasci_config=datasci_config,
             session_id=session_id,
         )
+
+    def get_css_variables(self) -> dict[str, str]:
+        """Expose the active theme palette as $ods-* CSS variables.
+
+        styles.tcss and widget DEFAULT_CSS reference these instead of color
+        literals, so every registered theme restyles the whole app.
+        """
+        variables = super().get_css_variables()
+        variables.update(
+            {f"ods-{key.replace('_', '-')}": value for key, value in _theme.active.items()}
+        )
+        return variables
 
     def compose(self) -> ComposeResult:
         yield AppHeader(
@@ -114,6 +127,9 @@ class OpenDataSciApp(App[None]):
     def add_turn_status_bar(self) -> TurnStatusBar:
         return self.query_one(ChatPane).add_turn_status_bar()
 
+    def add_pending_message(self, text: str) -> PendingMessageBubble:
+        return self.query_one(ChatPane).add_pending_message(text)
+
     def add_ephemeral_block(self, communication: str, label: str, summary: str) -> ToolCallBlock:
         return self.query_one(ChatPane).add_ephemeral_block(communication, label, summary)
 
@@ -134,6 +150,9 @@ class OpenDataSciApp(App[None]):
 
     def show_workspace_panel(self, files: list[str]) -> None:
         self.query_one(ChatPane).show_workspace_panel(files)
+
+    def show_approval_prompt(self, description: str, heads_up: str) -> None:
+        self.query_one(ChatPane).show_approval_prompt(description, heads_up)
 
     def show_attachment(self, label: str) -> None:
         self.query_one(ChatPane).show_attachment(label)
@@ -187,6 +206,12 @@ class OpenDataSciApp(App[None]):
         elif action == "quit":
             self.exit()
 
+    @on(CommandApprovalPrompt.Decision)
+    def on_approval_decision(self, event: CommandApprovalPrompt.Decision) -> None:
+        resume_input = self._controller.resolve_approval(event.approved)
+        self.query_one("#user-input", Input).focus()
+        self._run_agent(resume_input)
+
     @on(events.Key)
     def on_input_key(self, event: events.Key) -> None:
         if event.key not in {"up", "down"}:
@@ -226,7 +251,12 @@ class OpenDataSciApp(App[None]):
     async def action_quit(self) -> None:
         self.exit()
 
-    def action_request_quit(self) -> None:
+    async def action_request_quit(self) -> None:
+        if self._controller.agent_running:
+            # While a turn is running, Ctrl+C means "stop the agent" (same as
+            # /stop). Quitting remains a deliberate double-press while idle.
+            await self._controller.stop_agent()
+            return
         if self._quit_requested:
             self.exit()
             return
@@ -249,13 +279,18 @@ class OpenDataSciApp(App[None]):
     def action_compact(self) -> None:
         self._compact()
 
-    def action_focus_input(self) -> None:
+    async def action_focus_input(self) -> None:
+        had_completion = self._controller.has_completion_matches
+        had_paste = self._controller.has_paste_attachment
         self._controller.hide_completion()
         self._controller.clear_paste_attachment()
         if self._controller.awaiting_choice:
             resume_input = self._controller.cancel_choice()
             if resume_input is not None:
                 self._run_agent(resume_input)
+        elif not had_completion and not had_paste and self._controller.agent_running:
+            # A bare Esc during a turn stops the agent, mirroring Ctrl+C.
+            await self._controller.stop_agent()
         self.query_one("#user-input", Input).focus()
 
     @on(SmartInput.TabComplete)
