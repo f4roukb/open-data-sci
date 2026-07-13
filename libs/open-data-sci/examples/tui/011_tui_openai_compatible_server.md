@@ -81,7 +81,7 @@ opendatasci sales.csv --provider openai_compatible_server --model meta-llama/Lla
 LLM_SERVER_BASE_URL=http://192.168.1.10:8000/v1 opendatasci sales.csv --provider openai_compatible_server
 
 # Load config from file
-opendatasci sales.csv --config examples/config_openai_compatible_server.yaml
+opendatasci sales.csv --config examples/configs/config_openai_compatible_server.yaml
 ```
 
 ---
@@ -117,6 +117,8 @@ cloud providers; only the setup differs.
 
 | Command | What it does |
 |---------|--------------|
+| `/cancel-all-messages` | Cancel all messages queued while the agent was busy |
+| `/cancel-message` | Cancel the most recently queued message |
 | `/compact` | Summarise and compress the conversation to free context |
 | `/reset` | Clear sandbox state and reload data from disk |
 | `/clear` | Clear conversation history, keep sandbox variables |

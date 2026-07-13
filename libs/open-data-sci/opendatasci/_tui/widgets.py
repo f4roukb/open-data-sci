@@ -25,7 +25,13 @@ try:
 except ImportError:
     _TUIImage = None
 
-from .adapter import EphemeralHandle, MessageHandle, ThinkingHandle, TurnStatusHandle
+from .adapter import (
+    EphemeralHandle,
+    MessageHandle,
+    PendingMessageHandle,
+    ThinkingHandle,
+    TurnStatusHandle,
+)
 from .commands import SLASH_COMMANDS, _fmt_model
 from .models import SPINNER, SPINNER_INTERVAL
 from .theme import active as theme
@@ -33,6 +39,16 @@ from .theme import active as theme
 logger = logging.getLogger(__name__)
 
 _BUBBLE_FLUSH_INTERVAL = 0.25  # seconds — caps Markdown rebuilds at 4/sec during streaming
+_AUTOSCROLL_INTERVAL = 0.1  # seconds — cadence of the #messages bottom-anchor check
+
+
+def _scroll_is_at_bottom(container: ScrollableContainer) -> bool:
+    """True when *container* is scrolled to (within one row of) the bottom.
+
+    Used to implement auto-scroll with a releasable anchor: new content only
+    pins the view to the bottom while the user hasn't scrolled up.
+    """
+    return container.scroll_offset.y >= container.max_scroll_y - 1
 
 
 class CommandHighlighter(Highlighter):
@@ -61,18 +77,7 @@ class AppHeader(Widget):
     """Docked top bar: logo left, version/workspace info right."""
 
     DEFAULT_CSS = """
-    AppHeader {
-        dock: top;
-        height: 5;
-        background: #0d1117;
-        border-bottom: solid #1a2030;
-    }
     #header-layout { layout: horizontal; height: 5; }
-    #header-logo {
-        width: 21;
-        height: 5;
-        content-align: center middle;
-    }
     """
 
     def __init__(
@@ -226,17 +231,13 @@ class TurnStatusBar(Static):
 
 
 class MessageBubble(Widget):
-    """A single chat message — user, agent (streaming), or thinking."""
+    """A single chat message — user, agent (streaming), or question."""
 
     def __init__(self, role: str, content: str = "") -> None:
         super().__init__()
         self._role = role
         self._content = content
-        self._spin_idx = 0
-        self._spin_label: str = "Thinking"
-        self._spin_timer: Timer | None = None
         self._inner: Static | TUIMarkdown | None = None
-        self._summary_text: str | None = None
         self._flush_timer: Timer | None = None  # rate-limit Markdown rebuilds
         self._dirty: bool = False
         self._flush_scheduled: bool = False  # at most one call_after_refresh pending
@@ -259,11 +260,6 @@ class MessageBubble(Widget):
         yield inner
 
     def on_mount(self) -> None:
-        self._spin_timer = (
-            self.set_interval(SPINNER_INTERVAL, self._spin_tick)
-            if self._role == "thinking"
-            else None
-        )
         self._refresh_content()
         # If the bubble already has content (set before mount completed) mark it
         # dirty so the flush below will render it.  This covers the common
@@ -276,10 +272,6 @@ class MessageBubble(Widget):
             if self._dirty:
                 self._flush_scheduled = False  # force a new call even if one was pending
                 self._schedule_final_flush()
-
-    def _spin_tick(self) -> None:
-        self._spin_idx = (self._spin_idx + 1) % len(SPINNER)
-        self._refresh_content()
 
     def _refresh_content(self) -> None:
         inner = self._inner
@@ -294,39 +286,12 @@ class MessageBubble(Widget):
             #      compose ran) is rendered automatically by Markdown's own
             #      mount hook.
             #   2. _flush_agent() applies subsequent updates (streaming tokens,
-            #      set_content, finish) at most 10 times per second.
+            #      set_content, finish) at most once per _BUBBLE_FLUSH_INTERVAL.
             # No work to do from _refresh_content itself.
             pass
         elif role == "user":
             assert isinstance(inner, Static)
             inner.update(Text.from_markup(content))
-        elif role == "thinking":
-            assert isinstance(inner, Static)
-            if self._summary_text is not None:
-                inner.update(
-                    Text.from_markup(
-                        f"[dim {theme['thinking']}]✓ {self._summary_text}[/dim {theme['thinking']}]"
-                    )
-                )
-            elif content:
-                # Debug mode: actual reasoning text streamed in — stop the
-                # spinner and render the accumulated content in muted grey.
-                if self._spin_timer is not None:
-                    self._spin_timer.stop()
-                    self._spin_timer = None
-                inner.update(
-                    Text.from_markup(
-                        f"[bold {theme['text_muted']}]Reasoning:[/bold {theme['text_muted']}]"
-                        f"[{theme['text_muted']}] {escape(content)}[/{theme['text_muted']}]"
-                    )
-                )
-            else:
-                spin = SPINNER[self._spin_idx]
-                inner.update(
-                    Text.from_markup(
-                        f"[bold {theme['thinking']}]{spin} {self._spin_label}…[/bold {theme['thinking']}]"
-                    )
-                )
         elif role == "question":
             assert isinstance(inner, Static)
             try:
@@ -352,7 +317,8 @@ class MessageBubble(Widget):
     def append(self, chunk: str) -> None:
         self._content += chunk
         if self._role == "agent":
-            # Buffer tokens; the flush timer does a single awaited rebuild at ~10 Hz.
+            # Buffer tokens; the flush timer does a single awaited rebuild
+            # once per _BUBBLE_FLUSH_INTERVAL.
             self._dirty = True
             if self._flush_timer is None:
                 self._flush_timer = self.set_interval(_BUBBLE_FLUSH_INTERVAL, self._flush_agent)
@@ -365,7 +331,8 @@ class MessageBubble(Widget):
             self._flush_timer = None
 
     async def _flush_agent(self) -> None:
-        """Flush buffered tokens to the Markdown widget (called at most 10×/sec).
+        """Flush buffered tokens to the Markdown widget (at most once per
+        _BUBBLE_FLUSH_INTERVAL).
 
         Awaiting inner.update() serialises rebuilds so they can never race each
         other.
@@ -407,11 +374,6 @@ class MessageBubble(Widget):
             logger.exception("_flush_agent failed — bubble content may be stale")
 
     def finish(self) -> None:
-        if self._spin_timer is not None:
-            self._spin_timer.stop()
-            self._spin_timer = None
-        if self._role == "thinking" and self._summary_text is None:
-            self._summary_text = "Done thinking"
         if self._role == "agent":
             self._dirty = True
             self._stop_flush_timer()
@@ -421,24 +383,6 @@ class MessageBubble(Widget):
             self._schedule_final_flush()
         else:
             self._refresh_content()
-
-    def finish_with_summary(self, text: str) -> None:
-        """Stop the spinner and replace the bubble content with a static summary.
-
-        Designed for thinking bubbles: transforms the animated "Thinking…" into
-        a collapsed dim line like "✓ Thought for 12s".
-        """
-        if self._spin_timer is not None:
-            self._spin_timer.stop()
-            self._spin_timer = None
-        self._summary_text = text
-        inner = self._inner
-        if inner is None:
-            return
-        assert isinstance(inner, Static)
-        inner.update(
-            Text.from_markup(f"[dim {theme['thinking']}]✓ {text}[/dim {theme['thinking']}]")
-        )
 
 
 class CompletionPopup(Static):
@@ -575,7 +519,7 @@ class AttachmentBar(Static):
     def show_pill(self, label: str) -> None:
         safe = escape(label)
         markup = (
-            f"[bold #58a6ff]📎 {safe}[/bold #58a6ff]"
+            f"[bold {theme['accent']}]📎 {safe}[/bold {theme['accent']}]"
             f"  [dim {theme['text_muted']}](Esc to discard)[/dim {theme['text_muted']}]"
         )
         self.update(Text.from_markup(markup))
@@ -710,6 +654,114 @@ class WorkspacePanel(Widget):
             pass
 
 
+class CommandApprovalPrompt(Widget):
+    """Yes/no prompt asking the user to approve a command the agent wants to run.
+
+    Shows the LLM-generated description of the command, then a heads-up warning
+    (only when a potential negative impact was identified), then Yes / No
+    options. Up/Down moves the selection, Enter confirms, Esc declines.
+    Posts a ``Decision`` message with the outcome and freezes afterwards.
+    """
+
+    DEFAULT_CSS = """
+    CommandApprovalPrompt {
+        height: auto;
+        padding: 0 2;
+        margin-bottom: 1;
+        border-left: thick $ods-warning;
+    }
+    """
+
+    BINDINGS = [
+        Binding("up", "move_up", show=False),
+        Binding("down", "move_down", show=False),
+        Binding("enter", "confirm", show=False),
+        Binding("escape", "decline", show=False),
+    ]
+
+    can_focus = True
+
+    _OPTIONS = ("Yes", "No")
+
+    class Decision(Message):
+        """Posted when the user confirms a choice (``approved`` True for Yes)."""
+
+        def __init__(self, approved: bool) -> None:
+            self.approved = approved
+            super().__init__()
+
+    def __init__(self, description: str, heads_up: str = "") -> None:
+        super().__init__()
+        self._description = description
+        self._heads_up = heads_up
+        self._selected = 0
+        self._resolved = False
+
+    def compose(self) -> ComposeResult:
+        yield Static(id="approval-prompt-content")
+
+    def on_mount(self) -> None:
+        self.focus()
+        self._refresh_content()
+
+    def _refresh_content(self) -> None:
+        lines = [
+            f"[bold {theme['warning']}]🛡 Approval required[/bold {theme['warning']}]",
+            "",
+            f"[{theme['text_primary']}]{escape(self._description)}[/{theme['text_primary']}]",
+        ]
+        if self._heads_up:
+            lines += [
+                "",
+                f"[bold {theme['warning']}]⚠️ Heads-up[/bold {theme['warning']}]  "
+                f"[{theme['warning']}]{escape(self._heads_up)}[/{theme['warning']}]",
+            ]
+        lines.append("")
+        for idx, option in enumerate(self._OPTIONS):
+            if self._resolved:
+                if idx == self._selected:
+                    lines.append(
+                        f"[bold {theme['tool_done']}]✓ {option}[/bold {theme['tool_done']}]"
+                    )
+                continue
+            if idx == self._selected:
+                lines.append(f"[bold {theme['accent']}]▸ {option}[/bold {theme['accent']}]")
+            else:
+                lines.append(f"  [{theme['text_secondary']}]{option}[/{theme['text_secondary']}]")
+        if not self._resolved:
+            lines += [
+                "",
+                f"[dim {theme['text_secondary']}]↑↓ select  Enter confirm  "
+                f"Esc decline[/dim {theme['text_secondary']}]",
+            ]
+        self.query_one("#approval-prompt-content", Static).update(
+            Text.from_markup("\n".join(lines))
+        )
+
+    def action_move_up(self) -> None:
+        if not self._resolved and self._selected > 0:
+            self._selected -= 1
+            self._refresh_content()
+
+    def action_move_down(self) -> None:
+        if not self._resolved and self._selected < len(self._OPTIONS) - 1:
+            self._selected += 1
+            self._refresh_content()
+
+    def action_confirm(self) -> None:
+        if self._resolved:
+            return
+        self._resolved = True
+        self._refresh_content()
+        self.post_message(self.Decision(approved=self._selected == 0))
+
+    def action_decline(self) -> None:
+        if self._resolved:
+            return
+        self._selected = self._OPTIONS.index("No")
+        self.action_confirm()
+
+
 class ThinkingBlock(Static):
     """Ephemeral 'Thinking...' indicator shown while the LLM is processing.
 
@@ -766,11 +818,99 @@ class ThinkingBlock(Static):
             self._spin_timer = None
 
 
+class PendingMessageBubble(Static):
+    """Pinned indicator for a user message queued while the agent is busy.
+
+    Stays visible (and unprocessed-looking) until the agent picks it up or
+    the user cancels it via /cancel-all-messages or /cancel-message.
+    """
+
+    DEFAULT_CSS = """
+    PendingMessageBubble {
+        height: auto;
+        padding: 0 2;
+        margin-bottom: 1;
+        background: $ods-warning-bg;
+        border-left: thick $ods-warning;
+    }
+    """
+
+    def __init__(self, text: str) -> None:
+        super().__init__("")
+        self._text = text
+
+    def on_mount(self) -> None:
+        self.update(
+            Text.from_markup(
+                f"[bold {theme['warning']}]⏳ Queued[/bold {theme['warning']}]  {self._text}"
+            )
+        )
+
+
+class PendingMessagePanel(Vertical):
+    """Holds pinned PendingMessageBubble widgets between the chat and input bar.
+
+    New bubbles are mounted at the top of the stack, closest to the live
+    conversation, so the most recently queued message is the most visible.
+    """
+
+    DEFAULT_CSS = """
+    PendingMessagePanel {
+        height: auto;
+        max-height: 8;
+        overflow-y: auto;
+    }
+    """
+
+    def add_pending(self, text: str) -> "PendingMessageBubble":
+        bubble = PendingMessageBubble(text)
+        self.mount(bubble, before=0)
+        return bubble
+
+
+class MessagesContainer(ScrollableContainer):
+    """Message-history scroller with a releasable bottom anchor.
+
+    While anchored, new content keeps the view pinned to the bottom (an
+    interval timer re-pins after asynchronous Markdown reflows, which can't
+    be hooked at mount time). Scrolling up releases the anchor; scrolling
+    back down to the bottom re-arms it. The distinction between a user
+    scroll and content growth is made in ``watch_scroll_y``: growth changes
+    ``max_scroll_y``, never ``scroll_y``, and the only programmatic scroll
+    ever issued here targets the bottom.
+    """
+
+    _anchored: bool = True
+
+    def on_mount(self) -> None:
+        self.set_interval(_AUTOSCROLL_INTERVAL, self._anchor_tick)
+
+    def _anchor_tick(self) -> None:
+        if self._anchored and not _scroll_is_at_bottom(self):
+            self.scroll_end(animate=False)
+
+    def pin_if_anchored(self) -> None:
+        """Scroll to the bottom now unless the user has scrolled up."""
+        if self._anchored:
+            self.scroll_end(animate=False)
+
+    def watch_scroll_y(self, old_value: float, new_value: float) -> None:
+        super().watch_scroll_y(old_value, new_value)
+        self._update_anchor(old_value, new_value)
+
+    def _update_anchor(self, old_value: float, new_value: float) -> None:
+        if new_value >= self.max_scroll_y:
+            self._anchored = True  # reached the bottom — (re-)arm
+        elif new_value < old_value:
+            self._anchored = False  # scrolled up away from the bottom — release
+
+
 class ChatPane(Widget):
     """Left pane: scrollable message history + input bar."""
 
     def compose(self) -> ComposeResult:
-        yield ScrollableContainer(id="messages")
+        yield MessagesContainer(id="messages")
+        yield PendingMessagePanel(id="pending-panel")
         with Vertical(id="input-bar"):
             yield CompletionPopup(id="completion-popup")
             yield AttachmentBar(id="attachment-bar")
@@ -781,14 +921,24 @@ class ChatPane(Widget):
             )
         yield WorkspacePanel(id="workspace-panel")
 
+    def _mount_in_messages(self, widget: Widget) -> None:
+        """Mount *widget* in #messages, keeping the view pinned to the bottom.
+
+        The scroll only follows new content while the anchor is armed; a user
+        who scrolled up keeps their position.
+        """
+        container = self.query_one("#messages", MessagesContainer)
+        container.mount(widget)
+        container.pin_if_anchored()
+
     def add_message(self, role: str, content: str = "") -> MessageBubble:
         bubble = MessageBubble(role, content)
-        self.query_one("#messages", ScrollableContainer).mount(bubble)
+        self._mount_in_messages(bubble)
         return bubble
 
     def add_divider(self) -> None:
         divider = Static(Rule(style=theme["separator"]), classes="msg-divider")
-        self.query_one("#messages", ScrollableContainer).mount(divider)
+        self._mount_in_messages(divider)
 
     def add_turn_status_bar(self) -> "TurnStatusBar":
         for existing in self.query(TurnStatusBar):
@@ -797,23 +947,31 @@ class ChatPane(Widget):
         self.mount(timer, after=self.query_one("#input-bar"))
         return timer
 
+    def add_pending_message(self, text: str) -> "PendingMessageBubble":
+        return self.query_one("#pending-panel", PendingMessagePanel).add_pending(text)
+
     def add_thinking_block(self) -> "ThinkingBlock":
         block = ThinkingBlock()
-        self.query_one("#messages", ScrollableContainer).mount(block)
+        self._mount_in_messages(block)
         return block
 
     def add_ephemeral_block(self, communication: str, label: str, summary: str) -> "ToolCallBlock":
         widget = ToolCallBlock(communication, label, summary)
-        self.query_one("#messages", ScrollableContainer).mount(widget)
+        self._mount_in_messages(widget)
         return widget
 
     def add_worker_block(self, communication: str, worker_summaries: list[str]) -> "ToolCallBlock":
         widget = ToolCallBlock(communication, "", "", worker_summaries=worker_summaries)
-        self.query_one("#messages", ScrollableContainer).mount(widget)
+        self._mount_in_messages(widget)
         return widget
 
     def show_workspace_panel(self, files: list[str]) -> None:
         self.query_one("#workspace-panel", WorkspacePanel).show_files(files)
+
+    def show_approval_prompt(self, description: str, heads_up: str) -> "CommandApprovalPrompt":
+        widget = CommandApprovalPrompt(description, heads_up)
+        self._mount_in_messages(widget)
+        return widget
 
     def show_attachment(self, label: str) -> None:
         self.query_one("#attachment-bar", AttachmentBar).show_pill(label)
@@ -832,6 +990,11 @@ class ToolCallBlock(Static):
     Call ``dismiss()`` to remove from the DOM entirely.
     For ``spawn_workers``, pass ``worker_summaries`` to get one status line per worker.
     Worker rows can be individually marked done (green ✓) or error (red ✗).
+
+    When both ``label`` and ``summary`` are empty the block is
+    *communication-only* (used for hidden ``display_status=False`` tools): the
+    narration is the whole block — spinner-prefixed while running, plain text
+    once finished — and no tool-status line ever appears.
     """
 
     DEFAULT_CSS = """
@@ -920,10 +1083,19 @@ class ToolCallBlock(Static):
                 lines.append(display)
         else:
             display = self._summary if self._summary else self._label
-            if self._communication:
+            if self._communication and display:
                 lines.append(escape(self._communication))
                 lines.append("")  # blank line so the gap matches the inter-block margin
-            lines.append(self._status_markup(display))
+                lines.append(self._status_markup(display))
+            elif self._communication:
+                # Communication-only block (hidden tool): the narration is the
+                # whole block — spinner while running, plain text once done.
+                if self._done and not self._error:
+                    lines.append(escape(self._communication))
+                else:
+                    lines.append(self._status_markup(self._communication))
+            else:
+                lines.append(self._status_markup(display))
         self.update(Text.from_markup("\n".join(lines)))
 
     def _stop_spinner(self) -> None:
@@ -999,3 +1171,4 @@ MessageHandle.register(MessageBubble)
 EphemeralHandle.register(ToolCallBlock)
 TurnStatusHandle.register(TurnStatusBar)
 ThinkingHandle.register(ThinkingBlock)
+PendingMessageHandle.register(PendingMessageBubble)

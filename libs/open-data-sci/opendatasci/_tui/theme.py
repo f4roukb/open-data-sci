@@ -1,7 +1,18 @@
-"""Color theme definitions for OpenDataSci TUI."""
+"""Color theme definitions for OpenDataSci TUI.
+
+Every theme must define the full set of keys (see ``REQUIRED_KEYS``): the
+palettes are exported as Textual CSS variables via
+``OpenDataSciApp.get_css_variables`` and referenced from ``styles.tcss`` and
+widget ``DEFAULT_CSS`` — no color literal should appear outside this module.
+"""
 
 # Default dark theme — deeper backgrounds, muted accents
 DARK: dict[str, str] = {
+    "background": "#060a10",  # screen background
+    "surface": "#0d1117",  # header / input / popup / code-fence background
+    "surface_alt": "#0e1520",  # user bubble / blockquote / scrollbar track
+    "muted_bg": "#1e2228",  # thinking bubble background
+    "warning_bg": "#1c1408",  # question / pending bubble background
     "accent": "#79c0ff",  # soft blue
     "success": "#4caa5e",  # muted sage-green
     "error": "#c97a74",  # muted terracotta-red
@@ -20,6 +31,11 @@ DARK: dict[str, str] = {
 
 # Color-blind safe theme — Okabe-Ito palette
 VISIBLE: dict[str, str] = {
+    "background": "#060a10",
+    "surface": "#0d1117",
+    "surface_alt": "#0a1520",
+    "muted_bg": "#1e2228",
+    "warning_bg": "#1c1608",
     "accent": "#56b4e9",  # sky blue
     "success": "#009e73",  # bluish green / teal
     "error": "#d55e00",  # vermilion
@@ -29,7 +45,7 @@ VISIBLE: dict[str, str] = {
     "text_secondary": "#a0b0c0",
     "text_muted": "#8090a0",
     "text_dim": "#3d4a5c",
-    "separator": "#1a2030",
+    "separator": "#1e2d40",
     "logo": "#e69f00",
     "timer": "cyan",
     "tool_running": "#56b4e9",
@@ -38,6 +54,11 @@ VISIBLE: dict[str, str] = {
 
 # Light theme — light background, dark text (GitHub-inspired)
 LIGHT: dict[str, str] = {
+    "background": "#ffffff",
+    "surface": "#f6f8fa",
+    "surface_alt": "#eaeef2",
+    "muted_bg": "#eaeef2",
+    "warning_bg": "#fff8c5",
     "accent": "#0969da",
     "success": "#1a7f37",
     "error": "#cf222e",
@@ -56,6 +77,11 @@ LIGHT: dict[str, str] = {
 
 # Solarized Dark — Ethan Schoonover palette
 SOLARIZED: dict[str, str] = {
+    "background": "#002b36",  # base03
+    "surface": "#073642",  # base02
+    "surface_alt": "#08404e",
+    "muted_bg": "#0a3540",
+    "warning_bg": "#2c2d10",
     "accent": "#268bd2",  # blue
     "success": "#859900",  # green
     "error": "#dc322f",  # red
@@ -65,7 +91,7 @@ SOLARIZED: dict[str, str] = {
     "text_secondary": "#93a1a1",  # base1
     "text_muted": "#586e75",  # base01
     "text_dim": "#073642",  # base02
-    "separator": "#002b36",  # base03
+    "separator": "#0e4653",  # lighter than base02 so borders read against it
     "logo": "#cb4b16",  # orange
     "timer": "bright_cyan",
     "tool_running": "#268bd2",
@@ -74,6 +100,11 @@ SOLARIZED: dict[str, str] = {
 
 # Dracula — popular dark palette
 DRACULA: dict[str, str] = {
+    "background": "#21222c",
+    "surface": "#282a36",  # canonical Dracula background
+    "surface_alt": "#2f3140",
+    "muted_bg": "#343746",
+    "warning_bg": "#3b3223",
     "accent": "#bd93f9",  # purple
     "success": "#50fa7b",  # green
     "error": "#ff5555",  # red
@@ -83,12 +114,16 @@ DRACULA: dict[str, str] = {
     "text_secondary": "#6272a4",  # comment
     "text_muted": "#44475a",
     "text_dim": "#282a36",
-    "separator": "#21222c",
+    "separator": "#44475a",  # Dracula current-line — visible against both backgrounds
     "logo": "#f1fa8c",  # yellow
     "timer": "bright_magenta",
     "tool_running": "#8be9fd",  # cyan
     "tool_done": "#50fa7b",
 }
+
+# The keys every palette must define — styles.tcss and widget DEFAULT_CSS
+# reference each of these as a $ods-* CSS variable.
+REQUIRED_KEYS: frozenset[str] = frozenset(DARK)
 
 # Registry of selectable themes. Keys are the names users pass to --theme
 # and to the /themes command.

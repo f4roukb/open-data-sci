@@ -77,7 +77,7 @@ REGION=us-west-2 opendatasci sales.csv --provider bedrock \
   --model us.anthropic.claude-sonnet-4-6
 
 # Load config from file (region set inside the file)
-opendatasci sales.csv --config examples/config_bedrock.yaml
+opendatasci sales.csv --config examples/configs/config_bedrock.yaml
 ```
 
 ### Cross-region inference model IDs
@@ -127,6 +127,8 @@ only the setup and launch command differ.
 
 | Command | What it does |
 |---------|--------------|
+| `/cancel-all-messages` | Cancel all messages queued while the agent was busy |
+| `/cancel-message` | Cancel the most recently queued message |
 | `/compact` | Summarise and compress the conversation to free context |
 | `/reset` | Clear sandbox state and reload data from disk |
 | `/clear` | Clear conversation history, keep sandbox variables |

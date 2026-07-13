@@ -1,6 +1,6 @@
 # Agent
 
-`Agent` is the core conversational AI agent. It wraps a LangGraph state machine that orchestrates LLM calls, tool execution, concurrent workers, and rolling memory.
+`Agent` is the core conversational AI agent. It orchestrates LLM calls, tool execution, concurrent workers, and rolling memory automatically, so you only need to send queries and consume the resulting stream.
 
 ## Lifecycle
 
@@ -55,8 +55,8 @@ async for event in agent.astream(query):
 | Method | Description |
 |--------|-------------|
 | `clear_chat_history()` | Remove all messages and rolling memory summaries. Preserves sandbox state. |
-| `rewind_turn()` | Remove only the last turn (user message + agent response) from the graph state. |
-| `compact_chat_history()` | Use the LLM to summarise old turns, then discard them. Returns the summary text. Use this instead of `clear_chat_history` when you want to keep context across a long session without blowing up the context window. |
+| `rewind_turn()` | Remove only the last turn (user message + agent response) from the conversation. |
+| `compact_chat_history()` | Fold all turn summaries and any existing compaction into a single `ChatHistoryCompaction` record. Returns the compaction text. Use this instead of `clear_chat_history` when you want to preserve context across a long session. |
 
 ```python
 # After many turns, compact instead of clearing:
@@ -72,11 +72,49 @@ print("Compacted:", summary)
       show_source: false
       members:
         - astream
-        - resume_with_input
         - rewind_turn
         - clear_chat_history
         - compact_chat_history
-        - graph
+
+---
+
+## Session manager
+
+A session manager tracks the mapping from a session to its conversation threads in the graph checkpointer. Clearing the conversation (`clear_chat_history`) creates a new thread, so no prior state is visible to the LLM on the next turn.
+
+The default `LocalSessionManager` persists this mapping to `.opendatasci/session.json` inside the workspace. For cloud or multi-process deployments — where two agent instances must share a conversation — replace it with a custom `BaseSessionManager` backed by shared storage:
+
+```python
+import uuid
+from opendatasci.session.session_manager import BaseSessionManager
+
+class RedisSessionManager(BaseSessionManager):
+    def get_or_create_thread(self) -> uuid.UUID: ...
+    def create_thread(self) -> uuid.UUID: ...
+    def get_current_thread(self) -> uuid.UUID: ...
+
+from opendatasci.agents.agents import Agent
+from opendatasci import LocalWorkspace, OpenDataSciConfig
+
+async with Agent(
+    workspace=LocalWorkspace("data/"),
+    session_manager=RedisSessionManager(),
+    config=OpenDataSciConfig(),
+) as agent:
+    ...
+```
+
+::: opendatasci.session.session_manager.BaseSessionManager
+    options:
+      show_root_heading: true
+      show_source: false
+
+---
+
+::: opendatasci.session.session_manager.LocalSessionManager
+    options:
+      show_root_heading: true
+      show_source: false
 
 ---
 
@@ -89,4 +127,4 @@ print("Compacted:", summary)
       show_root_heading: true
       show_source: false
       members:
-        - run
+        - ainvoke

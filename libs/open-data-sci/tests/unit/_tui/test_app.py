@@ -26,7 +26,7 @@ class TestGetVersion:
             "version",
             side_effect=importlib.metadata.PackageNotFoundError,
         ):
-            assert _get_version() == "0.1.0"
+            assert _get_version() == "0.2.0"
 
 
 # ---------------------------------------------------------------------------
@@ -261,3 +261,111 @@ class TestOnInputKeyHistory:
 
         event.stop.assert_not_called()
         assert app._controller._completing is False
+
+
+# ---------------------------------------------------------------------------
+# Ctrl+C / Esc during a running turn (2.1.4)
+# ---------------------------------------------------------------------------
+
+
+class TestCtrlCDuringTurn:
+    """Ctrl+C stops the running turn first; quitting stays a double-press while idle."""
+
+    def _quit_ready_app(self, agent_running: bool) -> OpenDataSciApp:
+        app, _ = _make_app()
+        app._controller.agent_running = agent_running
+        app._controller.stop_agent = AsyncMock()
+        app._quit_requested = False
+        app._quit_timer = None
+        app.exit = MagicMock()
+        app.notify = MagicMock()
+        app.set_timer = MagicMock()
+        return app
+
+    async def test_ctrl_c_stops_running_turn_instead_of_arming_quit(self) -> None:
+        app = self._quit_ready_app(agent_running=True)
+
+        await app.action_request_quit()
+
+        app._controller.stop_agent.assert_awaited_once()
+        assert app._quit_requested is False
+        app.exit.assert_not_called()
+
+    async def test_ctrl_c_while_idle_arms_quit(self) -> None:
+        app = self._quit_ready_app(agent_running=False)
+
+        await app.action_request_quit()
+
+        app._controller.stop_agent.assert_not_awaited()
+        assert app._quit_requested is True
+        app.exit.assert_not_called()
+        app.notify.assert_called_once()
+
+    async def test_second_ctrl_c_while_idle_quits(self) -> None:
+        app = self._quit_ready_app(agent_running=False)
+        app._quit_requested = True
+
+        await app.action_request_quit()
+
+        app.exit.assert_called_once()
+
+
+class TestEscDuringTurn:
+    """A bare Esc during a turn stops the agent; UI dismissals take precedence."""
+
+    def _esc_app(
+        self,
+        *,
+        agent_running: bool = True,
+        has_completion: bool = False,
+        has_paste: bool = False,
+        awaiting_choice: bool = False,
+    ) -> OpenDataSciApp:
+        app, _ = _make_app()
+        controller = app._controller
+        controller.agent_running = agent_running
+        controller.has_completion_matches = has_completion
+        controller.has_paste_attachment = has_paste
+        controller.awaiting_choice = awaiting_choice
+        controller.stop_agent = AsyncMock()
+        app._run_agent = MagicMock()
+        return app
+
+    async def test_bare_esc_stops_running_turn(self) -> None:
+        app = self._esc_app()
+
+        await app.action_focus_input()
+
+        app._controller.stop_agent.assert_awaited_once()
+
+    async def test_esc_does_not_stop_turn_when_idle(self) -> None:
+        app = self._esc_app(agent_running=False)
+
+        await app.action_focus_input()
+
+        app._controller.stop_agent.assert_not_awaited()
+
+    async def test_esc_dismisses_completion_without_stopping_turn(self) -> None:
+        app = self._esc_app(has_completion=True)
+
+        await app.action_focus_input()
+
+        app._controller.hide_completion.assert_called_once()
+        app._controller.stop_agent.assert_not_awaited()
+
+    async def test_esc_discards_paste_without_stopping_turn(self) -> None:
+        app = self._esc_app(has_paste=True)
+
+        await app.action_focus_input()
+
+        app._controller.clear_paste_attachment.assert_called_once()
+        app._controller.stop_agent.assert_not_awaited()
+
+    async def test_esc_cancels_choice_without_stopping_turn(self) -> None:
+        app = self._esc_app(agent_running=False, awaiting_choice=True)
+        app._controller.cancel_choice = MagicMock(return_value="cancel")
+
+        await app.action_focus_input()
+
+        app._run_agent.assert_called_once_with("cancel")
+        app._controller.stop_agent.assert_not_awaited()

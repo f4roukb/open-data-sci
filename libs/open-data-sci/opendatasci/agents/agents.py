@@ -8,7 +8,6 @@ from typing import Any, AsyncIterator, Callable
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
-    HumanMessage,
     RemoveMessage,
     SystemMessage,
     ToolMessage,
@@ -20,24 +19,23 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
-from opendatasci._utils.langchain_utils import (
+from opendatasci._utils.graph_utils import is_interrupt_state_snapshot
+from opendatasci._utils.message_utils import (
     get_final_ai_message,
     get_message_text_content,
-    is_interrupt_state_snapshot,
+    is_final_ai_message,
 )
 from opendatasci._utils.streaming_utils import format_stream_error
-from opendatasci.agents.chat_memory import (
-    ChatHistoryBuilder,
-    ChatHistoryCompactor,
-    TurnSummarizer,
-    extract_thinking_and_text,
-)
+from opendatasci.agents.chat_history import ChatHistoryBuilder
 from opendatasci.agents.graphs import AgentGraphFactory, WorkerGraphFactory
 from opendatasci.agents.states import AgentState
-from opendatasci.agents.turn_memory import AgentLoopCompactor, TurnRewinder
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.base import BaseContextStore
 from opendatasci.context.local import LocalContextStore
+from opendatasci.human_inputs.human_approval import APPROVAL_INTERRUPT_KIND
+from opendatasci.memory.chat_memory import ChatHistoryCompactor
+from opendatasci.memory.messages import AgentToAgentMessage, MessageOrigin, UserMessage
+from opendatasci.memory.turn_memory import TurnRewinder
 from opendatasci.models.factory import (
     _RetryRunnable,
     create_model,
@@ -48,11 +46,13 @@ from opendatasci.prompts.builders import SystemContextBuilder
 from opendatasci.prompts.caching import cached_system_prompt
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory
 from opendatasci.sandbox.srt import SRTSandboxFactory
+from opendatasci.session import BaseSessionManager, LocalSessionManager
 from opendatasci.skills import BaseSkillStore, LocalSkillStore
-from opendatasci.skills.base import Skill
+from opendatasci.skills.base import Skill, SkillDomain
 from opendatasci.streaming import (
     AgentStreamEvent,
     AgentTurnStreamProcessor,
+    ApprovalRequiredEvent,
     ErrorEvent,
     InputRequiredEvent,
     MessageEvent,
@@ -76,19 +76,8 @@ OnEventCallback = Callable[[str, str, "dict[str, Any] | None"], None]
 
 _ARGS_PREVIEW_LEN = 80
 
-__all__ = [
-    "Agent",
-    "ConcurrentWorkerAgent",
-    "SUBAGENT_TAG",
-    "WORKER_MAX_STEPS",
-    "OnEventCallback",
-    "extract_thinking_and_text",
-]
-
 
 class BaseOpenDataSciAgent(ABC):
-    """Abstract interface for the data science agent."""
-
     @abstractmethod
     def astream(self, query: str) -> AsyncIterator[AgentStreamEvent]: ...
 
@@ -124,6 +113,9 @@ class Agent(BaseOpenDataSciAgent):
             local file-based store is created when omitted.
         skill_store: Registry that the agent queries to resolve named skills
             at runtime.  Defaults to the built-in :class:`LocalSkillStore`.
+        session_manager: Tracks the session's conversation threads in the
+            graph checkpointer; clearing the conversation creates a new
+            thread.  Defaults to a file-backed :class:`LocalSessionManager`.
         sandbox_factory: Factory used to create the execution sandbox.
             The sandbox lifetime is tied to the agent's context manager scope.
             Defaults to :class:`SRTSandboxFactory`.
@@ -145,6 +137,7 @@ class Agent(BaseOpenDataSciAgent):
         checkpointer: BaseCheckpointSaver[Any] | None = None,
         tools: list[BaseTool] | None = None,
         session_id: str | None = None,
+        session_manager: BaseSessionManager | None = None,
         config: OpenDataSciConfig | None = None,
     ) -> None:
         self._workspace = workspace
@@ -154,6 +147,7 @@ class Agent(BaseOpenDataSciAgent):
         self._sandbox_factory = sandbox_factory
         self._skill_store = skill_store
         self._context_store = context_store
+        self._session_manager = session_manager
         self._checkpointer = checkpointer
 
     async def __aenter__(self) -> "Agent":
@@ -168,6 +162,11 @@ class Agent(BaseOpenDataSciAgent):
         if self._context_store is None:
             workspace_path = Path(self._workspace.get_reference())
             self._context_store = LocalContextStore(workspace_path=workspace_path)
+        if self._session_manager is None:
+            self._session_manager = LocalSessionManager(
+                workspace_path=Path(self._workspace.get_reference()),
+                session_id=self._session_id,
+            )
         checkpointer = self._checkpointer or MemorySaver()
 
         self._llm: BaseChatModel = create_model(self._config)
@@ -183,9 +182,9 @@ class Agent(BaseOpenDataSciAgent):
                 self._sandbox,
                 self._context_store,
                 self._sandbox_factory,
+                session_id=self._session_id,
                 store=self._skill_store,
                 datasci_config=self._config,
-                save_plan=lambda plan: self._context_store.save_plan(self._session_id, plan),  # type: ignore[union-attr]
             )
 
         tools_restricted = [t for t in self._tools if t.name != ToolName.SPAWN_WORKERS]
@@ -200,17 +199,13 @@ class Agent(BaseOpenDataSciAgent):
             self._llm.bind_tools(self._tools_in_self_review_mode)
         )
 
-        self._system_context_builder = SystemContextBuilder(
-            config=self._config,
+        self._system_context_builder = SystemContextBuilder(config=self._config)
+        self._chat_history_builder = ChatHistoryBuilder(
+            summarizer_llm=self._summarizer_llm,
+            loop_compactor_llm=self._llm,
+            midturn_compaction_threshold=self._config.midturn_compaction_threshold,
             context_store=self._context_store,
             session_id=self._session_id,
-        )
-        summarizer = TurnSummarizer(summarizer_llm=self._summarizer_llm)
-        loop_compactor = AgentLoopCompactor(llm=self._llm)
-        self._chat_history_builder = ChatHistoryBuilder(
-            summarizer=summarizer,
-            loop_compactor=loop_compactor,
-            midturn_compaction_threshold=self._config.midturn_compaction_threshold,
         )
 
         self._graph: CompiledStateGraph = self._build_graph(checkpointer)
@@ -221,29 +216,28 @@ class Agent(BaseOpenDataSciAgent):
 
     @property
     def _graph_config(self) -> RunnableConfig:
-        return {"configurable": {"thread_id": self._session_id}}
+        thread_id = self._session_manager.get_or_create_thread()  # type: ignore[union-attr]
+        return {"configurable": {"thread_id": str(thread_id)}}
 
     @property
     def graph(self) -> CompiledStateGraph:
-        """Return the underlying compiled state graph."""
         return self._graph
 
     def _get_active_llm_with_tools(self, state: AgentState) -> _RetryRunnable:
-        """Return the LLM binding that matches the current agent mode."""
         if state.is_self_review_mode:
             return self._llm_with_tools_self_review
         if state.is_plan_mode:
             return self._llm_with_tools_plan
         return self._llm_with_tools
 
-    def _build_system_context(
-        self, state: AgentState, memory_text: str | None
-    ) -> list[SystemMessage]:
+    def _build_system_context(self, state: AgentState) -> list[SystemMessage]:
         return self._system_context_builder.build(
             active_skills=state.active_skills,
+            active_skill_domain=(
+                state.active_skill_domains[0] if state.active_skill_domains else None
+            ),
             is_plan_mode=state.is_plan_mode,
             is_self_review_mode=state.is_self_review_mode,
-            memory_text=memory_text,
         )
 
     def _build_graph(self, checkpointer: BaseCheckpointSaver[Any] | None) -> CompiledStateGraph:
@@ -256,36 +250,23 @@ class Agent(BaseOpenDataSciAgent):
         ).build()
 
     @classmethod
-    def _prepare_user_message(cls, query: str) -> HumanMessage:
-        """Build the turn-opening HumanMessage.
-
-        The start timestamp and an ``is_input_on_interrupt`` flag are stored in
-        ``additional_kwargs`` so the turn's start time and boundary can be
-        recovered later from the message history (see ``get_last_turn_messages``),
-        instead of being held as per-turn agent state.
-        """
-        return HumanMessage(
-            content=query,
-            additional_kwargs={
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "is_input_on_interrupt": False,
-            },
-        )
+    def _prepare_user_message(cls, query: str) -> UserMessage:
+        return UserMessage(content=query, created_at=datetime.now(timezone.utc))
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     async def astream(self, user_input: str) -> AsyncIterator[AgentStreamEvent]:
-        """Stream a response to *user_input*, yielding ``AgentStreamEvent`` objects.
+        """Stream a response to *user_input*, yielding :class:`AgentStreamEvent` objects.
 
-        If the previous call ended with an ``input_required`` event, pass the
-        user's answer here to resume the interrupted graph run.  Otherwise
-        *user_input* is treated as a new query.
+        If the previous call ended with an :class:`~opendatasci.streaming.InputRequiredEvent`,
+        pass the user's answer here to resume; otherwise *user_input* starts a new turn.
         """
+        thread_id = self._session_manager.get_or_create_thread()  # type: ignore[union-attr]
         config: RunnableConfig = {
             "recursion_limit": AGENT_RECURSION_LIMIT,
-            "configurable": {"thread_id": self._session_id},
+            "configurable": {"thread_id": str(thread_id)},
         }
 
         graph_state = self._graph.get_state(config)
@@ -297,6 +278,7 @@ class Agent(BaseOpenDataSciAgent):
             graph_input = {
                 "messages": [user_msg],
                 "active_skills": [],
+                "active_skill_domains": [],
                 "is_plan_mode": False,
                 "is_self_review_mode": False,
             }
@@ -315,30 +297,40 @@ class Agent(BaseOpenDataSciAgent):
         graph_state = self._graph.get_state(config)
         if is_interrupt_state_snapshot(graph_state):
             intr_value = graph_state.tasks[0].interrupts[0].value
-            yield InputRequiredEvent(
-                content=intr_value["question"],
-                choices=intr_value["choices"],
-            )
+            if isinstance(intr_value, dict) and intr_value.get("kind") == APPROVAL_INTERRUPT_KIND:
+                yield ApprovalRequiredEvent(
+                    command=intr_value["command"],
+                    description=intr_value["description"],
+                    heads_up=intr_value["heads_up"],
+                )
+            else:
+                yield InputRequiredEvent(
+                    content=intr_value["question"],
+                    choices=intr_value["choices"],
+                )
             return
 
-        messages = graph_state.values["messages"]
-        final_ai_msg = get_final_ai_message(messages)
+        completed_turn_messages = graph_state.values["messages"]
+        final_ai_msg = get_final_ai_message(completed_turn_messages)
         final_response = get_message_text_content(final_ai_msg).strip()
 
-        self._chat_history_builder.schedule_turn_summarization(messages)
+        # A clear_chat_history() issued while this turn was streaming created
+        # a new thread; summarizing the cleared turn would leak it back in.
+        if thread_id == self._session_manager.get_current_thread():  # type: ignore[union-attr]
+            self._chat_history_builder.schedule_turn_summarization(completed_turn_messages)
 
         yield ResponseEvent(content=final_response)
 
     async def rewind_turn(self) -> None:
         """Remove the last turn from the conversation history."""
         snapshot = await self._graph.aget_state(self._graph_config)
-        messages = snapshot.values.get("messages", [])
-        if not messages:
+        ongoing_turn_messages = snapshot.values.get("messages", [])
+        if not ongoing_turn_messages:
             return
-        self._chat_history_builder.cancel_pending()
+        self._chat_history_builder.cancel_pending_tasks()
         rewinder = TurnRewinder()
-        new_messages = rewinder.rewind_last_turn(messages)
-        removed = messages[len(new_messages) :]
+        kept_messages = rewinder.rewind_last_turn(ongoing_turn_messages)
+        removed = ongoing_turn_messages[len(kept_messages) :]
         if removed:
             self._graph.update_state(
                 self._graph_config,
@@ -346,67 +338,59 @@ class Agent(BaseOpenDataSciAgent):
             )
 
     async def clear_chat_history(self) -> None:
-        """Clear conversation history and rolling memory (preserves session state)."""
-        snapshot = await self._graph.aget_state(self._graph_config)
-        messages = snapshot.values.get("messages", [])
-        self._chat_history_builder.cancel_pending()
-        updates: dict[str, Any] = {"turn_summaries": [], "session_preamble": None}
-        if messages:
-            updates["messages"] = [RemoveMessage(id=msg.id) for msg in messages]
-        self._graph.update_state(self._graph_config, updates)
+        """Clear all conversation context (preserves session state such as the sandbox).
+
+        Drops the conversation history, turn summaries, compaction, active
+        skills, mode flags, and any pending interrupt by starting a fresh
+        checkpointer thread; cancels any in-flight turn summarization; and
+        deletes the session's persisted plan so it is no longer recalled.
+        """
+        self._chat_history_builder.cancel_pending_tasks()
+        self._session_manager.create_thread()  # type: ignore[union-attr]
+        if self._context_store is not None:
+            self._context_store.clear_plans(self._session_id)
 
     async def compact_chat_history(self) -> str:
-        """Compact the conversation history using the LLM.
+        """Fold the rolling turn summaries into a single compaction summary.
 
-        Older turns are summarised and discarded; the most recent turn is kept
-        verbatim.  Returns the summary text, or a placeholder when there is not
-        enough history to compact.
+        Includes any existing compaction, all turn summaries, and the current
+        completed turn (if any) in the compaction context. Clears turn summaries
+        and replaces any existing compaction with the new one. An ongoing (incomplete)
+        turn is left untouched.
+
+        Returns the compaction text, or a placeholder when there is nothing to compact.
         """
         snapshot = self._graph.get_state(self._graph_config)
-        messages = snapshot.values.get("messages", [])
-        if not messages:
-            return "(no conversation to compact)"
+        turn_summaries = snapshot.values.get("turn_summaries", [])
+        existing_compaction = snapshot.values.get("chat_history_compaction", None)
+        current_messages = snapshot.values.get("messages", [])
+
+        # Include the current turn only when it is complete.
+        completed_messages = (
+            current_messages
+            if current_messages and is_final_ai_message(current_messages[-1])
+            else []
+        )
 
         compactor = ChatHistoryCompactor(self._llm)
         try:
-            new_messages = await compactor.compact(messages)
+            compaction_summary = await compactor.compact(
+                existing_compaction=existing_compaction,
+                turn_summaries=turn_summaries,
+                completed_messages=completed_messages,
+            )
         except ValueError:
             return "(no conversation to compact)"
 
-        if len(new_messages) == len(messages):
-            return "(no conversation to compact)"
-
-        # Extract the raw LLM summary from the leading compaction SystemMessage, stripping
-        # the <compacted_history> wrapper added by ChatHistoryCompactor, then discard the
-        # SystemMessage so it never accumulates in graph state.
-        compaction_msg = new_messages[0]
-        raw = (
-            compaction_msg.content
-            if isinstance(compaction_msg.content, str)
-            else str(compaction_msg.content)
-        )
-        _prefix, _suffix = "<compacted_history>\n", "\n</compacted_history>"
-        summary = (
-            raw[len(_prefix) : -len(_suffix)]
-            if raw.startswith(_prefix) and raw.endswith(_suffix)
-            else raw
-        )
-        kept_messages = [m for m in new_messages if not isinstance(m, SystemMessage)]
-
-        # The compacted summary becomes the session preamble so the agent retains
-        # the older context, and the rolling per-turn summaries (now folded into
-        # that summary) are reset.
-        self._chat_history_builder.cancel_pending()
-        message_updates: list[Any] = [RemoveMessage(id=msg.id) for msg in messages] + kept_messages
-        self._graph.update_state(
-            self._graph_config,
-            {
-                "messages": message_updates,
-                "session_preamble": summary,
-                "turn_summaries": [],
-            },
-        )
-        return summary
+        self._chat_history_builder.cancel_pending_tasks()
+        updates: dict[str, Any] = {
+            "turn_summaries": [],
+            "chat_history_compaction": compaction_summary,
+        }
+        if completed_messages:
+            updates["messages"] = [RemoveMessage(id=msg.id) for msg in completed_messages]
+        self._graph.update_state(self._graph_config, updates)
+        return compaction_summary.content
 
 
 class ConcurrentWorkerAgent:
@@ -429,14 +413,20 @@ class ConcurrentWorkerAgent:
             build_system_context=self._build_system_context,
         ).build()
 
-    def _build_system_context(
-        self, state: AgentState, memory_text: str | None
-    ) -> list[SystemMessage]:
+    def _build_system_context(self, state: AgentState) -> list[SystemMessage]:
         messages: list[SystemMessage] = [
             SystemMessage(
                 content=cached_system_prompt(self._current_system_prompt, self._config.provider)  # type: ignore[arg-type]
             )
         ]
+        if state.active_skill_domains:
+            messages.append(
+                SystemMessage(
+                    content=cached_system_prompt(
+                        state.active_skill_domains[0].content, self._config.provider
+                    )  # type: ignore[arg-type]
+                )
+            )
         for skill in state.active_skills:
             messages.append(
                 SystemMessage(
@@ -452,12 +442,14 @@ class ConcurrentWorkerAgent:
         on_event: OnEventCallback | None = None,
         messages_out: "list[Any] | None" = None,
         initial_active_skills: "list[Skill] | None" = None,
+        initial_active_skill_domains: "list[SkillDomain] | None" = None,
     ) -> str:
         """Execute *task* to completion and return the final text response."""
         self._current_system_prompt = system_prompt
         initial_state = AgentState(
-            messages=[HumanMessage(content=task)],
+            messages=[AgentToAgentMessage(content=task, origin=MessageOrigin.AGENT)],
             active_skills=list(initial_active_skills or []),
+            active_skill_domains=list(initial_active_skill_domains or []),
         )
         invoke_config: RunnableConfig = {
             "tags": [SUBAGENT_TAG],
@@ -500,8 +492,15 @@ class ConcurrentWorkerAgent:
         if messages_out is not None and final_state is not None:
             final_messages = final_state.get("messages", [])
             final_active_skills: list[Skill] = final_state.get("active_skills", [])
-            dummy_state = AgentState(messages=[], active_skills=final_active_skills)
-            sys_messages = self._build_system_context(dummy_state, None)
+            final_active_skill_domains: list[SkillDomain] = final_state.get(
+                "active_skill_domains", []
+            )
+            dummy_state = AgentState(
+                messages=[],
+                active_skills=final_active_skills,
+                active_skill_domains=final_active_skill_domains,
+            )
+            sys_messages = self._build_system_context(dummy_state)
             messages_out.extend([*sys_messages, *final_messages])
 
         if final_state is None:

@@ -1,16 +1,16 @@
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
+from typing import Any, Awaitable, Callable, Optional
 
 from langchain_core.messages import SystemMessage
 from langchain_core.runnables import RunnableConfig
 
+from opendatasci._utils.mixins import RenderableMessageMixin
+from opendatasci.agents.chat_history import ChatHistoryBuilder
 from opendatasci.agents.states import AgentState
+from opendatasci.memory.messages import AgentMessage
 from opendatasci.models.factory import _RetryRunnable
 
-if TYPE_CHECKING:
-    from opendatasci.agents.chat_memory import ChatHistoryBuilder
-
-BuildSystemContext = Callable[[AgentState, "str | None"], list[SystemMessage]]
+BuildSystemContext = Callable[[AgentState], list[SystemMessage]]
 
 
 class BaseNode(ABC):
@@ -47,7 +47,7 @@ class AgentNode(BaseNode):
         self,
         get_llm_with_tools: Callable[[AgentState], _RetryRunnable],
         build_system_context: BuildSystemContext,
-        chat_history_builder: "ChatHistoryBuilder | None" = None,
+        chat_history_builder: ChatHistoryBuilder | None = None,
     ) -> None:
         self._get_llm_with_tools = get_llm_with_tools
         self._build_system_context = build_system_context
@@ -59,16 +59,20 @@ class AgentNode(BaseNode):
         updates: dict[str, Any] = {}
 
         if self._chat_history_builder is not None:
-            history = await self._chat_history_builder.build(
-                state.messages, state.turn_summaries, state.session_preamble
+            turn_context = await self._chat_history_builder.build(
+                state.messages, state.turn_summaries, state.chat_history_compaction
             )
-            updates["turn_summaries"] = history.turn_summaries
-            system = self._build_system_context(state, history.memory_text)
-            messages = system + history.messages
+            updates["turn_summaries"] = turn_context.turn_summaries
+            updates["chat_history_compaction"] = turn_context.chat_history_compaction
+            system = self._build_system_context(state)
+            messages = system + turn_context.messages
         else:
-            system = self._build_system_context(state, None)
-            messages = system + list(state.messages)
+            system = self._build_system_context(state)
+            messages = system + [
+                m.render() if isinstance(m, RenderableMessageMixin) else m for m in state.messages
+            ]
 
-        response = await self._get_llm_with_tools(state).ainvoke(messages, config)
+        _raw = await self._get_llm_with_tools(state).ainvoke(messages, config)
+        response = AgentMessage.from_langchain(_raw)
         updates["messages"] = [response]
         return updates

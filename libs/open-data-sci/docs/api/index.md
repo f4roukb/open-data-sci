@@ -2,30 +2,15 @@
 
 This section documents the full public Python API for `opendatasci`.
 
-## Package structure
+## What you can do with it
 
-```
-opendatasci/
-├── __init__.py           # Public re-exports: create_agent, Agent,
-│                         # OpenDataSciConfig, LocalWorkspace, AgentStreamEvent,
-│                         # SandboxExecResult, PreparedHistory
-├── configs.py            # OpenDataSciConfig — all settings in one dataclass
-├── agents/
-│   ├── agents.py         # Agent, ConcurrentWorkerAgent
-│   ├── agents_factory.py # create_agent() convenience factory
-│   └── chat_memory.py    # PreparedHistory, ChatHistoryCompactor, TurnSummarizer
-├── workspace/
-│   ├── base.py           # BaseWorkspace (ABC)
-│   └── local.py          # LocalWorkspace
-├── sandbox/
-│   └── base.py           # BaseSandbox, BaseSandboxFactory, SandboxExecResult
-├── streaming/
-│   └── events.py         # AgentStreamEvent
-├── context/
-│   └── base.py           # BaseContextStore
-└── _tui/
-    └── service.py        # OpenDataSciTuiService
-```
+- **Run the agent** — build and converse with an agent via `create_agent()` or `Agent` directly.
+- **Configure it** — choose a provider, model, and behaviour via `OpenDataSciConfig`.
+- **Stream its output** — consume typed events (`AgentStreamEvent`) as the agent thinks, calls tools, and answers.
+- **Point it at your data** — `LocalWorkspace` (or your own `BaseWorkspace` backend) tells the agent where to find files.
+- **Inspect and manage memory** — `ChatTurnContext` and friends let you reason about what the agent remembers.
+- **Bring your own execution backend** — implement `BaseSandbox` / `BaseSandboxFactory` to run agent code somewhere other than the bundled local sandbox.
+- **Embed the terminal experience** — `OpenDataSciTuiService` is the layer the TUI is built on, for embedding it elsewhere.
 
 ## Public API summary
 
@@ -34,12 +19,12 @@ All of the following are importable directly from `opendatasci`:
 ```python
 from opendatasci import (
     create_agent,           # Factory: build a fully-wired agent from a path
-    Agent,       # The agent class itself
+    Agent,                  # The agent class itself
     OpenDataSciConfig,      # Configuration dataclass
     LocalWorkspace,         # Filesystem-backed workspace
     AgentStreamEvent,       # Streaming event dataclass
     SandboxExecResult,      # Code execution result dataclass
-    PreparedHistory,        # Assembled turn context (messages + memory text)
+    ChatTurnContext,        # Assembled per-turn context (compaction + summaries + ongoing turn messages)
 )
 ```
 
@@ -48,10 +33,11 @@ from opendatasci import (
 | Page | What it covers |
 |------|---------------|
 | [create_agent](open_data_sci.md) | `create_agent()` — the recommended way to build an agent |
-| [Agent](agent.md) | Full agent class: `astream`, `rewind_turn`, `compact_chat_history`, … |
+| [Agent](agent.md) | Full agent class: `astream`, `rewind_turn`, `compact_chat_history`, `BaseSessionManager`, … |
 | [OpenDataSciConfig](config.md) | All configuration fields and environment variable mappings |
 | [TUI Service](session_manager.md) | `OpenDataSciTuiService` — service layer used by the terminal UI |
-| [Memory](memory.md) | `PreparedHistory`, `ChatHistoryCompactor` |
+| [Memory](memory.md) | `ChatTurnContext`, `ChatTurnSummary`, `ChatHistoryCompaction`, message provenance tagging |
 | [Workspace](workbench.md) | `BaseWorkspace`, `LocalWorkspace` |
+| [Skills](skills.md) | `Skill`, `SkillDomain`, `BaseSkillStore`, `LocalSkillStore` |
 | [Sandbox & Execution](session.md) | `BaseSandbox`, `SandboxExecResult`, TUI command allowlist |
 | [Events & Types](types.md) | `AgentStreamEvent` — all event types explained |

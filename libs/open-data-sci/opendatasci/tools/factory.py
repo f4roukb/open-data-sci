@@ -1,13 +1,16 @@
 """Tool factories: assemble the right tool sets for main and worker agents."""
 
-from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from langchain_core.tools import BaseTool
 
+from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.base import BaseContextStore
+from opendatasci.human_inputs.human_approval import (
+    HumanApprovalBaseManager,
+    HumanApprovalManager,
+)
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory
 from opendatasci.skills import BaseSkillStore
 from opendatasci.skills.local import LocalSkillStore
@@ -28,9 +31,6 @@ from opendatasci.tools.workspace import create_workspace_tools
 from opendatasci.workspace.base import BaseWorkspace
 from opendatasci.workspace.local import LocalWorkspace
 
-if TYPE_CHECKING:
-    from opendatasci.configs import OpenDataSciConfig
-
 
 class ToolName(str, Enum):
     """Canonical names for all agent tools."""
@@ -39,6 +39,7 @@ class ToolName(str, Enum):
     EXECUTE_CLI = "execute_cli_command"
     LIST_PYTHON_LIBS = "list_python_libs"
     LOAD_SKILL = "load_skill"
+    LIST_SKILLS = "list_skills"
     ENTER_PLAN_MODE = "enter_plan_mode"
     EXIT_PLAN_MODE = "exit_plan_mode"
     ENTER_SELF_REVIEW_MODE = "enter_self_review_mode"
@@ -57,24 +58,14 @@ class ToolName(str, Enum):
 def _base_tools(
     workspace: BaseWorkspace,
     sandbox: BaseSandbox,
-    context: "BaseContextStore | None",
+    context: BaseContextStore | None,
     store: BaseSkillStore,
     persist: bool = True,
+    approval_manager: HumanApprovalBaseManager | None = None,
 ) -> list[BaseTool]:
-    """Return the tools shared by both main and worker agents.
-
-    Args:
-        workspace:    Workspace container.
-        sandbox:      Code execution sandbox.
-        context: I/O boundary for dataset notes and profiles.
-        store:        Skill store used by the ``load_skill`` tool.
-        persist:      When ``False``, write-side tools (``update_dataset_info``)
-                      are excluded and ``profile_dataset`` will not write profiles
-                      to disk.
-    """
     tools: list[BaseTool] = [
         *create_coding_tools(sandbox),
-        *create_cli_tools(sandbox),
+        *create_cli_tools(sandbox, approval_manager=approval_manager),
         *create_data_context_tools(context, sandbox, persist=persist),
         *create_skill_tools(store),
     ]
@@ -85,23 +76,14 @@ def _base_tools(
 
 def create_worker_agent_tools(
     workspace: BaseWorkspace,
-    context: "BaseContextStore | None",
+    context: BaseContextStore | None,
     sandbox: BaseSandbox | None = None,
     store: BaseSkillStore | None = None,
 ) -> list[BaseTool]:
     """Return the tool list for a worker agent.
 
     Workers share the same core tools as the main agent but cannot spawn
-    further workers, plan, or access the web.
-
-    Args:
-        workspace:    Workspace container.
-        context: I/O boundary for dataset notes and profiles.
-        sandbox:      Code execution sandbox.  A new :class:`~opendatasci.sandbox.srt.SRTSandbox`
-                      is created when ``None``.
-        store:        Skill store injected from the caller.  Defaults to a
-                      :class:`~opendatasci.skills.local.LocalSkillStore` rooted
-                      at ``<context.root>/skills``.
+    further sub-workers, plan, or access the web.
     """
     if sandbox is None:
         from opendatasci.sandbox.srt import SRTSandbox
@@ -109,47 +91,42 @@ def create_worker_agent_tools(
         sandbox = SRTSandbox(workspace_path=Path(workspace.get_reference()))
     if store is None:
         user_skills_dir = Path(context.root) / "skills" if context is not None else None
-        store = LocalSkillStore([user_skills_dir] if user_skills_dir is not None else None)
+        user_domains_dir = Path(context.root) / "skill_domains" if context is not None else None
+        store = LocalSkillStore(
+            [user_skills_dir] if user_skills_dir is not None else None,
+            [user_domains_dir] if user_domains_dir is not None else None,
+        )
     return _base_tools(workspace, sandbox, context, store, persist=False)
 
 
 def create_agent_tools(
     workspace: BaseWorkspace,
     sandbox: BaseSandbox,
-    context: "BaseContextStore | None",
+    context: BaseContextStore | None,
     sandbox_factory: BaseSandboxFactory,
+    session_id: str | None = None,
     store: BaseSkillStore | None = None,
-    datasci_config: "OpenDataSciConfig | None" = None,
-    save_plan: "Callable[[str], None] | None" = None,
+    datasci_config: OpenDataSciConfig | None = None,
 ) -> list[BaseTool]:
     """Return the tool list for the main agent.
 
     Extends the worker tool set with planning, worker spawning, web access,
     and user interaction.
-
-    Args:
-        workspace:       Workspace container.
-        sandbox:         Code execution sandbox.
-        context:         I/O boundary for dataset notes and profiles.
-        sandbox_factory: Factory used by spawned workers to create their own
-                         isolated sandboxes.
-        store:           Skill store injected from the caller.  Defaults to a
-                         :class:`~opendatasci.skills.local.LocalSkillStore` rooted
-                         at ``<context.root>/skills``.
-        datasci_config:  LLM configuration forwarded to spawned workers.
-        save_plan:       Callback that persists the final plan via
-                         ``BaseContextStore``.  When provided,
-                         ``enter_plan_mode`` and ``exit_plan_mode`` are added
-                         to the tool list.
     """
+    datasci_config = datasci_config or OpenDataSciConfig()
     if store is None:
         user_skills_dir = Path(context.root) / "skills" if context is not None else None
-        store = LocalSkillStore([user_skills_dir] if user_skills_dir is not None else None)
-    tools = _base_tools(workspace, sandbox, context, store)
-    if datasci_config is not None:
-        tools.extend(create_code_verification_tools(datasci_config))
-    if save_plan is not None:
-        tools.extend(create_planning_tools(save_plan))
+        user_domains_dir = Path(context.root) / "skill_domains" if context is not None else None
+        store = LocalSkillStore(
+            [user_skills_dir] if user_skills_dir is not None else None,
+            [user_domains_dir] if user_domains_dir is not None else None,
+        )
+    # A single manager instance is shared by every tool that supports human approval.
+    approval_manager: HumanApprovalBaseManager = HumanApprovalManager(datasci_config)
+    tools = _base_tools(workspace, sandbox, context, store, approval_manager=approval_manager)
+    tools.extend(create_code_verification_tools(datasci_config))
+    if context is not None and session_id is not None:
+        tools.extend(create_planning_tools(context, session_id))
     tools.extend(create_critic_tools(store))
     tools.extend(
         create_worker_tools(
@@ -161,12 +138,9 @@ def create_agent_tools(
         )
     )
     tools.extend(
-        create_web_tools(
-            datasci_config.extra_web_domains if datasci_config else (),
-            datasci_config.override_web_domains if datasci_config else None,
-        )
+        create_web_tools(datasci_config.extra_web_domains, datasci_config.override_web_domains)
     )
     tools.extend(create_user_interaction_tools())
-    if datasci_config is not None and datasci_config.mcp_servers:
+    if datasci_config.mcp_servers:
         tools.extend(create_mcp_tools(datasci_config.mcp_servers))
     return tools

@@ -1,6 +1,7 @@
 """Unit tests for opendatasci.tools.factory."""
 
 
+import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from opendatasci.sandbox.base import BaseSandboxFactory
@@ -27,6 +28,7 @@ class TestToolName:
             "execute_python_code",
             "execute_cli_command",
             "load_skill",
+            "list_skills",
             "enter_plan_mode",
             "exit_plan_mode",
             "enter_self_review_mode",
@@ -76,6 +78,13 @@ def _make_sandbox_factory() -> MagicMock:
 
 
 class TestCreateWorkerAgentTools:
+    def test_cli_tool_has_no_request_approval_arg(self) -> None:
+        # Worker graphs have no checkpointer, so approval interrupts are
+        # impossible there; workers must get the plain CLI tool.
+        tools = create_worker_agent_tools(_make_workspace(), None, sandbox=_make_sandbox())
+        cli_tool = next(t for t in tools if t.name == ToolName.EXECUTE_CLI)
+        assert "request_approval" not in cli_tool.args
+
     def test_returns_list_of_tools(self) -> None:
         tools = create_worker_agent_tools(_make_workspace(), None, sandbox=_make_sandbox())
         assert isinstance(tools, list)
@@ -139,6 +148,7 @@ class TestWorkerToolSetExact:
             "read_dataset_info",
             "profile_dataset",
             "load_skill",
+            "list_skills",
         }
     )
 
@@ -188,6 +198,14 @@ class TestWorkerToolSetExact:
 
 
 class TestCreateMainAgentTools:
+    @pytest.fixture(autouse=True)
+    def _patch_llm_deps(self):
+        with (
+            patch("opendatasci.tools.factory.HumanApprovalManager"),
+            patch("opendatasci.tools.factory.create_code_verification_tools", return_value=[]),
+        ):
+            yield
+
     def test_includes_cli_tool_via_base(self) -> None:
         tools = create_agent_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())
         names = {t.name for t in tools}
@@ -204,20 +222,35 @@ class TestCreateMainAgentTools:
         assert "web_search" in names
         assert "fetch_url" in names
 
-    def test_includes_planning_tools_when_save_plan_provided(self) -> None:
+    def test_includes_planning_tools_when_context_and_session_id_provided(self) -> None:
         tools = create_agent_tools(
             _make_workspace(),
             _make_sandbox(),
-            None,
+            MagicMock(),
             sandbox_factory=_make_sandbox_factory(),
-            save_plan=lambda p: None,
+            session_id="sess1",
+            store=MagicMock(),
         )
         names = {t.name for t in tools}
         assert "enter_plan_mode" in names
         assert "exit_plan_mode" in names
 
-    def test_excludes_planning_tools_when_no_save_plan(self) -> None:
-        tools = create_agent_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())
+    def test_excludes_planning_tools_when_no_context(self) -> None:
+        tools = create_agent_tools(
+            _make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory(), session_id="sess1"
+        )
+        names = {t.name for t in tools}
+        assert "enter_plan_mode" not in names
+        assert "exit_plan_mode" not in names
+
+    def test_excludes_planning_tools_when_no_session_id(self) -> None:
+        tools = create_agent_tools(
+            _make_workspace(),
+            _make_sandbox(),
+            MagicMock(),
+            sandbox_factory=_make_sandbox_factory(),
+            store=MagicMock(),
+        )
         names = {t.name for t in tools}
         assert "enter_plan_mode" not in names
         assert "exit_plan_mode" not in names
@@ -234,12 +267,26 @@ class TestCreateMainAgentTools:
         config.override_web_domains = None
         mock_tool = MagicMock()
         mock_tool.name = "verify_python_code"
-        with patch(
-            "opendatasci.tools.factory.create_code_verification_tools", return_value=mock_tool
+        with (
+            patch(
+                "opendatasci.tools.factory.create_code_verification_tools", return_value=mock_tool
+            ),
+            patch("opendatasci.tools.factory.HumanApprovalManager"),
         ):
             tools = create_agent_tools(_make_workspace(), _make_sandbox(), None, datasci_config=config, sandbox_factory=_make_sandbox_factory())
         names = {t.name for t in tools}
         assert "mcp" not in " ".join(names).lower()
+
+    def test_cli_tool_has_request_approval_arg(self) -> None:
+        config = MagicMock()
+        config.mcp_servers = []
+        config.extra_web_domains = []
+        config.override_web_domains = None
+        with patch("opendatasci.tools.factory.HumanApprovalManager") as mock_manager_cls:
+            tools = create_agent_tools(_make_workspace(), _make_sandbox(), None, datasci_config=config, sandbox_factory=_make_sandbox_factory())
+        mock_manager_cls.assert_called_once_with(config)
+        cli_tool = next(t for t in tools if t.name == ToolName.EXECUTE_CLI)
+        assert "request_approval" in cli_tool.args
 
     def test_includes_critic_tools_unconditionally(self) -> None:
         tools = create_agent_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())

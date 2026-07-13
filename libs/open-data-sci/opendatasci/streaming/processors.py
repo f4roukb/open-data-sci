@@ -4,7 +4,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, ToolMessage
 
-from opendatasci._utils.langchain_utils import get_message_text_content
+from opendatasci._utils.message_utils import get_message_text_content
 from opendatasci.streaming.events import (
     AgentStreamEvent,
     MessageEvent,

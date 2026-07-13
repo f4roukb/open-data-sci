@@ -6,6 +6,8 @@ from pathlib import Path
 
 from rich.markup import escape as escape_markup
 
+from .theme import active as theme
+
 # Matches @path/to/file  or  @Makefile  or  @.env
 _FILE_REF_RE = re.compile(r"@(\S+?)(?=\s|$)")
 
@@ -31,8 +33,9 @@ def _parse_file_refs(text: str) -> tuple[str, list[_FileRef]]:
 def _build_user_display(clean_text: str, refs: list[_FileRef]) -> str:
     """Build the Rich-markup string shown in the user bubble."""
     parts = []
+    accent = theme["accent"]
     for ref in refs:
-        parts.append(rf"[bold #58a6ff]\[{ref.display_name}][/bold #58a6ff]")
+        parts.append(rf"[bold {accent}]\[{ref.display_name}][/bold {accent}]")
     if clean_text:
         parts.append(escape_markup(clean_text))
     return "\n".join(parts)
@@ -146,7 +149,8 @@ class PasteAttachment:
 
     @property
     def pill_markup(self) -> str:
-        return rf"[bold #58a6ff]\[{escape_markup(self.display_label)}][/bold #58a6ff]"
+        accent = theme["accent"]
+        return rf"[bold {accent}]\[{escape_markup(self.display_label)}][/bold {accent}]"
 
     @property
     def xml_tag(self) -> str:

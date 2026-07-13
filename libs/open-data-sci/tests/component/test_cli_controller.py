@@ -35,6 +35,7 @@ from opendatasci.streaming.events import (
 from opendatasci._tui.adapter import (
     EphemeralHandle,
     MessageHandle,
+    PendingMessageHandle,
     ThinkingHandle,
     TurnStatusHandle,
     UIAdapter,
@@ -52,7 +53,6 @@ class _RecordingMessageHandle(MessageHandle):
         self.role = role
         self.contents: list[str] = [content] if content else []
         self.finished = False
-        self.summary: str | None = None
 
     def append(self, chunk: str) -> None:
         self.contents.append(chunk)
@@ -62,10 +62,6 @@ class _RecordingMessageHandle(MessageHandle):
 
     def finish(self) -> None:
         self.finished = True
-
-    def finish_with_summary(self, text: str) -> None:
-        self.finished = True
-        self.summary = text
 
     @property
     def text(self) -> str:
@@ -133,6 +129,15 @@ class _RecordingTurnStatus(TurnStatusHandle):
         self.last_context = (context_tokens, cached_tokens)
 
 
+class _RecordingPendingMessage(PendingMessageHandle):
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.removed = False
+
+    def remove(self) -> None:
+        self.removed = True
+
+
 class _RecordingUI(UIAdapter):
     """In-memory UIAdapter that records every call for assertion."""
 
@@ -149,6 +154,8 @@ class _RecordingUI(UIAdapter):
         self.cleared = 0
         self.stop_agent_calls = 0
         self.input_values: list[tuple[str, int | None]] = []
+        self.pending_messages: list[_RecordingPendingMessage] = []
+        self.approval_prompts: list[tuple[str, str]] = []
 
     def add_message(self, role: str, content: str = "") -> MessageHandle:
         h = _RecordingMessageHandle(role, content)
@@ -160,6 +167,11 @@ class _RecordingUI(UIAdapter):
 
     def add_turn_status_bar(self) -> TurnStatusHandle:
         return _RecordingTurnStatus()
+
+    def add_pending_message(self, text: str) -> PendingMessageHandle:
+        h = _RecordingPendingMessage(text)
+        self.pending_messages.append(h)
+        return h
 
     def add_ephemeral_block(self, communication: str, label: str, summary: str) -> EphemeralHandle:
         return _RecordingEphemeral()
@@ -200,6 +212,9 @@ class _RecordingUI(UIAdapter):
 
     def show_workspace_panel(self, files: list[str]) -> None:
         self.workspace_panels.append(files)
+
+    def show_approval_prompt(self, description: str, heads_up: str) -> None:
+        self.approval_prompts.append((description, heads_up))
 
     def show_attachment(self, label: str) -> None:
         self.attachment_labels.append(label)
@@ -286,13 +301,16 @@ class TestOnSubmit:
         # The user bubble must have been added.
         assert any(m.role == "user" for m in ui.messages)
 
-    async def test_busy_agent_rejects_input(self):
+    async def test_busy_agent_queues_input_instead_of_running(self):
         ctrl, ui = _make_controller(service=_make_service_stub())
         ctrl._agent_running = True
         action, _ = await ctrl.on_submit("Another question")
         assert action == ""
-        # Last message should warn the user.
-        assert any("busy" in m.text.lower() for m in ui.messages)
+        # No new chat message — the input is pinned instead.
+        assert ui.messages == []
+        assert len(ui.pending_messages) == 1
+        assert ui.pending_messages[0].text == "Another question"
+        assert len(ctrl._pending_queue) == 1
 
     async def test_slash_command_quit(self):
         ctrl, _ = _make_controller(service=_make_service_stub())
@@ -345,7 +363,7 @@ class TestSlashCommands:
         ctrl, ui = _make_controller(service=svc)
         await ctrl.on_submit("/compact")
         svc.compact_chat_history.assert_awaited_once()
-        assert any("condensed history" in m.text for m in ui.messages)
+        assert any("Compaction done" in m.text for m in ui.messages)
 
     async def test_compact_reports_failure(self):
         svc = _make_service_stub(compact_raises=RuntimeError("nope"))
@@ -540,7 +558,7 @@ class TestStreamingAllEventTypes:
         assert ui.dividers >= 1
 
     async def test_hidden_tool_call_skips_block(self):
-        """Tools with display=False emit tool_result without a paired ephemeral; no crash."""
+        """Tools with display_status=False emit tool_result without a paired ephemeral; no crash."""
         events = [
             ToolCallEvent(
                 content="{}",
@@ -600,3 +618,222 @@ class TestServiceNotReadyHandling:
         ctrl, ui = _make_controller(service=svc)
         await ctrl.on_submit("/ls-workspace")
         assert any("not ready" in m.text for m in ui.messages)
+
+
+class TestPendingMessageQueueDrain:
+    """Messages queued while the agent is busy are drained automatically after the turn ends."""
+
+    async def test_queued_message_processed_after_turn_completes(self):
+        events = [ResponseEvent(content="ok")]
+        svc = _make_service_stub(astream_events=events)
+        ctrl, ui = _make_controller(service=svc)
+
+        # Manually queue a message as if the user submitted while agent was busy.
+        msg = ctrl._pending_queue.enqueue("queued query", "queued display")
+        handle = MagicMock()
+        ctrl._pending_handles[msg.id] = handle
+
+        await ctrl.run_agent("first query")
+
+        # The dequeue path adds a user message for the queued display.
+        user_msgs = [m for m in ui.messages if m.role == "user"]
+        assert any("queued display" in m.text for m in user_msgs)
+        # The pending handle must be removed once the message is picked up.
+        handle.remove.assert_called_once()
+
+    async def test_queue_empty_after_drain(self):
+        events = [ResponseEvent(content="done")]
+        svc = _make_service_stub(astream_events=events)
+        ctrl, ui = _make_controller(service=svc)
+
+        ctrl._pending_queue.enqueue("q", "d")
+        await ctrl.run_agent("first query")
+
+        assert ctrl._pending_queue.is_empty()
+
+    async def test_queued_messages_run_in_submission_order(self):
+        events = [ResponseEvent(content="done")]
+        svc = _make_service_stub(astream_events=events)
+        ctrl, ui = _make_controller(service=svc)
+
+        for label in ["first", "second", "third"]:
+            ctrl._pending_queue.enqueue(f"{label} query", f"{label} display")
+
+        await ctrl.run_agent("initial query")
+
+        user_msgs = [m for m in ui.messages if m.role == "user"]
+        displays = [m.text for m in user_msgs]
+        # User messages for queued items appear in enqueue order.
+        first_idx = next(i for i, d in enumerate(displays) if "first display" in d)
+        second_idx = next(i for i, d in enumerate(displays) if "second display" in d)
+        third_idx = next(i for i, d in enumerate(displays) if "third display" in d)
+        assert first_idx < second_idx < third_idx
+
+    async def test_drain_stops_when_choice_prompt_active(self):
+        events = [
+            InputRequiredEvent(content="Choose:", choices=["Yes", "No"]),
+            ResponseEvent(content=""),
+        ]
+        svc = _make_service_stub(astream_events=events)
+        ctrl, ui = _make_controller(service=svc)
+
+        ctrl._pending_queue.enqueue("follow-up", "follow-up display")
+        await ctrl.run_agent("initial query")
+
+        # The queue still has the pending message because we're waiting for a choice.
+        assert not ctrl._pending_queue.is_empty()
+        assert ctrl.awaiting_choice is True
+
+
+class TestCancelPendingMessages:
+    """/cancel-all-messages and /cancel-message manage the pending queue."""
+
+    async def test_cancel_all_messages_clears_queue(self):
+        svc = _make_service_stub()
+        ctrl, ui = _make_controller(service=svc)
+        ctrl._agent_running = True
+
+        await ctrl.on_submit("pending 1")
+        await ctrl.on_submit("pending 2")
+        ctrl._agent_running = False
+
+        await ctrl.on_submit("/cancel-all-messages")
+
+        assert ctrl._pending_queue.is_empty()
+
+    async def test_cancel_all_messages_reports_count(self):
+        svc = _make_service_stub()
+        ctrl, ui = _make_controller(service=svc)
+        ctrl._agent_running = True
+        await ctrl.on_submit("pending 1")
+        await ctrl.on_submit("pending 2")
+        ctrl._agent_running = False
+
+        await ctrl.on_submit("/cancel-all-messages")
+
+        assert any("2" in m.text and "Cancelled" in m.text for m in ui.messages)
+
+    async def test_cancel_all_messages_on_empty_queue_says_nothing_to_cancel(self):
+        svc = _make_service_stub()
+        ctrl, ui = _make_controller(service=svc)
+
+        await ctrl.on_submit("/cancel-all-messages")
+
+        assert any("No pending" in m.text for m in ui.messages)
+
+    async def test_cancel_all_messages_removes_pending_handles(self):
+        svc = _make_service_stub()
+        ctrl, ui = _make_controller(service=svc)
+        ctrl._agent_running = True
+        await ctrl.on_submit("pending msg")
+        ctrl._agent_running = False
+
+        # Confirm the pending message pill was shown in the UI.
+        assert len(ui.pending_messages) == 1
+        await ctrl.on_submit("/cancel-all-messages")
+        # The pending message handle must have been removed from the UI.
+        assert ui.pending_messages[0].removed
+
+    async def test_cancel_last_message_removes_only_most_recent(self):
+        svc = _make_service_stub()
+        ctrl, ui = _make_controller(service=svc)
+        ctrl._agent_running = True
+        await ctrl.on_submit("first pending")
+        await ctrl.on_submit("second pending")
+        ctrl._agent_running = False
+
+        await ctrl.on_submit("/cancel-message")
+
+        # One message remains in the queue.
+        assert len(ctrl._pending_queue) == 1
+        assert any("Cancelled last" in m.text for m in ui.messages)
+
+    async def test_cancel_last_message_on_empty_queue_says_nothing_to_cancel(self):
+        svc = _make_service_stub()
+        ctrl, ui = _make_controller(service=svc)
+
+        await ctrl.on_submit("/cancel-message")
+
+        assert any("No pending" in m.text for m in ui.messages)
+
+
+class TestOnInputChanged:
+    """on_input_changed routes through CompletionState and updates the UI."""
+
+    def test_slash_prefix_shows_completion_popup(self):
+        ctrl, ui = _make_controller(service=_make_service_stub())
+        # "/c" matches /clear, /compact, /cancel-*, etc.
+        result = ctrl.on_input_changed("/c")
+        assert result is False
+        assert ctrl.has_completion_matches
+
+    def test_completing_flag_returns_true_without_showing_popup(self):
+        ctrl, ui = _make_controller(service=_make_service_stub())
+        ctrl._completing = True  # simulate: completion handler set the flag
+        result = ctrl.on_input_changed("/clear")
+        assert result is True
+        # Flag was cleared
+        assert not ctrl._completing
+
+    def test_plain_text_does_not_show_completion(self):
+        ctrl, ui = _make_controller(service=_make_service_stub())
+        ctrl.on_input_changed("describe the data")
+        assert not ctrl.has_completion_matches
+
+    def test_hide_completion_called_after_text_clears_slash(self):
+        ctrl, ui = _make_controller(service=_make_service_stub())
+        ctrl.on_input_changed("/c")  # show popup
+        ctrl.on_input_changed("normal text")  # switch away → should hide
+        assert not ctrl.has_completion_matches
+
+    def test_cycle_completion_advances_selection(self):
+        ctrl, ui = _make_controller(service=_make_service_stub())
+        ctrl.on_input_changed("/c")
+        result = ctrl.cycle_completion("/c", direction=1)
+        assert result is True  # a completion was applied
+
+    def test_hide_completion_clears_matches(self):
+        ctrl, ui = _make_controller(service=_make_service_stub())
+        ctrl.on_input_changed("/c")
+        ctrl.hide_completion()
+        assert not ctrl.has_completion_matches
+
+
+class TestSlashCommandArguments:
+    """Slash commands tolerate trailing text — only the head token is matched (2.1.3)."""
+
+    async def test_help_with_trailing_text_still_runs_help(self):
+        ctrl, ui = _make_controller()
+        action, _ = await ctrl.on_submit("/help me please")
+        assert action == ""
+        assert "Unknown command" not in ui.messages[-1].text
+
+    async def test_exit_with_trailing_text_quits(self):
+        ctrl, _ = _make_controller()
+        action, _ = await ctrl.on_submit("/exit now")
+        assert action == "quit"
+
+    async def test_unknown_command_with_args_still_warns(self):
+        ctrl, ui = _make_controller()
+        await ctrl.on_submit("/bogus something")
+        assert "Unknown command" in ui.messages[-1].text
+
+
+class TestBootFailureDeadState:
+    """After a failed boot the app must say so instead of 'still loading' (2.1.5)."""
+
+    async def test_query_after_boot_failure_explains_failed_startup(self):
+        ctrl, ui = _make_controller()
+        ctrl._boot_failed = True
+
+        await ctrl.run_agent("analyse the data")
+
+        assert "Startup failed" in ui.messages[-1].text
+        assert "Still loading" not in ui.messages[-1].text
+
+    async def test_query_while_loading_still_says_loading(self):
+        ctrl, ui = _make_controller()
+
+        await ctrl.run_agent("analyse the data")
+
+        assert "Still loading" in ui.messages[-1].text

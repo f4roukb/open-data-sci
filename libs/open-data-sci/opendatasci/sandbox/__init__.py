@@ -6,9 +6,9 @@ from opendatasci.sandbox.base import (
 from opendatasci.sandbox.srt import SRTSandbox, SRTSandboxFactory
 
 __all__ = [
+    "BaseSandbox",
     "BaseSandboxFactory",
     "SandboxExecResult",
-    "BaseSandbox",
     "SRTSandbox",
     "SRTSandboxFactory",
 ]

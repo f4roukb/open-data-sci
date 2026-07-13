@@ -3,7 +3,7 @@
 Each test mocks the LLM and sandbox at the lowest level and exercises a single
 service method end-to-end through a real ``Agent``:
 
-* ``compact_chat_history`` (LLM-driven history compaction)
+* ``compact_chat_history`` (LLM-driven rolling-summary compaction)
 * ``rewind_turn`` (last-turn removal from conversation history)
 * ``get_workspace_files`` edge cases (no session, missing path)
 * ``load_file`` error-emission path
@@ -14,53 +14,43 @@ service method end-to-end through a real ``Agent``:
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage
 
 from opendatasci._tui.service import OpenDataSciTuiService
-
-
-def _seed_messages(agent, messages):
-    """Add messages directly to the agent's graph state for testing."""
-    agent.graph.update_state(agent._graph_config, {"messages": messages})
-
-
-def _get_messages(agent):
-    """Read current messages from the agent's graph state."""
-    return agent.graph.get_state(agent._graph_config).values.get("messages", [])
+from opendatasci.memory.chat_memory import ChatTurnSummary
 
 
 class TestCompactConversation:
-    """Compact summarises older turns via ChatHistoryCompactor."""
+    """Compact folds the rolling turn summaries into a single compaction summary."""
 
-    async def test_compact_with_empty_history_returns_placeholder(self, loaded_opendatasci_service):
+    async def test_compact_with_nothing_to_compact_returns_placeholder(self, loaded_opendatasci_service):
         result = await loaded_opendatasci_service.compact_chat_history()
         assert "no conversation" in result.lower()
 
     async def test_compact_summarizes_via_llm(
         self, loaded_opendatasci_service, mock_llm
     ):
+        from datetime import datetime, timezone
+        _dt = datetime(2024, 1, 1, tzinfo=timezone.utc)
         agent = loaded_opendatasci_service._agent
-        # Two complete turns are needed; cutoff=1 keeps the last turn verbatim.
-        _seed_messages(agent, [
-            HumanMessage(content="What are the trends?"),
-            AIMessage(content="Upward."),
-            HumanMessage(content="Confirm?"),
-            AIMessage(content="Confirmed."),
-        ])
+        agent.graph.update_state(agent._graph_config, {
+            "turn_summaries": [
+                ChatTurnSummary(turn_start_timestamp=_dt, turn_end_timestamp=_dt, user_message_summary="What are the trends?", actions_summary="", agent_response_summary="Upward."),
+                ChatTurnSummary(turn_start_timestamp=_dt, turn_end_timestamp=_dt, user_message_summary="Confirm?", actions_summary="", agent_response_summary="Confirmed."),
+            ],
+        })
 
         mock_llm.ainvoke = AsyncMock(return_value=AIMessage(content="They chatted briefly."))
 
         summary = await loaded_opendatasci_service.compact_chat_history()
 
         assert summary == "They chatted briefly."
-        # Only the kept turn (last verbatim) remains; no SystemMessage in graph state.
-        remaining = _get_messages(agent)
-        assert len(remaining) == 2
-        assert isinstance(remaining[0], HumanMessage)
-        # Rolling summaries are reset and the compacted summary becomes the preamble.
+        # Rolling summaries are cleared; compaction is stored in chat_history_compaction.
         state = agent.graph.get_state(agent._graph_config).values
         assert state.get("turn_summaries", []) == []
-        assert state.get("session_preamble") == "They chatted briefly."
+        compaction = state.get("chat_history_compaction")
+        assert compaction is not None
+        assert compaction.content == "They chatted briefly."
 
 
 class TestRewindTurn:
