@@ -4,85 +4,19 @@ import ast
 import re
 import tomllib
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import Any, ClassVar, Literal, override
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_core.tools import BaseTool, tool
-from pydantic import BaseModel, Field
+from langchain_core.tools import BaseTool
+from pydantic import BaseModel, Field, PrivateAttr, model_validator
 
+from opendatasci.configs import OpenDataSciConfig
 from opendatasci.human_inputs.human_approval import HumanApprovalBaseManager
 from opendatasci.models.factory import create_model
 from opendatasci.sandbox.base import BaseSandbox, SandboxExecResult
-
-if TYPE_CHECKING:
-    from opendatasci.configs import OpenDataSciConfig
+from opendatasci.tools.base import OpenDataSciBaseTool
 
 PYPROJECT_TOML: Path = Path(__file__).parent.parent / "pyproject.toml"
-
-_COMMAND_DECLINED_MESSAGE = (
-    "The user declined to run this command. If the command had a potential security "
-    "risk, maybe you need to try a safer approach that the user may be more inclined "
-    "to accept. Never attempt to execute harmful commands."
-)
-
-
-@tool
-def list_python_libs() -> str:
-    """Check which Python libraries are available before writing code that imports them.
-
-    Stdlib modules are always present; only non-standard imports need checking.
-    """
-    with PYPROJECT_TOML.open("rb") as fh:
-        data = tomllib.load(fh)
-    libs = data.get("tool", {}).get("opendatasci", {}).get("opendatasci_agent_libs", [])
-    if not libs:
-        return "No agent libraries configured."
-    return ",".join(libs)
-
-
-class _CodeReview(BaseModel):
-    verdict: Literal["LGTM", "NEEDS CHANGES"] = Field(
-        description="Overall verdict: LGTM if the code is correct and optimal, NEEDS CHANGES otherwise."
-    )
-    correctness: str = Field(
-        description=(
-            "Concise findings on correctness: bugs, logical errors, off-by-one errors, "
-            "incorrect API usage, unhandled edge cases, type mismatches. "
-            'Use "No issues found." if none.'
-        )
-    )
-    optimality: str = Field(
-        description=(
-            "Concise findings on optimality: unnecessary latency, excessive memory allocation, "
-            "redundant computation, missed vectorisation, suboptimal data structures. "
-            'Use "No issues found." if none.'
-        )
-    )
-
-
-_REVIEW_SYSTEM_PROMPT = """\
-You are an expert Python code reviewer. Your role is to critically evaluate code \
-before it runs in an expensive or high-latency pipeline stage, where a bug or \
-inefficiency could be very costly to recover from.
-
-Review the provided code on exactly two dimensions:
-
-**Correctness** — bugs, logical errors, off-by-one errors, incorrect API usage, \
-unhandled edge cases, wrong variable names, type mismatches, or any issue that would \
-cause the code to raise an exception or produce incorrect results at runtime.
-
-**Optimality** — unnecessary latency (e.g. redundant passes over large datasets, \
-serial loops that should be vectorised, blocking I/O inside loops), excessive memory \
-allocation, redundant computation, or suboptimal algorithm/data-structure choices \
-that inflate wall-clock time or peak memory usage.
-
-Be terse. Reference specific lines or variable names. Do not explain what the code does.\
-"""
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _format_exec_error(code: str, error: str) -> str:
@@ -144,32 +78,262 @@ def _format_cli_result(result: SandboxExecResult) -> str:
     return "\n".join(parts) if parts else "Command failed."
 
 
-def create_code_verification_tools(datasci_config: "OpenDataSciConfig") -> list[BaseTool]:
-    """Return the ``verify_python_code`` tool pre-wired to *datasci_config*'s LLM."""
-    _llm = create_model(datasci_config).with_structured_output(_CodeReview)
+class ListPythonLibsTool(OpenDataSciBaseTool):
+    """Check available Python libraries."""
 
-    @tool
-    async def verify_python_code(code: str, context: str = "") -> str:
-        """Gate-check Python code for correctness and optimality before a costly execution.
+    class CallArgs(BaseModel):
+        summary: str
+        communication: str
 
-        Returns a LGTM / NEEDS CHANGES verdict with per-dimension findings.
+    name: str = "list_python_libs"
+    description: str = (
+        "Check which Python libraries are available before writing code that imports them.\n\n"
+        "Stdlib modules are always present; only non-standard imports need checking."
+    )
+    args_schema: type[BaseModel] = CallArgs
 
-        # When to use this tool
-        - Before executing code whose failure mid-pipeline would be expensive to recover from:
-          model training, distributed jobs, multi-step preprocessing pipelines.
-        - When the code is non-trivial and bugs would be hard to diagnose post-hoc.
+    @override
+    async def _arun(self, **kwargs: Any) -> str:
+        with PYPROJECT_TOML.open("rb") as fh:
+            data = tomllib.load(fh)
+        libs = data.get("tool", {}).get("opendatasci", {}).get("opendatasci_agent_libs", [])
+        if not libs:
+            return "No agent libraries configured."
+        return ",".join(libs)
 
-        # When NOT to use this tool
-        - When the code is cheap to run — just execute it and fix errors from the output.
-        - As a substitute for running code: verification reduces obvious risk but does not
-          prove correctness.
 
-        Args:
-            code:    Python code to review.
-            context: Optional description of what the code does and any relevant
-                     constraints (e.g. "Trains a gradient-boosting classifier on a
-                     10 M-row DataFrame; must finish in under 30 s and use < 8 GB RAM").
-        """
+class ExecutePythonCodeTool(OpenDataSciBaseTool):
+    """Execute Python code inside the active sandbox."""
+
+    class CallArgs(BaseModel):
+        code: str
+        summary: str
+        communication: str
+
+    name: str = "execute_python_code"
+    description: str = """\
+Execute Python code in the active workspace environment.
+
+# Pre-bound variables
+- ``wb``: workspace data files.
+- ``sheets``: ``{"sheet_name": DataFrame, ...}``
+- ``text_files``: ``{"filename": content, ...}``
+- ``opendatasci_directory``: ``Path`` for saving output files to the workspace.
+- ``save_result(name, value)``: persist a named result for export.
+
+# How to use this tool
+- Assign ``result = ...`` to return a value.
+- Any library can be imported; check ``list_python_libs`` first for non-standard ones.
+- Prefer vectorised operations over row-wise loops on large DataFrames.
+
+# How NOT to use this tool
+- Don't retry the same failing code verbatim — address the structured error before retrying.
+
+Args:
+    code:          Python code to execute.
+    summary:       3-4 word status label (e.g. "Calculating monthly totals").
+    communication: Brief message to the user about what you're doing
+                   (e.g. "Let me load the sales data and check for missing values.").\
+"""
+    args_schema: type[BaseModel] = CallArgs
+
+    sandbox: BaseSandbox
+
+    @override
+    async def _arun(self, code: str, summary: str, communication: str, **kwargs: Any) -> str:
+        exec_result = await self.sandbox.execute(code)
+        if exec_result.success:
+            parts = []
+            if exec_result.stdout:
+                parts.append(f"stdout:\n{exec_result.stdout}")
+            if exec_result.output is not None:
+                parts.append(f"result:\n{exec_result.output}")
+            return "\n".join(parts) if parts else "Code executed successfully (no output)"
+        return _format_exec_error(code, exec_result.error or "")
+
+
+class ExecuteCliCommandTool(OpenDataSciBaseTool):
+    """Run a CLI command in the workspace (no approval gate)."""
+
+    class CallArgs(BaseModel):
+        command: str
+        summary: str
+        communication: str
+
+    name: str = "execute_cli_command"
+    description: str = """\
+Run a read-oriented TUI command inside the active workspace directory.
+
+Useful for inspecting the workspace without Python: listing files,
+searching for patterns, counting lines, or diffing outputs.
+
+# Permitted commands
+``ls``, ``cat``, ``grep``, ``wc``, ``find``, ``head``, ``tail``, ``cut``,
+``diff``, and others in the safe set. ``|`` and ``&&`` are allowed.
+
+# When NOT to use this tool
+- For write operations (file creation, deletion, or modification) — not permitted.
+- When ``list_workspace_files`` already covers the need.
+
+Args:
+    command:       TUI command to run (e.g. ``"ls -la"``, ``"grep -r 'keyword' ."``).
+    summary:       3-4 word status label (e.g. "Listing workspace files").
+    communication: Brief message to the user about what you're doing
+                   (e.g. "Let me see what files are available.").\
+"""
+    args_schema: type[BaseModel] = CallArgs
+
+    sandbox: BaseSandbox
+
+    @override
+    async def _arun(
+        self, command: str, summary: str, communication: str, **kwargs: Any
+    ) -> str:
+        return _format_cli_result(await self.sandbox.execute_cli(command))
+
+
+class ExecuteCliCommandWithApprovalTool(OpenDataSciBaseTool):
+    """Run a CLI command in the workspace with an optional human-approval gate."""
+
+    class CallArgs(BaseModel):
+        command: str
+        summary: str
+        communication: str
+        request_approval: bool = False
+
+    _COMMAND_DECLINED_MESSAGE: ClassVar[str] = (
+        "The user declined to run this command. If the command had a potential security "
+        "risk, maybe you need to try a safer approach that the user may be more inclined "
+        "to accept. Never attempt to execute harmful commands."
+    )
+
+    name: str = "execute_cli_command"
+    description: str = """\
+Run a read-oriented TUI command inside the active workspace directory.
+
+Useful for inspecting the workspace without Python: listing files,
+searching for patterns, counting lines, or diffing outputs.
+
+# Permitted commands
+``ls``, ``cat``, ``grep``, ``wc``, ``find``, ``head``, ``tail``, ``cut``,
+``diff``, and others in the safe set. ``|`` and ``&&`` are allowed.
+
+# When NOT to use this tool
+- For write operations (file creation, deletion, or modification) — not permitted.
+- When ``list_workspace_files`` already covers the need.
+
+Args:
+    command:          TUI command to run (e.g. ``"ls -la"``, ``"grep -r 'keyword' ."``).
+    summary:          3-4 word status label (e.g. "Listing workspace files").
+    communication:    Brief message to the user about what you're doing
+                      (e.g. "Let me see what files are available.").
+    request_approval: Set to True when the command could disrupt the user's
+                      device or active work in any way; execution then pauses
+                      until the user explicitly approves it. Leave False for
+                      trivially safe read-only commands.\
+"""
+    args_schema: type[BaseModel] = CallArgs
+
+    sandbox: BaseSandbox
+    approval_manager: HumanApprovalBaseManager
+
+    @override
+    async def _arun(
+        self,
+        command: str,
+        summary: str,
+        communication: str,
+        request_approval: bool = False,
+        **kwargs: Any,
+    ) -> str:
+        if request_approval:
+            approved = await self.approval_manager.ask_for_command_approval(command)
+            if not approved:
+                return self._COMMAND_DECLINED_MESSAGE
+        return _format_cli_result(await self.sandbox.execute_cli(command))
+
+
+class VerifyPythonCodeTool(OpenDataSciBaseTool):
+    """Gate-check Python code for correctness and optimality."""
+
+    class CallArgs(BaseModel):
+        code: str
+        context: str = ""
+        summary: str
+        communication: str
+
+    class _CodeReview(BaseModel):
+        verdict: Literal["LGTM", "NEEDS CHANGES"] = Field(
+            description="Overall verdict: LGTM if the code is correct and optimal, NEEDS CHANGES otherwise."
+        )
+        correctness: str = Field(
+            description=(
+                "Concise findings on correctness: bugs, logical errors, off-by-one errors, "
+                "incorrect API usage, unhandled edge cases, type mismatches. "
+                'Use "No issues found." if none.'
+            )
+        )
+        optimality: str = Field(
+            description=(
+                "Concise findings on optimality: unnecessary latency, excessive memory allocation, "
+                "redundant computation, missed vectorisation, suboptimal data structures. "
+                'Use "No issues found." if none.'
+            )
+        )
+
+    _REVIEW_SYSTEM_PROMPT: ClassVar[str] = """\
+You are an expert Python code reviewer. Your role is to critically evaluate code \
+before it runs in an expensive or high-latency pipeline stage, where a bug or \
+inefficiency could be very costly to recover from.
+
+Review the provided code on exactly two dimensions:
+
+**Correctness** — bugs, logical errors, off-by-one errors, incorrect API usage, \
+unhandled edge cases, wrong variable names, type mismatches, or any issue that would \
+cause the code to raise an exception or produce incorrect results at runtime.
+
+**Optimality** — unnecessary latency (e.g. redundant passes over large datasets, \
+serial loops that should be vectorised, blocking I/O inside loops), excessive memory \
+allocation, redundant computation, or suboptimal algorithm/data-structure choices \
+that inflate wall-clock time or peak memory usage.
+
+Be terse. Reference specific lines or variable names. Do not explain what the code does.\
+"""
+
+    name: str = "verify_python_code"
+    description: str = """\
+Gate-check Python code for correctness and optimality before a costly execution.
+
+Returns a LGTM / NEEDS CHANGES verdict with per-dimension findings.
+
+# When to use this tool
+- Before executing code whose failure mid-pipeline would be expensive to recover from:
+  model training, distributed jobs, multi-step preprocessing pipelines.
+- When the code is non-trivial and bugs would be hard to diagnose post-hoc.
+
+# When NOT to use this tool
+- When the code is cheap to run — just execute it and fix errors from the output.
+- As a substitute for running code: verification reduces obvious risk but does not
+  prove correctness.
+
+Args:
+    code:    Python code to review.
+    context: Optional description of what the code does and any relevant
+             constraints (e.g. "Trains a gradient-boosting classifier on a
+             10 M-row DataFrame; must finish in under 30 s and use < 8 GB RAM").\
+"""
+    args_schema: type[BaseModel] = CallArgs
+
+    datasci_config: "OpenDataSciConfig"
+    _llm: Any = PrivateAttr()
+
+    @model_validator(mode="after")
+    def _build_llm(self) -> "VerifyPythonCodeTool":
+        self._llm = create_model(self.datasci_config).with_structured_output(self._CodeReview)
+        return self
+
+    @override
+    async def _arun(self, code: str, context: str = "", **kwargs: Any) -> str:
         try:
             ast.parse(code)
         except SyntaxError as exc:
@@ -183,10 +347,10 @@ def create_code_verification_tools(datasci_config: "OpenDataSciConfig") -> list[
             user_content = f"Context: {context}\n\n{user_content}"
 
         messages = [
-            SystemMessage(content=_REVIEW_SYSTEM_PROMPT),
+            SystemMessage(content=self._REVIEW_SYSTEM_PROMPT),
             HumanMessage(content=user_content),
         ]
-        review: _CodeReview = await _llm.ainvoke(messages)  # type: ignore[assignment]
+        review: VerifyPythonCodeTool._CodeReview = await self._llm.ainvoke(messages)  # type: ignore[assignment]
 
         return (
             f"VERDICT: {review.verdict}\n\n"
@@ -194,48 +358,10 @@ def create_code_verification_tools(datasci_config: "OpenDataSciConfig") -> list[
             f"### Optimality\n{review.optimality}"
         )
 
-    return [verify_python_code]
-
 
 def create_coding_tools(sandbox: BaseSandbox) -> list[BaseTool]:
-    """Return execution tools bound to *sandbox*: execute_python_code."""
-
-    @tool
-    async def execute_python_code(code: str, summary: str, communication: str) -> str:
-        """Execute Python code in the active workspace environment.
-
-        # Pre-bound variables
-        - ``wb``: workspace data files.
-        - ``sheets``: ``{"sheet_name": DataFrame, ...}``
-        - ``text_files``: ``{"filename": content, ...}``
-        - ``opendatasci_directory``: ``Path`` for saving output files to the workspace.
-        - ``save_result(name, value)``: persist a named result for export.
-
-        # How to use this tool
-        - Assign ``result = ...`` to return a value.
-        - Any library can be imported; check ``list_python_libs`` first for non-standard ones.
-        - Prefer vectorised operations over row-wise loops on large DataFrames.
-
-        # How NOT to use this tool
-        - Don't retry the same failing code verbatim — address the structured error before retrying.
-
-        Args:
-            code:          Python code to execute.
-            summary:       3-4 word status label (e.g. "Calculating monthly totals").
-            communication: Brief message to the user about what you're doing
-                           (e.g. "Let me load the sales data and check for missing values.").
-        """
-        exec_result = await sandbox.execute(code)
-        if exec_result.success:
-            parts = []
-            if exec_result.stdout:
-                parts.append(f"stdout:\n{exec_result.stdout}")
-            if exec_result.output is not None:
-                parts.append(f"result:\n{exec_result.output}")
-            return "\n".join(parts) if parts else "Code executed successfully (no output)"
-        return _format_exec_error(code, exec_result.error or "")
-
-    return [execute_python_code, list_python_libs]
+    """Return execution tools bound to *sandbox*: execute_python_code and list_python_libs."""
+    return [ExecutePythonCodeTool(sandbox=sandbox), ListPythonLibsTool()]
 
 
 def create_cli_tools(
@@ -250,70 +376,10 @@ def create_cli_tools(
     before the command runs. Worker agents omit it and get the plain tool.
     """
     if approval_manager is None:
+        return [ExecuteCliCommandTool(sandbox=sandbox)]
+    return [ExecuteCliCommandWithApprovalTool(sandbox=sandbox, approval_manager=approval_manager)]
 
-        @tool
-        async def execute_cli_command(command: str, summary: str, communication: str) -> str:
-            """Run a read-oriented TUI command inside the active workspace directory.
 
-            Useful for inspecting the workspace without Python: listing files,
-            searching for patterns, counting lines, or diffing outputs.
-
-            # Permitted commands
-            ``ls``, ``cat``, ``grep``, ``wc``, ``find``, ``head``, ``tail``, ``cut``,
-            ``diff``, and others in the safe set. ``|`` and ``&&`` are allowed.
-
-            # When NOT to use this tool
-            - For write operations (file creation, deletion, or modification) — not permitted.
-            - When ``list_workspace_files`` already covers the need.
-
-            Args:
-                command:       TUI command to run (e.g. ``"ls -la"``, ``"grep -r 'keyword' ."``).
-                summary:       3-4 word status label (e.g. "Listing workspace files").
-                communication: Brief message to the user about what you're doing
-                               (e.g. "Let me see what files are available.").
-            """
-            cli_result = await sandbox.execute_cli(command)
-            return _format_cli_result(cli_result)
-
-        return [execute_cli_command]
-
-    manager = approval_manager
-
-    @tool("execute_cli_command")
-    async def execute_cli_command_with_approval(
-        command: str,
-        summary: str,
-        communication: str,
-        request_approval: bool = False,
-    ) -> str:
-        """Run a read-oriented TUI command inside the active workspace directory.
-
-        Useful for inspecting the workspace without Python: listing files,
-        searching for patterns, counting lines, or diffing outputs.
-
-        # Permitted commands
-        ``ls``, ``cat``, ``grep``, ``wc``, ``find``, ``head``, ``tail``, ``cut``,
-        ``diff``, and others in the safe set. ``|`` and ``&&`` are allowed.
-
-        # When NOT to use this tool
-        - For write operations (file creation, deletion, or modification) — not permitted.
-        - When ``list_workspace_files`` already covers the need.
-
-        Args:
-            command:          TUI command to run (e.g. ``"ls -la"``, ``"grep -r 'keyword' ."``).
-            summary:          3-4 word status label (e.g. "Listing workspace files").
-            communication:    Brief message to the user about what you're doing
-                              (e.g. "Let me see what files are available.").
-            request_approval: Set to True when the command could disrupt the user's
-                              device or active work in any way; execution then pauses
-                              until the user explicitly approves it. Leave False for
-                              trivially safe read-only commands.
-        """
-        if request_approval:
-            approved = await manager.ask_for_command_approval(command)
-            if not approved:
-                return _COMMAND_DECLINED_MESSAGE
-        cli_result = await sandbox.execute_cli(command)
-        return _format_cli_result(cli_result)
-
-    return [execute_cli_command_with_approval]
+def create_code_verification_tools(datasci_config: "OpenDataSciConfig") -> list[BaseTool]:
+    """Return the ``verify_python_code`` tool pre-wired to *datasci_config*'s LLM."""
+    return [VerifyPythonCodeTool(datasci_config=datasci_config)]

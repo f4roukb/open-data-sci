@@ -263,7 +263,7 @@ class TestDisplayFalse:
             ToolCommunicationEvent(
                 content="Reading dataset notes…",
                 tool_call_id="h1",
-                tool_name="read_dataset_info",  # display_status=False in tools_display.py
+                tool_name="ask_user_mcq",  # display_status=False in tools_display.py
             )
         )
         ui.add_ephemeral_block.assert_called_once_with("Reading dataset notes…", "", "")
@@ -284,10 +284,10 @@ class TestDisplayFalse:
             ToolCommunicationEvent(
                 content="Profiling…",
                 tool_call_id="h1",
-                tool_name="profile_dataset",  # display_status=False in tools_display.py
+                tool_name="ask_user_mcq",  # display_status=False in tools_display.py
             )
         )
-        p.handle_tool_call(ToolCallEvent(tool="profile_dataset", tool_call_id="h1", summary=""))
+        p.handle_tool_call(ToolCallEvent(tool="ask_user_mcq", tool_call_id="h1", summary=""))
         ui.add_thinking_block.reset_mock()
         with caplog.at_level(logging.WARNING):
             p.handle_tool_result(ToolResultEvent(tool_call_id="h1"))

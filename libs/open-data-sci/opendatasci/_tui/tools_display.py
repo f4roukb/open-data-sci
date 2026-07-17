@@ -61,33 +61,35 @@ register("execute_python_code", ToolDisplay(label="Code", icon="🐍", summary_a
 register("execute_cli_command", ToolDisplay(label="Command", icon="⌨️", summary_arg="summary"))
 register(
     "list_python_libs",
-    ToolDisplay(label="Checking available libraries", icon="📦", display_status=False),
+    ToolDisplay(label="Checking available libraries", icon="📦", summary_arg="summary"),
 )
-register("enter_plan_mode", ToolDisplay(label="Planning the next steps", icon="🎯"))
-register("exit_plan_mode", ToolDisplay(label="Planning complete", icon="✅"))
+register("enter_plan_mode", ToolDisplay(label="Planning the next steps", icon="🎯", summary_arg="summary"))
+register("exit_plan_mode", ToolDisplay(label="Planning complete", icon="✅", summary_arg="summary"))
 register("load_skill", ToolDisplay(label="Loading skill", icon="🧠", summary_arg="summary"))
 register(
     "list_skills",
-    ToolDisplay(label="Checking available skills", icon="🧭", display_status=False),
+    ToolDisplay(label="Checking available skills", icon="🧭", summary_arg="summary"),
 )
-register("spawn_workers", ToolDisplay(label="Spawning workers", icon="⚙️"))
+register("spawn_workers", ToolDisplay(label="Spawning workers", icon="⚙️", summary_arg="summary"))
 register(
     "read_dataset_info",
     ToolDisplay(
         label="Reading dataset information",
         icon="📚",
         summary_arg="summary",
-        display_status=False,
     ),
 )
 register(
     "update_dataset_info",
-    ToolDisplay(label="Updating dataset notes", icon="📝", display_status=False),
+    ToolDisplay(label="Updating dataset notes", icon="📝", summary_arg="summary"),
 )
-register("profile_dataset", ToolDisplay(label="Profiling dataset", icon="📊", display_status=False))
+register(
+    "profile_dataset",
+    ToolDisplay(label="Profiling dataset", icon="📊", summary_arg="summary"),
+)
 register(
     "list_workspace_files",
-    ToolDisplay(label="Listing workspace files", icon="📁", display_status=False),
+    ToolDisplay(label="Listing workspace files", icon="📁", summary_arg="summary"),
 )
 register(
     "web_search",
@@ -95,11 +97,21 @@ register(
 )
 register(
     "fetch_url",
-    ToolDisplay(
-        label="Fetching web content", icon="🔗", summary_arg="summary", display_status=False
-    ),
+    ToolDisplay(label="Fetching web content", icon="🔗", summary_arg="summary"),
 )
-register("ask_user_mcq", ToolDisplay(label="Question", icon="💬", display_status=False))
-register("enter_self_review_mode", ToolDisplay(label="Reviewing progress so far", icon="🔍"))
-register("exit_self_review_mode", ToolDisplay(label="Done reviewing progress", icon="✅"))
-register("verify_python_code", ToolDisplay(label="Reviewing code", icon="🔎", display_status=False))
+register(
+    "ask_user_mcq",
+    ToolDisplay(label="Question", icon="💬", summary_arg="summary", display_status=False),
+)
+register(
+    "enter_self_review_mode",
+    ToolDisplay(label="Reviewing progress so far", icon="🔍", summary_arg="summary"),
+)
+register(
+    "exit_self_review_mode",
+    ToolDisplay(label="Done reviewing progress", icon="✅", summary_arg="summary"),
+)
+register(
+    "verify_python_code",
+    ToolDisplay(label="Reviewing code", icon="🔎", summary_arg="summary"),
+)

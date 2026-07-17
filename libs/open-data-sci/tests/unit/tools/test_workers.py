@@ -6,7 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from opendatasci.tools.workers import WorkerTask, _run_one, create_worker_tools
+from opendatasci.configs import OpenDataSciConfig
+from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory
+from opendatasci.skills.base import BaseSkillStore
+from opendatasci.tools.workers import SpawnWorkersTool, WorkerTask, create_worker_tools
+from opendatasci.workspace.base import BaseWorkspace
 
 
 # ---------------------------------------------------------------------------
@@ -15,7 +19,7 @@ from opendatasci.tools.workers import WorkerTask, _run_one, create_worker_tools
 
 
 def _make_workspace() -> MagicMock:
-    wb = MagicMock()
+    wb = MagicMock(spec=BaseWorkspace)
     # _run_one does Path(workspace.get_reference()), so a real path-like is needed.
     wb.get_reference.return_value = "/tmp/workspace"
     return wb
@@ -30,8 +34,8 @@ async def _drain_emit_tasks() -> None:
 
 def _make_sandbox_factory() -> MagicMock:
     """Return a mock sandbox factory whose context manager yields a mock sandbox."""
-    factory = MagicMock()
-    sandbox = MagicMock()
+    factory = MagicMock(spec=BaseSandboxFactory)
+    sandbox = MagicMock(spec=BaseSandbox)
     cm = MagicMock()
     cm.__aenter__ = AsyncMock(return_value=sandbox)
     cm.__aexit__ = AsyncMock(return_value=False)
@@ -40,7 +44,7 @@ def _make_sandbox_factory() -> MagicMock:
 
 
 def _make_store() -> MagicMock:
-    store = MagicMock()
+    store = MagicMock(spec=BaseSkillStore)
     store.load = MagicMock(return_value=None)
     return store
 
@@ -94,47 +98,48 @@ class TestGetWorkerToolsStructure:
 
 
 # ---------------------------------------------------------------------------
-# _run_one – direct tests (possible now that it is module-level)
+# _arun_one – direct tests via SpawnWorkersTool instance
 # ---------------------------------------------------------------------------
 
-# ConcurrentWorkerAgent is imported locally inside _run_one to break the
+# ConcurrentWorkerAgent is imported locally inside _arun_one to break the
 # tools → agents → tools circular dependency, so it must be patched at its
 # definition site, not at opendatasci.tools.workers.
 _AGENT_PATCH = "opendatasci.agents.agents.ConcurrentWorkerAgent"
 
 
-class TestRunOne:
-    def _kwargs(self, **overrides):
-        return {
-            "sandbox_factory": _make_sandbox_factory(),
-            "workspace": _make_workspace(),
-            "store": _make_store(),
-            "datasci_config": None,
-            **overrides,
-        }
+def _make_tool(**overrides) -> SpawnWorkersTool:
+    kwargs = {
+        "workspace": _make_workspace(),
+        "datasci_config": None,
+        "sandbox_factory": _make_sandbox_factory(),
+        "store": _make_store(),
+        **overrides,
+    }
+    return SpawnWorkersTool(**kwargs)
 
+
+class TestRunOne:
     @pytest.mark.asyncio
     async def test_returns_agent_output(self) -> None:
+        tool = _make_tool()
         with patch(_AGENT_PATCH) as MockAgent:
             MockAgent.return_value.ainvoke = AsyncMock(return_value="direct output")
-            config = MagicMock()
-            result = await _run_one(
+            result = await tool._arun_one(
                 0,
                 WorkerTask(subtask="Do X.", summary="X"),
-                config,
-                **self._kwargs(),
+                MagicMock(),
             )
         assert result == "direct output"
 
     @pytest.mark.asyncio
     async def test_runtime_error_returned_as_string(self) -> None:
+        tool = _make_tool()
         with patch(_AGENT_PATCH) as MockAgent:
             MockAgent.return_value.ainvoke = AsyncMock(side_effect=RuntimeError("boom"))
-            result = await _run_one(
+            result = await tool._arun_one(
                 0,
                 WorkerTask(subtask="Fail.", summary="F"),
                 MagicMock(),
-                **self._kwargs(),
             )
         assert "boom" in result
 
@@ -142,13 +147,13 @@ class TestRunOne:
     async def test_skill_resolved_from_store(self) -> None:
         store = _make_store()
         store.load = MagicMock(return_value="skill_obj")
+        tool = _make_tool(store=store)
         with patch(_AGENT_PATCH) as MockAgent:
             MockAgent.return_value.ainvoke = AsyncMock(return_value="ok")
-            await _run_one(
+            await tool._arun_one(
                 0,
                 WorkerTask(subtask="T.", summary="s", skill="data_science"),
                 MagicMock(),
-                **self._kwargs(store=store),
             )
         store.load.assert_called_once_with("data_science")
 
@@ -161,13 +166,13 @@ class TestRunOne:
 class TestSpawnWorkersTool:
     def _get_tool(
         self,
-        datasci_config: MagicMock | None = None,
+        datasci_config: OpenDataSciConfig | None = None,
         store: MagicMock | None = None,
     ):
         tools = create_worker_tools(
             _make_workspace(),
             None,
-            datasci_config=datasci_config,
+            datasci_config=datasci_config or OpenDataSciConfig(),
             sandbox_factory=_make_sandbox_factory(),
             store=store,
         )
@@ -181,6 +186,7 @@ class TestSpawnWorkersTool:
             result = await tool.ainvoke(
                 {
                     "subtasks": [WorkerTask(subtask="Do X.", summary="Do X")],
+                    "summary": "s",
                     "communication": "spawning",
                 }
             )
@@ -205,6 +211,7 @@ class TestSpawnWorkersTool:
                         WorkerTask(subtask="Task A.", summary="A"),
                         WorkerTask(subtask="Task B.", summary="B"),
                     ],
+                    "summary": "s",
                     "communication": "spawning",
                 }
             )
@@ -222,6 +229,7 @@ class TestSpawnWorkersTool:
             result = await tool.ainvoke(
                 {
                     "subtasks": [WorkerTask(subtask="Fail task.", summary="Fail")],
+                    "summary": "s",
                     "communication": "spawning",
                 }
             )
@@ -246,6 +254,7 @@ class TestSpawnWorkersTool:
             await tool.ainvoke(
                 {
                     "subtasks": [WorkerTask(subtask="Succeed.", summary="ok")],
+                    "summary": "s",
                     "communication": "go",
                 }
             )
@@ -272,6 +281,7 @@ class TestSpawnWorkersTool:
             await tool.ainvoke(
                 {
                     "subtasks": [WorkerTask(subtask="Task.", summary="my task")],
+                    "summary": "s",
                     "communication": "go",
                 }
             )
@@ -281,12 +291,12 @@ class TestSpawnWorkersTool:
 
     @pytest.mark.asyncio
     async def test_preloaded_skill_applied_to_worker_session(self) -> None:
-        mock_store = MagicMock()
+        mock_store = MagicMock(spec=BaseSkillStore)
         mock_store.load = MagicMock(return_value=None)
         tools = create_worker_tools(
             _make_workspace(),
             None,
-            datasci_config=None,
+            datasci_config=OpenDataSciConfig(),
             sandbox_factory=_make_sandbox_factory(),
             store=mock_store,
         )
@@ -296,6 +306,7 @@ class TestSpawnWorkersTool:
             await tool.ainvoke(
                 {
                     "subtasks": [WorkerTask(subtask="T.", summary="s", skill="data_science")],
+                    "summary": "s",
                     "communication": "go",
                 }
             )
@@ -303,8 +314,7 @@ class TestSpawnWorkersTool:
 
     @pytest.mark.asyncio
     async def test_timeout_uses_agent_config_value(self) -> None:
-        config = MagicMock()
-        config.worker_timeout_seconds = 0.01
+        config = OpenDataSciConfig(worker_timeout_seconds=0.01)
         tool = self._get_tool(datasci_config=config)
         with patch(_AGENT_PATCH) as MockAgent:
             async def _slow_run(*args, **kwargs):
@@ -316,6 +326,7 @@ class TestSpawnWorkersTool:
                 await tool.ainvoke(
                     {
                         "subtasks": [WorkerTask(subtask="Slow.", summary="slow")],
+                        "summary": "s",
                         "communication": "go",
                     }
                 )

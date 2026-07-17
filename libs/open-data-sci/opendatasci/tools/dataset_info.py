@@ -7,10 +7,14 @@ Exposes:
 - ``get_data_context_tools(session)``      – all three tools as a list.
 """
 
-from langchain_core.tools import BaseTool, tool
+from typing import Any, override
+
+from langchain_core.tools import BaseTool
+from pydantic import BaseModel
 
 from opendatasci.context.base import BaseContextStore
 from opendatasci.sandbox.base import BaseSandbox
+from opendatasci.tools.base import OpenDataSciBaseTool
 
 # ---------------------------------------------------------------------------
 # Profiling code generation
@@ -240,79 +244,98 @@ def build_profile_code(path: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def create_read_dataset_info_tools(context: BaseContextStore | None) -> list[BaseTool]:
-    """Return the ``read_dataset_info`` tool bound to *context*."""
+class ReadDatasetInfoTool(OpenDataSciBaseTool):
+    """Load all accumulated knowledge about a dataset — profile card and agent notes."""
 
-    @tool
-    async def read_dataset_info(path: str, summary: str, communication: str) -> str:
-        """Load all accumulated knowledge about a dataset — profile card and agent notes.
+    class CallArgs(BaseModel):
+        path: str
+        summary: str
+        communication: str
 
-        Returns a Markdown string with two sections:
-        - ``# DATASET PROFILING`` — auto-generated profile card (shape, dtypes, null rates,
-          numeric summary, top categoricals).
-        - ``# DATASET NOTES`` — cumulative agent notes from all prior sessions. Primary source
-          of institutional knowledge; read carefully before exploring.
+    name: str = "read_dataset_info"
+    description: str = """\
+Load all accumulated knowledge about a dataset — profile card and agent notes.
 
-        # When to use this tool
-        - Always, before writing any code that reads or processes a dataset.
-        - Even if you profiled the dataset earlier in the session — notes may have been
-          updated by ``update_dataset_info`` since then.
+Returns a Markdown string with two sections:
+- ``# DATASET PROFILING`` — auto-generated profile card (shape, dtypes, null rates,
+  numeric summary, top categoricals).
+- ``# DATASET NOTES`` — cumulative agent notes from all prior sessions. Primary source
+  of institutional knowledge; read carefully before exploring.
 
-        Args:
-            path:          Absolute or relative path to the dataset file or directory.
-            summary:       3-4 word status label (e.g. "Reading train.csv info").
-            communication: Brief message to the user about what you're doing
-                           (e.g. "Let me read existing notes about the dataset.").
-        """
-        if context is None:
+# When to use this tool
+- Always, before writing any code that reads or processes a dataset.
+- Even if you profiled the dataset earlier in the session — notes may have been
+  updated by ``update_dataset_info`` since then.
+
+Args:
+    path:          Absolute or relative path to the dataset file or directory.
+    summary:       3-4 word status label (e.g. "Reading train.csv info").
+    communication: Brief message to the user about what you're doing
+                   (e.g. "Let me read existing notes about the dataset.").\
+"""
+    args_schema: type[BaseModel] = CallArgs
+
+    context: BaseContextStore | None
+
+    @override
+    async def _arun(self, path: str, summary: str, communication: str, **kwargs: Any) -> str:
+        if self.context is None:
             return "Error: No workspace path available."
         try:
-            return await context.read_dataset_info(path)
+            return await self.context.read_dataset_info(path)
         except FileNotFoundError as exc:
             return f"Error: {exc}"
         except Exception as exc:
             return f"Error loading dataset info: {type(exc).__name__}: {exc}"
 
-    return [read_dataset_info]
 
+class ProfileDatasetTool(OpenDataSciBaseTool):
+    """Auto-profile a dataset and return its card (shape, dtypes, null rates, distributions)."""
 
-def create_profile_dataset_tools(
-    context: BaseContextStore | None, sandbox: BaseSandbox, persist: bool = True
-) -> list[BaseTool]:
-    """Return the ``profile_dataset`` tool bound to *context* and *sandbox*."""
+    class CallArgs(BaseModel):
+        path: str
+        summary: str
+        communication: str
 
-    @tool
-    async def profile_dataset(path: str, summary: str, communication: str) -> str:
-        """Auto-profile a dataset and return its card (shape, dtypes, null rates, distributions).
+    name: str = "profile_dataset"
+    description: str = """\
+Auto-profile a dataset and return its card (shape, dtypes, null rates, distributions).
 
-        Profiles are cached — subsequent calls return the existing card without re-scanning.
-        The card covers: shape, dtypes, null rates, numeric summary, top categoricals,
-        data-quality flags, and inferred schema.
+Profiles are cached — subsequent calls return the existing card without re-scanning.
+The card covers: shape, dtypes, null rates, numeric summary, top categoricals,
+data-quality flags, and inferred schema.
 
-        # When to use this tool
-        - Once per new dataset, before exploring it.
-        - When ``read_dataset_info`` returns an empty or stale profile for a dataset.
+# When to use this tool
+- Once per new dataset, before exploring it.
+- When ``read_dataset_info`` returns an empty or stale profile for a dataset.
 
-        # When NOT to use this tool
-        - When a profile was already returned by ``read_dataset_info`` this session — it is current.
+# When NOT to use this tool
+- When a profile was already returned by ``read_dataset_info`` this session — it is current.
 
-        Args:
-            path:          Absolute or relative path to the dataset file or directory.
-            summary:       3-4 word status label (e.g. "Profiling train.csv").
-            communication: Brief message to the user about what you're doing
-                           (e.g. "Let me profile the dataset to understand its structure.").
-        """
-        if context is None:
+Args:
+    path:          Absolute or relative path to the dataset file or directory.
+    summary:       3-4 word status label (e.g. "Profiling train.csv").
+    communication: Brief message to the user about what you're doing
+                   (e.g. "Let me profile the dataset to understand its structure.").\
+"""
+    args_schema: type[BaseModel] = CallArgs
+
+    context: BaseContextStore | None
+    sandbox: BaseSandbox
+    persist: bool = True
+
+    @override
+    async def _arun(self, path: str, summary: str, communication: str, **kwargs: Any) -> str:
+        if self.context is None:
             return "Error: No workspace path available."
         try:
-            wc = context
-            resolved, hash_hex, existing = await wc.get_profile_info(path)
+            resolved, hash_hex, existing = await self.context.get_profile_info(path)
 
             if existing is not None:
                 return existing
 
             code = build_profile_code(resolved)
-            exec_result = await sandbox.execute(code)
+            exec_result = await self.sandbox.execute(code)
 
             if not exec_result.success:
                 return f"Profiling failed: {exec_result.error}"
@@ -324,8 +347,8 @@ def create_profile_dataset_tools(
             if content.startswith("__PROFILE_SKIP__"):
                 return content[len("__PROFILE_SKIP__") :]
 
-            if persist:
-                wc.save_dataset_profile(hash_hex, content)
+            if self.persist:
+                self.context.save_dataset_profile(hash_hex, content)
             return content
 
         except FileNotFoundError as exc:
@@ -333,42 +356,73 @@ def create_profile_dataset_tools(
         except Exception as exc:
             return f"Error profiling dataset: {type(exc).__name__}: {exc}"
 
-    return [profile_dataset]
 
+class UpdateDatasetInfoTool(OpenDataSciBaseTool):
+    """Persist findings, observations, and decisions for a dataset across sessions."""
 
-def create_update_dataset_info_tools(context: BaseContextStore | None) -> list[BaseTool]:
-    """Return the ``update_dataset_info`` tool bound to *context*."""
+    class CallArgs(BaseModel):
+        path: str
+        update: str
+        summary: str
+        communication: str
+        merge: bool = False
 
-    @tool
-    async def update_dataset_info(path: str, update: str, merge: bool = False) -> str:
-        """Persist findings, observations, and decisions for a dataset across sessions.
+    name: str = "update_dataset_info"
+    description: str = """\
+Persist findings, observations, and decisions for a dataset across sessions.
 
-        This is how knowledge carries forward — everything written here is surfaced
-        automatically next session via ``read_dataset_info``. Skipping means the
-        next session starts blind to the new knowledge and context about you've gathered
-        about the data and tasks you've tackled around it.
+This is how knowledge carries forward — everything written here is surfaced
+automatically next session via ``read_dataset_info``. Skipping means the
+next session starts blind to the new knowledge and context about you've gathered
+about the data and tasks you've tackled around it.
 
-        # When to use this tool
-        - After every turn that touches a dataset: findings, quality issues, surprises,
-            failed approaches, user decisions, and hypotheses to revisit.
-        - Err on the side of capturing more — even minor or confirmatory findings.
+# When to use this tool
+- After every turn that touches a dataset: findings, quality issues, surprises,
+    failed approaches, user decisions, and hypotheses to revisit.
+- Err on the side of capturing more — even minor or confirmatory findings.
 
-        Args:
-            path:   Absolute or relative path to the dataset file or directory.
-            update: Markdown content to write or append. Make it structured.
-            merge:  ``True`` to append to existing notes (default);
-                    ``False`` to overwrite all prior notes.
-        """
-        if context is None:
+Args:
+    path:          Absolute or relative path to the dataset file or directory.
+    update:        Markdown content to write or append. Make it structured.
+    summary:       3-4 word status label (e.g. "Saving dataset notes").
+    communication: Brief message to the user about what you're doing
+                   (e.g. "Let me save these findings for future sessions.").
+    merge:         ``True`` to append to existing notes (default);
+                   ``False`` to overwrite all prior notes.\
+"""
+    args_schema: type[BaseModel] = CallArgs
+
+    context: BaseContextStore | None
+
+    @override
+    async def _arun(
+        self, path: str, update: str, summary: str, communication: str, merge: bool = False, **kwargs: Any
+    ) -> str:
+        if self.context is None:
             return "Error: No workspace path available."
         try:
-            return await context.update_dataset_info(path, update, merge=merge)
+            return await self.context.update_dataset_info(path, update, merge=merge)
         except FileNotFoundError as exc:
             return f"Error: {exc}"
         except Exception as exc:
             return f"Error updating dataset info: {type(exc).__name__}: {exc}"
 
-    return [update_dataset_info]
+
+def create_read_dataset_info_tools(context: BaseContextStore | None) -> list[BaseTool]:
+    """Return the ``read_dataset_info`` tool bound to *context*."""
+    return [ReadDatasetInfoTool(context=context)]
+
+
+def create_profile_dataset_tools(
+    context: BaseContextStore | None, sandbox: BaseSandbox, persist: bool = True
+) -> list[BaseTool]:
+    """Return the ``profile_dataset`` tool bound to *context* and *sandbox*."""
+    return [ProfileDatasetTool(context=context, sandbox=sandbox, persist=persist)]
+
+
+def create_update_dataset_info_tools(context: BaseContextStore | None) -> list[BaseTool]:
+    """Return the ``update_dataset_info`` tool bound to *context*."""
+    return [UpdateDatasetInfoTool(context=context)]
 
 
 def create_data_context_tools(
