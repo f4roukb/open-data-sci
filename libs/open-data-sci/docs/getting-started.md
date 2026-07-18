@@ -61,9 +61,9 @@ OpenDataSci works with every major LLM provider. Select one via the `--provider`
 
 | Provider | `--provider` | Default model | Auth |
 |----------|-------------|---------------|------|
-| Anthropic *(default)* | `anthropic` | `claude-sonnet-4-6` | `ANTHROPIC_API_KEY` |
-| OpenAI | `openai` | `gpt-5.5` | `OPENAI_API_KEY` |
-| AWS Bedrock | `bedrock` | `us.anthropic.claude-sonnet-4-6` | boto3 credential chain |
+| Anthropic *(default)* | `anthropic` | `claude-sonnet-5` | `ANTHROPIC_API_KEY` |
+| OpenAI | `openai` | `gpt-5.6-sol` | `OPENAI_API_KEY` |
+| AWS Bedrock | `bedrock` | `us.anthropic.claude-sonnet-5` | boto3 credential chain |
 | Google Gemini | `gemini` | `gemini-2.5-pro` | `GOOGLE_API_KEY` |
 | Google Vertex AI | `vertexai` | `gemini-2.5-pro` | Application Default Credentials |
 | Azure OpenAI | `azure` | `gpt-4o` | `AZURE_OPENAI_API_KEY` or service principal |
@@ -151,10 +151,10 @@ opendatasci data.csv
 opendatasci ./my-project/
 
 # Change model
-opendatasci data.csv --provider openai --model gpt-4o
+opendatasci data.csv --provider openai --model gpt-5.6-sol
 
 # Mix providers — heavy primary model, lightweight secondary
-opendatasci data.csv --provider anthropic --secondary-provider openai --secondary-model gpt-5.4-mini
+opendatasci data.csv --provider anthropic --secondary-provider openai --secondary-model gpt-5.6-luna
 
 # Colour-blind-safe theme
 opendatasci data.csv --theme accessible
@@ -208,7 +208,7 @@ from opendatasci import create_agent, OpenDataSciConfig
 
 config = OpenDataSciConfig(
     provider="openai",
-    model="gpt-4o",
+    model="gpt-5.6-sol",
     openai_api_key="sk-...",
     temperature=0.2,
 )
@@ -260,10 +260,10 @@ Pass `--config path/to/file.yaml` to the TUI or use `OpenDataSciConfig.from_yaml
 ```yaml
 # opendatasci_config.yaml
 provider: anthropic
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 
 secondary_provider: openai
-secondary_model: gpt-4o-mini
+secondary_model: gpt-5.6-luna
 
 temperature: 0.1
 thinking_budget: 8000

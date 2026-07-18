@@ -49,10 +49,11 @@ def _fmt_model(provider: str, model_id: str) -> str:
         provider_label = _PROVIDER_DISPLAY[Provider(provider)]
     except (KeyError, ValueError):
         provider_label = provider.title()
-    m = re.search(r"claude-([a-z]+)-(\d+)-(\d+)", model_id)
+    m = re.search(r"claude-([a-z]+)-(\d+)(?:-(\d+))?", model_id)
     if m:
         variant, major, minor = m.groups()
-        return f"{provider_label} Claude {variant.title()} {major}.{minor}"
+        version = f"{major}.{minor}" if minor else major
+        return f"{provider_label} Claude {variant.title()} {version}"
     return f"{provider_label} {model_id}"
 
 

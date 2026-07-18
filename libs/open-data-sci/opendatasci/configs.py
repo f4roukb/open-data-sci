@@ -15,9 +15,9 @@ from opendatasci.skills.local import _BUILTIN_SKILLS_DIRECTORY as _DEFAULT_BUILT
 
 DEFAULT_MODEL: MappingProxyType[Provider, str] = MappingProxyType(
     {
-        Provider.ANTHROPIC: "claude-sonnet-4-6",
-        Provider.OPENAI: "gpt-5.5",
-        Provider.BEDROCK: "us.anthropic.claude-sonnet-4-6",
+        Provider.ANTHROPIC: "claude-sonnet-5",
+        Provider.OPENAI: "gpt-5.6-sol",
+        Provider.BEDROCK: "us.anthropic.claude-sonnet-5",
         Provider.GEMINI: "gemini-2.5-pro",
         Provider.VERTEXAI: "gemini-2.5-pro",
         Provider.AZURE: "gpt-4o",
@@ -29,7 +29,7 @@ DEFAULT_MODEL: MappingProxyType[Provider, str] = MappingProxyType(
 DEFAULT_SECONDARY_MODEL: MappingProxyType[Provider, str] = MappingProxyType(
     {
         Provider.ANTHROPIC: "claude-haiku-4-5",
-        Provider.OPENAI: "gpt-5.4-mini",
+        Provider.OPENAI: "gpt-5.6-luna",
         Provider.BEDROCK: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
         Provider.GEMINI: "gemini-2.5-flash",
         Provider.VERTEXAI: "gemini-2.5-flash",

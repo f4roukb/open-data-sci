@@ -187,11 +187,12 @@ class AgentTurnStreamProcessor:
             if self._stream_input_tokens is None:
                 in_tok = usage_meta.get("input_tokens")
                 if in_tok:
-                    self._stream_input_tokens = int(in_tok)
-                    details = usage_meta.get("input_token_details") or {}
-                    if isinstance(details, dict):
-                        self._stream_cache_read_tokens = int(details.get("cache_read") or 0)
-                        self._stream_cache_creation_tokens = int(details.get("cache_creation") or 0)
+                    (
+                        self._stream_input_tokens,
+                        _,
+                        self._stream_cache_read_tokens,
+                        self._stream_cache_creation_tokens,
+                    ) = self._usage_totals(usage_meta)
             out_tok = usage_meta.get("output_tokens")
             if out_tok:
                 self._stream_final_output_tokens = int(out_tok)

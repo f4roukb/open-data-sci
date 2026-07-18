@@ -5,6 +5,7 @@ from langchain_core.messages import AIMessageChunk
 from langchain_core.outputs import ChatGenerationChunk
 
 from opendatasci.configs import OpenDataSciConfig
+from opendatasci.models.anthropic import supports_adaptive_thinking
 
 try:
     from langchain_aws import ChatBedrockConverse as _BedrockBase
@@ -52,8 +53,8 @@ def create_bedrock_model(config: OpenDataSciConfig) -> BaseChatModel:
     return _CustomBedrockConverse(
         model=config.model,
         region_name=config.aws_region,
-        # Temperature must be 1 when extended thinking is enabled.
-        temperature=1,
+        # No explicit temperature: adaptive thinking doesn't require it, and
+        # Opus 4.7+/Sonnet 5/Fable 5 reject sampling parameters with a 400.
         max_tokens=16000,
         additional_model_request_fields={
             "thinking": {"type": "adaptive"},
@@ -61,7 +62,7 @@ def create_bedrock_model(config: OpenDataSciConfig) -> BaseChatModel:
         },
         # langchain-aws's set_disable_streaming validator only recognises
         # "claude-3" model IDs as streaming-capable.  Claude 4 models
-        # (claude-sonnet-4-6, etc.) match none of the patterns and default to
+        # (claude-sonnet-5, etc.) match none of the patterns and default to
         # disable_streaming=True, causing every response to arrive as a single
         # non-streamed chunk.  Claude 4 supports Bedrock ConverseStream with
         # tools, so we override the auto-detection explicitly.
@@ -73,6 +74,13 @@ def create_bedrock_secondary_model(config: OpenDataSciConfig) -> BaseChatModel:
     """Instantiate a cheap Bedrock model for auxiliary tasks (thinking disabled)."""
     if _BedrockBase is None:
         raise ValueError("langchain-aws is not installed.")
+    if supports_adaptive_thinking(config.secondary_model):
+        # Explicit temperature is rejected on Opus 4.7+, Sonnet 5, and Fable 5.
+        return _BedrockBase(  # type: ignore[no-any-return]
+            model=config.secondary_model,
+            region_name=config.aws_region,
+            max_tokens=1000,
+        )
     return _BedrockBase(  # type: ignore[no-any-return]
         model=config.secondary_model,
         region_name=config.aws_region,

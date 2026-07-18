@@ -109,9 +109,9 @@ For a reusable configuration across projects, create a YAML file and pass it wit
 ```yaml
 # datasci.yaml
 provider: anthropic
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 secondary_provider: openai
-secondary_model: gpt-4o-mini
+secondary_model: gpt-5.6-luna
 temperature: 0.1
 thinking_budget: 8192
 ```
@@ -171,7 +171,7 @@ opendatasci PATH [OPTIONS]
 opendatasci data.xlsx
 
 # Switch provider and primary model
-opendatasci data.csv --provider openai --model gpt-4o
+opendatasci data.csv --provider openai --model gpt-5.6-sol
 
 # Bedrock with a region
 REGION=us-west-2 opendatasci ./project/ --provider bedrock
@@ -180,7 +180,7 @@ REGION=us-west-2 opendatasci ./project/ --provider bedrock
 opendatasci data.parquet --theme accessible
 
 # Mix providers — heavy model on one, lightweight secondary on another
-opendatasci data.csv --provider anthropic --secondary-provider openai --secondary-model gpt-5.4-mini
+opendatasci data.csv --provider anthropic --secondary-provider openai --secondary-model gpt-5.6-luna
 
 # See all available providers
 opendatasci --list-providers
@@ -272,7 +272,7 @@ from opendatasci import OpenDataSciConfig, create_agent
 
 config = OpenDataSciConfig(
     provider="openai",
-    model="gpt-4o",
+    model="gpt-5.6-sol",
     openai_api_key="sk-...",
     temperature=0.2,
 )
@@ -320,10 +320,10 @@ OpenDataSci supports every major LLM provider. Pass `--provider` to the TUI or s
 
 | Provider | Flag | Extra required | Default model |
 |----------|------|----------------|---------------|
-| Anthropic | `anthropic` | *(none — default)* | `claude-sonnet-4-6` |
-| OpenAI | `openai` | *(none)* | `gpt-5.5` |
+| Anthropic | `anthropic` | *(none — default)* | `claude-sonnet-5` |
+| OpenAI | `openai` | *(none)* | `gpt-5.6-sol` |
 | OpenAI-compatible server (e.g. vLLM) | `openai_compatible_server` | *(none)* | `meta-llama/Llama-3.2-3B-Instruct` |
-| AWS Bedrock | `bedrock` | `open-data-sci[aws]` | `us.anthropic.claude-sonnet-4-6` |
+| AWS Bedrock | `bedrock` | `open-data-sci[aws]` | `us.anthropic.claude-sonnet-5` |
 | Google Gemini | `gemini` | `open-data-sci[gemini]` | `gemini-2.5-pro` |
 | Google Vertex AI | `vertexai` | `open-data-sci[gcp]` | `gemini-2.5-pro` |
 | Azure OpenAI | `azure` | `open-data-sci[azure]` | `gpt-4o` |

@@ -18,7 +18,7 @@
 # ── Primary model ─────────────────────────────────────────────────────────────
 # Cross-region inference requires the regional prefix (us., eu., ap.).
 provider: bedrock
-model: us.anthropic.claude-sonnet-4-6
+model: us.anthropic.claude-sonnet-5
 
 # ── Secondary (auxiliary) model ───────────────────────────────────────────────
 secondary_provider: bedrock

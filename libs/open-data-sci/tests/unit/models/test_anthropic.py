@@ -41,15 +41,32 @@ class TestCreateAnthropicPrimaryModel:
         assert fake_chat_anthropic["model"] == config.model
 
     def test_temperature_forced_to_one_for_thinking(self, fake_chat_anthropic) -> None:
-        config = OpenDataSciConfig(provider="anthropic", temperature=0.3)  # type: ignore[arg-type]
+        # Legacy (pre-4.6) models use budget_tokens thinking, which requires temperature=1.
+        config = OpenDataSciConfig(
+            provider="anthropic", model="claude-sonnet-4-5", temperature=0.3
+        )  # type: ignore[arg-type]
         create_anthropic_model(config)
         # Extended thinking requires temperature=1; OpenDataSciConfig's value is ignored here.
         assert fake_chat_anthropic["temperature"] == 1
 
     def test_thinking_block_uses_configured_budget(self, fake_chat_anthropic) -> None:
-        config = OpenDataSciConfig(provider="anthropic", thinking_budget=9999)  # type: ignore[arg-type]
+        # Legacy (pre-4.6) models use the configured budget_tokens.
+        config = OpenDataSciConfig(
+            provider="anthropic", model="claude-sonnet-4-5", thinking_budget=9999
+        )  # type: ignore[arg-type]
         create_anthropic_model(config)
         assert fake_chat_anthropic["thinking"] == {"type": "enabled", "budget_tokens": 9999}
+
+    @pytest.mark.parametrize(
+        "model_id",
+        ["claude-sonnet-5", "claude-sonnet-4-6", "claude-opus-4-8", "claude-fable-5"],
+    )
+    def test_modern_models_use_adaptive_thinking(self, fake_chat_anthropic, model_id) -> None:
+        # Claude 4.6+ / Sonnet 5 / Fable 5: adaptive thinking, no sampling params.
+        config = OpenDataSciConfig(provider="anthropic", model=model_id)  # type: ignore[arg-type]
+        create_anthropic_model(config)
+        assert fake_chat_anthropic["thinking"] == {"type": "adaptive"}
+        assert "temperature" not in fake_chat_anthropic
 
     def test_api_key_from_config_preferred_over_env(self, fake_chat_anthropic, monkeypatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "env-key")

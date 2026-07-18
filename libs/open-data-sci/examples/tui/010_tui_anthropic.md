@@ -131,7 +131,7 @@ Works for `.py`, `.sql`, `.md`, `.ipynb`, and plain text files.
 opendatasci sales.csv
 
 # OpenAI GPT
-opendatasci sales.csv --provider openai --model gpt-4o
+opendatasci sales.csv --provider openai --model gpt-5.6-sol
 
 # Google Gemini
 opendatasci sales.csv --provider gemini --model gemini-2.5-pro
