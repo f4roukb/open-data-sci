@@ -186,9 +186,7 @@ Args:
     sandbox: BaseSandbox
 
     @override
-    async def _arun(
-        self, command: str, summary: str, communication: str, **kwargs: Any
-    ) -> str:
+    async def _arun(self, command: str, summary: str, communication: str, **kwargs: Any) -> str:
         return _format_cli_result(await self.sandbox.execute_cli(command))
 
 
@@ -350,7 +348,7 @@ Args:
             SystemMessage(content=self._REVIEW_SYSTEM_PROMPT),
             HumanMessage(content=user_content),
         ]
-        review: VerifyPythonCodeTool._CodeReview = await self._llm.ainvoke(messages)  # type: ignore[assignment]
+        review: VerifyPythonCodeTool._CodeReview = await self._llm.ainvoke(messages)
 
         return (
             f"VERDICT: {review.verdict}\n\n"

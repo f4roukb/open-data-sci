@@ -396,7 +396,13 @@ Args:
 
     @override
     async def _arun(
-        self, path: str, update: str, summary: str, communication: str, merge: bool = False, **kwargs: Any
+        self,
+        path: str,
+        update: str,
+        summary: str,
+        communication: str,
+        merge: bool = False,
+        **kwargs: Any,
     ) -> str:
         if self.context is None:
             return "Error: No workspace path available."

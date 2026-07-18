@@ -1,27 +1,41 @@
 """Workspace navigation tool: inspect workspace files."""
 
 from pathlib import Path
+from typing import Any, override
 
-from langchain_core.tools import BaseTool, tool
+from langchain_core.tools import BaseTool
+from pydantic import BaseModel
+
+from opendatasci.tools.base import OpenDataSciSyncTool
 
 
-def create_workspace_tools(workspace_path: Path | None) -> list[BaseTool]:
-    """Return workspace tools bound to *workspace_path*."""
+class ListWorkspaceFilesTool(OpenDataSciSyncTool):
+    """Map the active workspace: list all files and directories with sizes."""
 
-    @tool
-    def list_workspace_files(summary: str, communication: str) -> str:
-        """Map the active workspace: list all files and directories with sizes.
+    class CallArgs(BaseModel):
+        summary: str
+        communication: str
 
-        Call when you need to know what files are available in the workspace,
-        and before referencing workspace paths in code.
-        Hidden directories (dot-prefixed) are excluded.
+    name: str = "list_workspace_files"
+    description: str = """\
+Map the active workspace: list all files and directories with sizes.
 
-        Args:
-            summary:       3-4 word status label (e.g. "Listing workspace files").
-            communication: Brief message to the user about what you're doing
-                           (e.g. "Let me check what files are available.").
-        """
-        path = workspace_path
+Call when you need to know what files are available in the workspace,
+and before referencing workspace paths in code.
+Hidden directories (dot-prefixed) are excluded.
+
+Args:
+    summary:       3-4 word status label (e.g. "Listing workspace files").
+    communication: Brief message to the user about what you're doing
+                   (e.g. "Let me check what files are available.").\
+"""
+    args_schema: type[BaseModel] = CallArgs
+
+    workspace_path: Path | None
+
+    @override
+    def _run(self, summary: str, communication: str, **kwargs: Any) -> str:
+        path = self.workspace_path
         if path is None:
             return "No active workspace."
         try:
@@ -52,4 +66,7 @@ def create_workspace_tools(workspace_path: Path | None) -> list[BaseTool]:
         except Exception as exc:
             return f"Error listing workspace files: {type(exc).__name__}: {exc}"
 
-    return [list_workspace_files]
+
+def create_workspace_tools(workspace_path: Path | None) -> list[BaseTool]:
+    """Return workspace tools bound to *workspace_path*."""
+    return [ListWorkspaceFilesTool(workspace_path=workspace_path)]

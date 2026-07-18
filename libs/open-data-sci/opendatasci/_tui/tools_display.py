@@ -63,7 +63,10 @@ register(
     "list_python_libs",
     ToolDisplay(label="Checking available libraries", icon="📦", summary_arg="summary"),
 )
-register("enter_plan_mode", ToolDisplay(label="Planning the next steps", icon="🎯", summary_arg="summary"))
+register(
+    "enter_plan_mode",
+    ToolDisplay(label="Planning the next steps", icon="🎯", summary_arg="summary"),
+)
 register("exit_plan_mode", ToolDisplay(label="Planning complete", icon="✅", summary_arg="summary"))
 register("load_skill", ToolDisplay(label="Loading skill", icon="🧠", summary_arg="summary"))
 register(

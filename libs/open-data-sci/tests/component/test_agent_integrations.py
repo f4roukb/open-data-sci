@@ -77,6 +77,7 @@ class TestSpawnWorkersFlow:
                                     "allow_web_tools": False,
                                 },
                             ],
+                            "summary": "Running workers",
                             "communication": "Running two workers in parallel.",
                         },
                         call_id="sw_1",
@@ -120,12 +121,16 @@ class TestPlanModeFlow:
             [
                 _ai_with_tool_call(
                     "enter_plan_mode",
-                    {"communication": "Need to plan first."},
+                    {"summary": "Planning task", "communication": "Need to plan first."},
                     call_id="ep1",
                 ),
                 _ai_with_tool_call(
                     "exit_plan_mode",
-                    {"final_plan": "1. Profile the data\n2. Compute revenue"},
+                    {
+                        "final_plan": "1. Profile the data\n2. Compute revenue",
+                        "summary": "Plan ready",
+                        "communication": "Plan complete.",
+                    },
                     call_id="ep2",
                 ),
                 AIMessage(content="Plan executed."),
@@ -190,10 +195,18 @@ class TestSelfReviewModeFlow:
     async def test_self_review_round_trip_fires_tool_events(self, loaded_scripted_service):
         svc = await loaded_scripted_service(
             [
-                _ai_with_tool_call("enter_self_review_mode", {"skill": None}, call_id="sr1"),
+                _ai_with_tool_call(
+                    "enter_self_review_mode",
+                    {"summary": "Reviewing work", "communication": "Reviewing.", "skill": None},
+                    call_id="sr1",
+                ),
                 _ai_with_tool_call(
                     "exit_self_review_mode",
-                    {"review": "All looks good."},
+                    {
+                        "review": "All looks good.",
+                        "summary": "Review complete",
+                        "communication": "Review done.",
+                    },
                     call_id="sr2",
                 ),
                 AIMessage(content="Continuing."),
@@ -219,10 +232,14 @@ class TestSelfReviewModeFlow:
             [
                 _ai_with_tool_call(
                     "enter_plan_mode",
-                    {"communication": "planning first"},
+                    {"summary": "Planning task", "communication": "planning first"},
                     call_id="ep1",
                 ),
-                _ai_with_tool_call("enter_self_review_mode", {"skill": None}, call_id="sr_blocked"),
+                _ai_with_tool_call(
+                    "enter_self_review_mode",
+                    {"summary": "Reviewing work", "communication": "Reviewing.", "skill": None},
+                    call_id="sr_blocked",
+                ),
                 AIMessage(content="OK."),
             ]
         )

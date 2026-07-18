@@ -1,13 +1,16 @@
 """Web tools: web_search and fetch_url."""
 
 import re
-from collections.abc import Iterable
+from collections.abc import Coroutine, Iterable
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Any, Callable, override
 from urllib.parse import urlparse
 
 from annotated_types import Ge
-from langchain_core.tools import BaseTool, tool
+from langchain_core.tools import BaseTool
+from pydantic import BaseModel, PrivateAttr, model_validator
+
+from opendatasci.tools.base import OpenDataSciBaseTool
 
 # Domains permitted for fetch_url.  A URL is allowed when its hostname equals
 # one of these entries *or* is a subdomain of one (e.g. "en.wikipedia.org"
@@ -121,42 +124,16 @@ async def _web_search_impl(query: str, limit: int) -> str:
     return "\n".join(lines)
 
 
-@tool
-async def web_search(
-    query: str, summary: str, communication: str, limit: Annotated[int, Ge(1)] = 10
-) -> str:
-    """Search the web for resources, documentation, data sources, or reference pages.
+def _build_fetch_url_impl(
+    extra: frozenset[str], override: frozenset[str] | None
+) -> Callable[[str], Coroutine[Any, Any, str]]:
+    """Return a URL-fetching coroutine function bound to and cached per *extra*/*override*.
 
-    Returns titles, URLs, and short snippets. Follow up with ``fetch_url`` to retrieve full content.
-
-    # When to use this tool
-    - To discover data sources, APIs, documentation, or research papers.
-    - When you don't know the exact URL of the resource you need.
-
-    # How to use this tool
-    - Keep queries specific: include key terms rather than full sentences.
-    - Follow up with ``fetch_url`` on the most relevant result to get full content.
-
-    Args:
-        query:         Search query (natural language or keywords).
-        summary:       3-4 word status label (e.g. "Searching BLS data").
-        communication: Brief message to the user about what you're doing
-                       (e.g. "Let me search for data sources that could be useful for this task.").
-        limit:         Number of results to return.
+    The cache is scoped to this closure (fresh per tool instance) rather than
+    a shared module-level cache, so repeated fetches of the same URL across
+    unrelated tool instances (e.g. in tests) don't reuse an already-awaited
+    coroutine.
     """
-    return await _web_search_impl(query, limit)
-
-
-def _make_fetch_url_tool(
-    extra: frozenset[str],
-    override: frozenset[str] | None = None,
-) -> BaseTool:
-    """Return a fetch_url tool bound to the given domain sets."""
-
-    if override is not None:
-        allowed_domains = override
-    else:
-        allowed_domains = _FETCH_ALLOWED_DOMAINS | extra
 
     @lru_cache(maxsize=16)
     async def _fetch_url_impl(url: str) -> str:
@@ -192,27 +169,93 @@ def _make_fetch_url_tool(
             return _clean_html(response.text)
         return response.text
 
-    async def fetch_url(url: str, summary: str, communication: str) -> str:
-        return await _fetch_url_impl(url)
+    return _fetch_url_impl
 
-    sorted_domains = ", ".join(sorted(allowed_domains))
-    fetch_url.__doc__ = (
-        f"Fetch the full plain-text content of a URL from an allowed domain.\n\n"
-        f"Allowed domains: {sorted_domains}\n\n"
-        f"# When to use this tool\n"
-        f"- When you have a specific URL from an allowed domain to retrieve.\n"
-        f"- To read documentation, papers, or data from a page found via ``web_search``.\n\n"
-        f"# When NOT to use this tool\n"
-        f"- When the target domain is not in the allowlist — use ``web_search`` instead\n"
-        f"  to find useful links that resolve to an allowed domain.\n\n"
-        f"Args:\n"
-        f"    url:           Full URL to fetch (must be from an allowed domain).\n"
-        f'    summary:       3-4 word status label (e.g. "Fetching BLS report").\n'
-        f"    communication: Brief message to the user about what you're doing\n"
-        f'                   (e.g. "Let me fetch this research paper.").\n'
-    )
 
-    return tool(fetch_url)
+class WebSearchTool(OpenDataSciBaseTool):
+    """Search the web for resources, documentation, data sources, or reference pages."""
+
+    class CallArgs(BaseModel):
+        query: str
+        summary: str
+        communication: str
+        limit: Annotated[int, Ge(1)] = 10
+
+    name: str = "web_search"
+    description: str = """\
+Search the web for resources, documentation, data sources, or reference pages.
+
+Returns titles, URLs, and short snippets. Follow up with ``fetch_url`` to retrieve full content.
+
+# When to use this tool
+- To discover data sources, APIs, documentation, or research papers.
+- When you don't know the exact URL of the resource you need.
+
+# How to use this tool
+- Keep queries specific: include key terms rather than full sentences.
+- Follow up with ``fetch_url`` on the most relevant result to get full content.
+
+Args:
+    query:         Search query (natural language or keywords).
+    summary:       3-4 word status label (e.g. "Searching BLS data").
+    communication: Brief message to the user about what you're doing
+                   (e.g. "Let me search for data sources that could be useful for this task.").
+    limit:         Number of results to return.\
+"""
+    args_schema: type[BaseModel] = CallArgs
+
+    @override
+    async def _arun(
+        self, query: str, summary: str, communication: str, limit: int = 10, **kwargs: Any
+    ) -> str:
+        return await _web_search_impl(query, limit)
+
+
+class FetchUrlTool(OpenDataSciBaseTool):
+    """Fetch the full plain-text content of a URL from an allowed domain."""
+
+    class CallArgs(BaseModel):
+        url: str
+        summary: str
+        communication: str
+
+    name: str = "fetch_url"
+    description: str = ""
+    args_schema: type[BaseModel] = CallArgs
+
+    extra_domains: frozenset[str] = frozenset()
+    override_domains: frozenset[str] | None = None
+    _fetch_impl: Callable[[str], Coroutine[Any, Any, str]] = PrivateAttr()
+
+    @model_validator(mode="after")
+    def _setup(self) -> "FetchUrlTool":
+        allowed_domains = (
+            self.override_domains
+            if self.override_domains is not None
+            else _FETCH_ALLOWED_DOMAINS | self.extra_domains
+        )
+        sorted_domains = ", ".join(sorted(allowed_domains))
+        self.description = (
+            f"Fetch the full plain-text content of a URL from an allowed domain.\n\n"
+            f"Allowed domains: {sorted_domains}\n\n"
+            f"# When to use this tool\n"
+            f"- When you have a specific URL from an allowed domain to retrieve.\n"
+            f"- To read documentation, papers, or data from a page found via ``web_search``.\n\n"
+            f"# When NOT to use this tool\n"
+            f"- When the target domain is not in the allowlist — use ``web_search`` instead\n"
+            f"  to find useful links that resolve to an allowed domain.\n\n"
+            f"Args:\n"
+            f"    url:           Full URL to fetch (must be from an allowed domain).\n"
+            f'    summary:       3-4 word status label (e.g. "Fetching BLS report").\n'
+            f"    communication: Brief message to the user about what you're doing\n"
+            f'                   (e.g. "Let me fetch this research paper.").\n'
+        )
+        self._fetch_impl = _build_fetch_url_impl(self.extra_domains, self.override_domains)
+        return self
+
+    @override
+    async def _arun(self, url: str, summary: str, communication: str, **kwargs: Any) -> str:
+        return await self._fetch_impl(url)
 
 
 def create_web_tools(
@@ -233,4 +276,4 @@ def create_web_tools(
         if override_web_domains is not None
         else None
     )
-    return [web_search, _make_fetch_url_tool(extra, override)]
+    return [WebSearchTool(), FetchUrlTool(extra_domains=extra, override_domains=override)]

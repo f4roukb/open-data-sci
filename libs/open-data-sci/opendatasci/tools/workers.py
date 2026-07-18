@@ -121,6 +121,7 @@ Args:
 
         cancelled = False
         exc_info: BaseException | None = None
+        datasci_config = self.datasci_config or OpenDataSciConfig()
 
         async with self.sandbox_factory.create(
             workspace_path=Path(self.workspace.get_reference())
@@ -133,15 +134,15 @@ Args:
             if subtask.allow_web_tools:
                 tools.extend(
                     create_web_tools(
-                        self.datasci_config.extra_web_domains,
-                        self.datasci_config.override_web_domains,
+                        datasci_config.extra_web_domains,
+                        datasci_config.override_web_domains,
                     )
                 )
             from opendatasci.agents.agents import (
                 ConcurrentWorkerAgent,
             )  # local import breaks circular dependency
 
-            agent = ConcurrentWorkerAgent(tools=tools, config=self.datasci_config)
+            agent = ConcurrentWorkerAgent(tools=tools, config=datasci_config)
             emit("worker_started", subtask.summary)
 
             try:
@@ -175,13 +176,10 @@ Args:
         **kwargs: Any,
     ) -> str:
         outer_config = ensure_config()
-        timeout = self.datasci_config.worker_timeout_seconds
+        timeout = (self.datasci_config or OpenDataSciConfig()).worker_timeout_seconds
         results = await asyncio.wait_for(
             asyncio.gather(
-                *[
-                    self._arun_one(i, t, outer_config)
-                    for i, t in enumerate(subtasks)
-                ],
+                *[self._arun_one(i, t, outer_config) for i, t in enumerate(subtasks)],
                 return_exceptions=True,
             ),
             timeout=timeout,
