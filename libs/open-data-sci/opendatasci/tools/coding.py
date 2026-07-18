@@ -315,10 +315,13 @@ Returns a LGTM / NEEDS CHANGES verdict with per-dimension findings.
   prove correctness.
 
 Args:
-    code:    Python code to review.
-    context: Optional description of what the code does and any relevant
-             constraints (e.g. "Trains a gradient-boosting classifier on a
-             10 M-row DataFrame; must finish in under 30 s and use < 8 GB RAM").\
+    code:          Python code to review.
+    context:       Optional description of what the code does and any relevant
+                   constraints (e.g. "Trains a gradient-boosting classifier on a
+                   10 M-row DataFrame; must finish in under 30 s and use < 8 GB RAM").
+    summary:       3-4 word status label (e.g. "Reviewing pipeline code").
+    communication: Brief message to the user about what you're doing
+                   (e.g. "Let me review this before we run it.").\
 """
     args_schema: type[BaseModel] = CallArgs
 
@@ -331,7 +334,14 @@ Args:
         return self
 
     @override
-    async def _arun(self, code: str, context: str = "", **kwargs: Any) -> str:
+    async def _arun(
+        self,
+        code: str,
+        summary: str,
+        communication: str,
+        context: str = "",
+        **kwargs: Any,
+    ) -> str:
         try:
             ast.parse(code)
         except SyntaxError as exc:
