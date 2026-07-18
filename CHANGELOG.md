@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-07-05
+## [0.2.0] - 2026-07-18
 
 ### Added
 
@@ -21,6 +21,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **Tools rewritten as classes** — every `@tool`-decorated function tool (`list_python_libs`, `verify_python_code`, `enter_plan_mode`/`exit_plan_mode`, `enter_self_review_mode`/`exit_self_review_mode`, `load_skill`/`list_skills`, `ask_user_mcq`, `web_search`/`fetch_url`, worker/dataset-info/workspace tools) is now a `pydantic`-backed class deriving from new `OpenDataSciBaseTool` (async) or `OpenDataSciSyncTool` (sync, `Command`-returning) base classes in `opendatasci/tools/base.py`, instead of a closure-based factory function. Behavior is unchanged; this consolidates argument validation (including the camelCase fix below) in one place.
 - **Turn-scoped agent state** — `AgentState.messages` now holds only the in-progress turn; completed turns are folded into `turn_summaries` (window raised from 3 to 10, capped at 25) instead of accumulating raw messages indefinitely.
 - **TUI theming via CSS variables** — theme palettes are exported as Textual CSS variables, so every registered theme (including the color-blind-safe `visible` palette) restyles the entire app; the separate `styles_visible.tcss` stylesheet is gone.
 - **TUI interrupt handling** — Ctrl+C and Esc during a running turn now stop the agent (like `/stop`) instead of quitting; quitting remains a deliberate double Ctrl+C while idle.
@@ -34,6 +35,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **camelCase tool-call arguments no longer silently dropped** — some models emit camelCase keys (e.g. `requestApproval`) for multi-word snake_case parameters despite the tool schema advertising the snake_case name. LangChain's `BaseTool._parse_input` re-derives the validated dict by intersecting field names against the *original* input's keys, so a value that only validated via a camelCase alias was silently filtered out. All tools now normalize dict keys from camelCase to snake_case before validation via a new `_CamelCaseArgsMixin`.
 - Command approval now uses the secondary model for the impact assessment: the primary model has extended thinking enabled, which Anthropic rejects in combination with the forced `tool_choice` that structured output requires, so every assessment call failed and the approval prompt was silently skipped. Assessment failures now also fail closed — the approval prompt still appears, showing the raw command with a fallback warning, instead of letting the command run unapproved.
 - Compaction no longer masquerades as a `ChatTurnSummary` with `turn=None`; it is modeled and stored explicitly, and `clear_chat_history()` now also resets it.
 - The agent graph no longer errors when a maintenance `update_state` (compact, rewind) empties `messages` mid-route.

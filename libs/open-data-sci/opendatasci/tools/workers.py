@@ -3,124 +3,27 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import Annotated, Any, override
 
 from annotated_types import MaxLen, MinLen
 from langchain_core.callbacks.manager import adispatch_custom_event
 from langchain_core.runnables.config import RunnableConfig, ensure_config
-from langchain_core.tools import BaseTool, tool
+from langchain_core.tools import BaseTool
 from pydantic import BaseModel
 
+from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.base import BaseContextStore
 from opendatasci.prompts.prompt_templates import WORKER_SYSTEM_PROMPT
 from opendatasci.sandbox.base import BaseSandboxFactory
 from opendatasci.skills import BaseSkillStore
 from opendatasci.skills.local import LocalSkillStore
+from opendatasci.tools.base import OpenDataSciBaseTool
 from opendatasci.tools.coding import create_cli_tools, create_coding_tools
 from opendatasci.tools.skills import create_skill_tools
 from opendatasci.tools.web import create_web_tools
 from opendatasci.workspace.base import BaseWorkspace
 
-if TYPE_CHECKING:
-    from opendatasci.configs import OpenDataSciConfig
-
 logger = logging.getLogger(__name__)
-
-
-async def _run_one(
-    idx: int,
-    subtask: "WorkerTask",
-    outer_config: RunnableConfig,
-    *,
-    sandbox_factory: BaseSandboxFactory,
-    workspace: BaseWorkspace,
-    store: BaseSkillStore,
-    datasci_config: "OpenDataSciConfig",
-) -> str:
-    """Run a single worker subtask inside its own sandbox.
-
-    Args:
-        idx:             Zero-based worker index used to tag emitted events.
-        subtask:         Subtask descriptor including instructions and options.
-        outer_config:    LangChain config from the calling graph, captured before
-                         any inner graph run can overwrite the context var — ensures
-                         ``adispatch_custom_event`` always targets the right callback
-                         chain regardless of which async context is active at fire time.
-        sandbox_factory: Factory used to create the worker's isolated sandbox.
-        workspace:       Workspace the worker operates on.
-        store:           Skill store to resolve ``subtask.skill``.
-        datasci_config:  LLM configuration forwarded to the worker agent.
-    """
-    initial_skill = None
-    if subtask.skill is not None:
-        initial_skill = store.load(subtask.skill)
-        if initial_skill is None:
-            logger.warning(
-                "Worker %d: requested skill %r is unknown; starting without a preloaded skill.",
-                idx,
-                subtask.skill,
-            )
-
-    def emit(event_type: str, content: str, metadata: dict[str, Any] | None = None) -> None:
-        asyncio.get_running_loop().create_task(
-            adispatch_custom_event(
-                "worker_event",
-                {
-                    "worker_idx": idx,
-                    "event_type": event_type,
-                    "content": content,
-                    **(metadata or {}),
-                },
-                config=outer_config,
-            )
-        )
-
-    cancelled = False
-    exc_info: BaseException | None = None
-
-    async with sandbox_factory.create(
-        workspace_path=Path(workspace.get_reference())
-    ) as worker_sandbox:
-        tools: list[BaseTool] = [
-            *create_coding_tools(worker_sandbox),
-            *create_cli_tools(worker_sandbox),
-            *create_skill_tools(store),
-        ]
-        if subtask.allow_web_tools:
-            tools.extend(
-                create_web_tools(
-                    datasci_config.extra_web_domains,
-                    datasci_config.override_web_domains,
-                )
-            )
-        from opendatasci.agents.agents import (
-            ConcurrentWorkerAgent,
-        )  # local import breaks circular dependency
-
-        agent = ConcurrentWorkerAgent(tools=tools, config=datasci_config)
-        emit("worker_started", subtask.summary)
-
-        try:
-            return await agent.ainvoke(
-                subtask.subtask,
-                WORKER_SYSTEM_PROMPT,
-                on_event=emit,
-                initial_active_skills=[initial_skill] if initial_skill is not None else [],
-            )
-        except asyncio.CancelledError:
-            cancelled = True
-            raise
-        except RuntimeError as exc:
-            exc_info = exc
-            return str(exc)
-        except Exception as exc:
-            exc_info = exc
-            raise
-        finally:
-            if not cancelled:
-                success = exc_info is None
-                emit("worker_finished", subtask.summary, {"success": success})
-                emit("worker_done", subtask.summary, {"success": success})
 
 
 class WorkerTask(BaseModel):
@@ -138,10 +41,171 @@ class WorkerTask(BaseModel):
     to look up documentation, papers, or API references."""
 
 
+class SpawnWorkersTool(OpenDataSciBaseTool):
+    """Spawn parallel worker agents to execute independent subtasks."""
+
+    class CallArgs(BaseModel):
+        subtasks: Annotated[list[WorkerTask], MinLen(1), MaxLen(3)]
+        summary: str
+        communication: str
+
+    name: str = "spawn_workers"
+    description: str = """
+Spawn 1-3 independent workers to execute narrow, concrete subtasks in parallel.
+
+Workers are fully isolated: no shared state, no conversation history, no context from
+other subtasks. Each subtask runs to completion independently before results are collected.
+
+# When to use this tool
+- For specific, orthogonal actions with a clearly defined outcome that can run concurrently:
+  e.g. "Run Shapiro-Wilk on `age`", "Investigate the distribution of `revenue`".
+- When the task has already been planned and workers execute individual, independent steps.
+
+# When NOT to use this tool
+- When one subtask's result informs another — workers cannot pass data to each other.
+- For broad exploration or re-planning — workers execute, they don't strategise.
+- For a single task: just execute directly; one worker adds latency with no benefit.
+
+# How to use this tool
+- Write every subtask description as fully self-contained: include dataset names,
+  variable names, target columns, and any context the worker needs from the conversation.
+- Assign a ``skill`` when the subtask benefits from domain-specific guidance.
+
+Args:
+    subtasks:      1-3 subtask descriptors (see WorkerTask fields).
+    communication: Brief message to the user about what you're doing
+                   (e.g. "Running three checks in parallel.").
+""".strip()
+
+    args_schema: type[BaseModel] = CallArgs
+
+    workspace: BaseWorkspace
+    datasci_config: OpenDataSciConfig | None
+    sandbox_factory: BaseSandboxFactory
+    store: BaseSkillStore
+
+    async def _arun_one(self, idx: int, subtask: WorkerTask, outer_config: RunnableConfig) -> str:
+        """Run a single worker subtask inside its own sandbox.
+
+        Args:
+            idx:          Zero-based worker index used to tag emitted events.
+            subtask:      Subtask descriptor including instructions and options.
+            outer_config: LangChain config from the calling graph, captured before
+                          any inner graph run can overwrite the context var — ensures
+                          ``adispatch_custom_event`` always targets the right callback
+                          chain regardless of which async context is active at fire time.
+        """
+        initial_skill = None
+        if subtask.skill is not None:
+            initial_skill = self.store.load(subtask.skill)
+            if initial_skill is None:
+                logger.warning(
+                    "Worker %d: requested skill %r is unknown; starting without a preloaded skill.",
+                    idx,
+                    subtask.skill,
+                )
+
+        def emit(event_type: str, content: str, metadata: dict[str, Any] | None = None) -> None:
+            asyncio.get_running_loop().create_task(
+                adispatch_custom_event(
+                    "worker_event",
+                    {
+                        "worker_idx": idx,
+                        "event_type": event_type,
+                        "content": content,
+                        **(metadata or {}),
+                    },
+                    config=outer_config,
+                )
+            )
+
+        cancelled = False
+        exc_info: BaseException | None = None
+        datasci_config = self.datasci_config or OpenDataSciConfig()
+
+        async with self.sandbox_factory.create(
+            workspace_path=Path(self.workspace.get_reference())
+        ) as worker_sandbox:
+            tools: list[BaseTool] = [
+                *create_coding_tools(worker_sandbox),
+                *create_cli_tools(worker_sandbox),
+                *create_skill_tools(self.store),
+            ]
+            if subtask.allow_web_tools:
+                tools.extend(
+                    create_web_tools(
+                        datasci_config.extra_web_domains,
+                        datasci_config.override_web_domains,
+                    )
+                )
+            from opendatasci.agents.agents import (
+                ConcurrentWorkerAgent,
+            )  # local import breaks circular dependency
+
+            agent = ConcurrentWorkerAgent(tools=tools, config=datasci_config)
+            emit("worker_started", subtask.summary)
+
+            try:
+                return await agent.ainvoke(
+                    subtask.subtask,
+                    WORKER_SYSTEM_PROMPT,
+                    on_event=emit,
+                    initial_active_skills=[initial_skill] if initial_skill is not None else [],
+                )
+            except asyncio.CancelledError:
+                cancelled = True
+                raise
+            except RuntimeError as exc:
+                exc_info = exc
+                return str(exc)
+            except Exception as exc:
+                exc_info = exc
+                raise
+            finally:
+                if not cancelled:
+                    success = exc_info is None
+                    emit("worker_finished", subtask.summary, {"success": success})
+                    emit("worker_done", subtask.summary, {"success": success})
+
+    @override
+    async def _arun(
+        self,
+        subtasks: Annotated[list[WorkerTask], MinLen(1), MaxLen(3)],
+        summary: str,
+        communication: str,
+        **kwargs: Any,
+    ) -> str:
+        outer_config = ensure_config()
+        timeout = (self.datasci_config or OpenDataSciConfig()).worker_timeout_seconds
+        results = await asyncio.wait_for(
+            asyncio.gather(
+                *[self._arun_one(i, t, outer_config) for i, t in enumerate(subtasks)],
+                return_exceptions=True,
+            ),
+            timeout=timeout,
+        )
+
+        sections: list[str] = []
+        for i, (subtask, result) in enumerate(zip(subtasks, results), 1):
+            if isinstance(result, BaseException):
+                logger.error(
+                    "Worker %d (%s) failed: %s: %s",
+                    i,
+                    subtask.summary,
+                    type(result).__name__,
+                    result,
+                )
+                output = f"Error: worker failed — {type(result).__name__}: {result}"
+            else:
+                output = result
+            sections.append(f"### ConcurrentWorkerAgent {i}: {subtask.subtask}\n\n{output}")
+        return "\n\n---\n\n".join(sections)
+
+
 def create_worker_tools(
     workspace: BaseWorkspace,
-    context: "BaseContextStore | None",
-    datasci_config: "OpenDataSciConfig",
+    context: BaseContextStore | None,
+    datasci_config: OpenDataSciConfig | None,
     sandbox_factory: BaseSandboxFactory,
     store: BaseSkillStore | None = None,
 ) -> list[BaseTool]:
@@ -171,71 +235,11 @@ def create_worker_tools(
             [user_domains_dir] if user_domains_dir is not None else None,
         )
 
-    @tool
-    async def spawn_workers(
-        subtasks: Annotated[list[WorkerTask], MinLen(1), MaxLen(3)],
-        communication: str,
-    ) -> str:
-        """Spawn 1–3 independent workers to execute narrow, concrete subtasks in parallel.
-
-        Workers are fully isolated: no shared state, no conversation history, no context from
-        other subtasks. Each subtask runs to completion independently before results are collected.
-
-        # When to use this tool
-        - For specific, orthogonal actions with a clearly defined outcome that can run concurrently:
-          e.g. "Run Shapiro-Wilk on `age`", "Investigate the distribution of `revenue`".
-        - When the task has already been planned and workers execute individual, independent steps.
-
-        # When NOT to use this tool
-        - When one subtask's result informs another — workers cannot pass data to each other.
-        - For broad exploration or re-planning — workers execute, they don't strategise.
-        - For a single task: just execute directly; one worker adds latency with no benefit.
-
-        # How to use this tool
-        - Write every subtask description as fully self-contained: include dataset names,
-          variable names, target columns, and any context the worker needs from the conversation.
-        - Assign a ``skill`` when the subtask benefits from domain-specific guidance.
-
-        Args:
-            subtasks:      1–3 subtask descriptors (see WorkerTask fields).
-            communication: Brief message to the user about what you're doing
-                           (e.g. "Running three checks in parallel.").
-        """
-        outer_config = ensure_config()
-        timeout = datasci_config.worker_timeout_seconds if datasci_config is not None else None
-        results = await asyncio.wait_for(
-            asyncio.gather(
-                *[
-                    _run_one(
-                        i,
-                        t,
-                        outer_config,
-                        sandbox_factory=sandbox_factory,
-                        workspace=workspace,
-                        store=store,
-                        datasci_config=datasci_config,
-                    )
-                    for i, t in enumerate(subtasks)
-                ],
-                return_exceptions=True,
-            ),
-            timeout=timeout,
+    return [
+        SpawnWorkersTool(
+            workspace=workspace,
+            datasci_config=datasci_config,
+            sandbox_factory=sandbox_factory,
+            store=store,
         )
-
-        sections: list[str] = []
-        for i, (subtask, result) in enumerate(zip(subtasks, results), 1):
-            if isinstance(result, BaseException):
-                logger.error(
-                    "Worker %d (%s) failed: %s: %s",
-                    i,
-                    subtask.summary,
-                    type(result).__name__,
-                    result,
-                )
-                output = f"Error: worker failed — {type(result).__name__}: {result}"
-            else:
-                output = result
-            sections.append(f"### ConcurrentWorkerAgent {i}: {subtask.subtask}\n\n{output}")
-        return "\n\n---\n\n".join(sections)
-
-    return [spawn_workers]
+    ]
