@@ -385,7 +385,8 @@ class TestBedrockFactory:
         model = aws_with_fake_sdk.create_bedrock_model(bedrock_config)
         assert model.kwargs["model"] == "anthropic.claude-sonnet-4-6"
         assert model.kwargs["region_name"] == "eu-west-1"
-        assert model.kwargs["temperature"] == 1  # extended thinking requires temperature 1
+        # No explicit temperature: Opus 4.7+/Sonnet 5/Fable 5 reject sampling params.
+        assert "temperature" not in model.kwargs
         assert model.kwargs["max_tokens"] == 16000
         assert model.kwargs["additional_model_request_fields"] == {
             "thinking": {"type": "adaptive"},
