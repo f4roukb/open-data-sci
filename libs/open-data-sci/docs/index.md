@@ -8,7 +8,7 @@
 - **Sandboxed code execution** — all Python runs in an isolated sandbox; no side-effects to your environment
 - **Concurrent workers** — complex tasks (e.g. "compare five models") are split across concurrent sub-agents automatically
 - **Every major LLM provider** — Anthropic, OpenAI, AWS Bedrock, Google Gemini, Vertex AI, Azure OpenAI, Ollama, and any OpenAI-compatible server (e.g. vLLM)
-- **Extended thinking** — long-horizon reasoning via Anthropic and Bedrock's extended-thinking mode
+- **Adaptive thinking** — long-horizon reasoning via Anthropic and Bedrock's adaptive-thinking mode (Claude 4.6+)
 - **Skills system** — drop Markdown skill files into `.opendatasci/skills/` to inject domain methodology
 - **MCP tool servers** — connect the agent to external tool servers via `.opendatasci/mcp.json`
 

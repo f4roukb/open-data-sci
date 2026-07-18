@@ -40,16 +40,26 @@ class TestCreateAnthropicPrimaryModel:
         create_anthropic_model(config)
         assert fake_chat_anthropic["model"] == config.model
 
-    def test_temperature_forced_to_one_for_thinking(self, fake_chat_anthropic) -> None:
-        config = OpenDataSciConfig(provider="anthropic", temperature=0.3)  # type: ignore[arg-type]
+    def test_non_adaptive_models_run_without_thinking(self, fake_chat_anthropic) -> None:
+        # Models without adaptive thinking (e.g. haiku-4-5) run without a
+        # thinking config and receive the configured temperature.
+        config = OpenDataSciConfig(
+            provider="anthropic", model="claude-haiku-4-5", temperature=0.3
+        )  # type: ignore[arg-type]
         create_anthropic_model(config)
-        # Extended thinking requires temperature=1; OpenDataSciConfig's value is ignored here.
-        assert fake_chat_anthropic["temperature"] == 1
+        assert "thinking" not in fake_chat_anthropic
+        assert fake_chat_anthropic["temperature"] == 0.3
 
-    def test_thinking_block_uses_configured_budget(self, fake_chat_anthropic) -> None:
-        config = OpenDataSciConfig(provider="anthropic", thinking_budget=9999)  # type: ignore[arg-type]
+    @pytest.mark.parametrize(
+        "model_id",
+        ["claude-sonnet-5", "claude-sonnet-4-6", "claude-opus-4-8"],
+    )
+    def test_modern_models_use_adaptive_thinking(self, fake_chat_anthropic, model_id) -> None:
+        # Claude 4.6+ / Sonnet 5: adaptive thinking, no sampling params.
+        config = OpenDataSciConfig(provider="anthropic", model=model_id)  # type: ignore[arg-type]
         create_anthropic_model(config)
-        assert fake_chat_anthropic["thinking"] == {"type": "enabled", "budget_tokens": 9999}
+        assert fake_chat_anthropic["thinking"] == {"type": "adaptive"}
+        assert "temperature" not in fake_chat_anthropic
 
     def test_api_key_from_config_preferred_over_env(self, fake_chat_anthropic, monkeypatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "env-key")
@@ -63,9 +73,9 @@ class TestCreateAnthropicPrimaryModel:
         create_anthropic_model(config)
         assert fake_chat_anthropic["api_key"] == "env-fallback"
 
-    def test_max_tokens_set_for_thinking_budget(self, fake_chat_anthropic) -> None:
+    def test_max_tokens_set_for_thinking(self, fake_chat_anthropic) -> None:
         create_anthropic_model(OpenDataSciConfig(provider="anthropic"))  # type: ignore[arg-type]
-        # Large max_tokens budget is required for extended thinking responses.
+        # Large max_tokens budget gives adaptive thinking room to work.
         assert fake_chat_anthropic["max_tokens"] == 16000
 
     def test_missing_package_raises_llm_provider_error(self, monkeypatch) -> None:

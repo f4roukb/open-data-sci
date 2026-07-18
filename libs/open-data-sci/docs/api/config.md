@@ -14,13 +14,13 @@ TUI flags always take precedence over all of the above.
 ```python
 from opendatasci import OpenDataSciConfig
 
-# Defaults — uses Anthropic with claude-sonnet-4-6
+# Defaults — uses Anthropic with claude-sonnet-5
 config = OpenDataSciConfig()
 
 # OpenAI with custom temperature
 config = OpenDataSciConfig(
     provider="openai",
-    model="gpt-4o",
+    model="gpt-5.6-sol",
     openai_api_key="sk-...",
     temperature=0.2,
 )
@@ -29,7 +29,7 @@ config = OpenDataSciConfig(
 config = OpenDataSciConfig(
     provider="anthropic",
     secondary_provider="openai",
-    secondary_model="gpt-4o-mini",
+    secondary_model="gpt-5.6-luna",
     openai_api_key="sk-...",
 )
 
@@ -72,8 +72,7 @@ config = OpenDataSciConfig.from_yaml("opendatasci_config.yaml")
 
 | Field | Env var | Default | Description |
 |-------|---------|---------|-------------|
-| `temperature` | `TEMPERATURE` | `0.0` | LLM sampling temperature |
-| `thinking_budget` | `THINKING_BUDGET` | `8192` | Extended-thinking token budget (Anthropic / Bedrock) |
+| `temperature` | `TEMPERATURE` | `0.0` | LLM sampling temperature (not sent to Claude 4.6+ / Sonnet 5 models) |
 
 ### Agent behaviour
 
@@ -115,14 +114,14 @@ config = OpenDataSciConfig.from_yaml("opendatasci_config.yaml")
 
 | Provider | Primary model | Secondary model |
 |----------|--------------|-----------------|
-| `anthropic` | `claude-sonnet-4-6` | `claude-haiku-4-5` |
-| `openai` | `gpt-5.5` | `gpt-5.4-mini` |
-| `bedrock` | `us.anthropic.claude-sonnet-4-6` | `us.anthropic.claude-haiku-4-5-20251001-v1:0` |
-| `gemini` | `gemini-2.5-pro` | `gemini-2.5-flash` |
-| `vertexai` | `gemini-2.5-pro` | `gemini-2.5-flash` |
-| `azure` | `gpt-4o` | `gpt-4o-mini` |
-| `ollama` | `llama3.2:3b` | `llama3.2:3b` |
-| `openai_compatible_server` | `meta-llama/Llama-3.2-3B-Instruct` | `meta-llama/Llama-3.2-3B-Instruct` |
+| `anthropic` | `claude-sonnet-5` | `claude-haiku-4-5` |
+| `openai` | `gpt-5.6-sol` | `gpt-5.6-luna` |
+| `bedrock` | `us.anthropic.claude-sonnet-5` | `us.anthropic.claude-haiku-4-5-20251001-v1:0` |
+| `gemini` | `gemini-3.5-flash` | `gemini-3.1-flash-lite` |
+| `vertexai` | `gemini-3.5-flash` | `gemini-3.1-flash-lite` |
+| `azure` | `gpt-5.6-sol` | `gpt-5.6-luna` |
+| `ollama` | `qwen3.5:9b` | `qwen3.5:9b` |
+| `openai_compatible_server` | `Qwen/Qwen3.5-4B` | `Qwen/Qwen3.5-4B` |
 
 ---
 
@@ -131,13 +130,12 @@ config = OpenDataSciConfig.from_yaml("opendatasci_config.yaml")
 ```yaml
 # opendatasci_config.yaml
 provider: anthropic
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 
 secondary_provider: openai
-secondary_model: gpt-4o-mini
+secondary_model: gpt-5.6-luna
 
 temperature: 0.1
-thinking_budget: 8000
 
 name: Sai
 
@@ -153,7 +151,7 @@ midturn_compaction_threshold: 80000
 config = OpenDataSciConfig.from_yaml("opendatasci_config.yaml")
 ```
 
-Unknown keys in the YAML file raise `ValueError` with a clear message listing the valid fields.
+Unknown keys in the YAML file are ignored, so config files written for other versions keep loading.
 
 ---
 

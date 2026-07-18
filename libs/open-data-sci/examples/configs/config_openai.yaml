@@ -9,12 +9,12 @@
 
 # ── Primary model ─────────────────────────────────────────────────────────────
 provider: openai
-model: gpt-5.5
+model: gpt-5.6-sol
 
 # ── Secondary (auxiliary) model ───────────────────────────────────────────────
 # Used for lightweight tasks: memory summarisation, dataset card updates, etc.
 secondary_provider: openai
-secondary_model: gpt-5.4-mini
+secondary_model: gpt-5.6-luna
 
 # ── Sampling ──────────────────────────────────────────────────────────────────
 temperature: 0.1

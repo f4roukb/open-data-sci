@@ -93,7 +93,7 @@ Usage:
 
 ```bash
 opendatasci data.csv --config examples/configs/config_gemini.yaml
-opendatasci data.csv --config examples/configs/config_vertexai.yaml --model gemini-2.5-pro
+opendatasci data.csv --config examples/configs/config_vertexai.yaml --model gemini-3.5-flash
 ```
 
 See the [full provider list and default models](../README.md#models) for all

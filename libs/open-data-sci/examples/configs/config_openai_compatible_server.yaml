@@ -8,7 +8,7 @@
 #
 # Example with vLLM:
 #   pip install vllm
-#   vllm serve meta-llama/Llama-3.2-3B-Instruct
+#   vllm serve Qwen/Qwen3.5-4B
 #
 # Hugging Face login is required for gated models:
 #   huggingface-cli login
@@ -18,11 +18,11 @@
 
 # ── Primary model ─────────────────────────────────────────────────────────────
 provider: openai_compatible_server
-model: meta-llama/Llama-3.2-3B-Instruct
+model: Qwen/Qwen3.5-4B
 
 # ── Secondary (auxiliary) model ───────────────────────────────────────────────
 secondary_provider: openai_compatible_server
-secondary_model: meta-llama/Llama-3.2-3B-Instruct
+secondary_model: Qwen/Qwen3.5-4B
 
 # ── Sampling ──────────────────────────────────────────────────────────────────
 temperature: 0.1

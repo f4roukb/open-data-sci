@@ -8,7 +8,7 @@
 #   Install Ollama: https://ollama.com
 #
 # Pull a model and start the server before launching OpenDataSci:
-#   ollama pull llama3.2:3b
+#   ollama pull qwen3.5:9b
 #   ollama serve               # starts on http://localhost:11434 by default
 #
 # No API key required.
@@ -16,11 +16,11 @@
 
 # ── Primary model ─────────────────────────────────────────────────────────────
 provider: ollama
-model: llama3.2:3b
+model: qwen3.5:9b
 
 # ── Secondary (auxiliary) model ───────────────────────────────────────────────
 secondary_provider: ollama
-secondary_model: llama3.2:3b
+secondary_model: qwen3.5:9b
 
 # ── Sampling ──────────────────────────────────────────────────────────────────
 temperature: 0.1

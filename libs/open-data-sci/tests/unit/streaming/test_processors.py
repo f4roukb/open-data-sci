@@ -421,6 +421,40 @@ class TestStreamEventProcessor:
         assert events[0].output_tokens == 20
         assert events[0].cache_read_tokens == 9000
 
+    def test_stream_usage_captures_bedrock_style_cache_tokens(self) -> None:
+        """Bedrock's ChatBedrockConverse runs with disable_streaming=False, so its
+        usage_metadata is captured via the per-chunk streaming path
+        (_update_stream_usage), not the non-streaming on_chat_model_end branch.
+        That path must normalize Bedrock's top-level cache_read_input_tokens /
+        cache_write_input_tokens the same way _usage_totals does, or the
+        authoritative end-of-call UsageEvent silently reports 0 cache tokens
+        for every Bedrock response (making the TUI's cache % always 0.0%)."""
+        p = self._proc()
+        start_chunk = _make_chunk("")
+        start_chunk.usage_metadata = {
+            "input_tokens": 600,
+            "output_tokens": 1,
+            "cache_read_input_tokens": 6630,
+            "cache_write_input_tokens": 0,
+        }
+        p.process_event(_stream_event(start_chunk))
+
+        text_chunk = _make_chunk("hello")
+        p.process_event(_stream_event(text_chunk))
+
+        merged_msg = MagicMock()
+        merged_msg.usage_metadata = {
+            "input_tokens": 600,
+            "output_tokens": 141,
+            "cache_read_input_tokens": 6630,
+            "cache_write_input_tokens": 0,
+        }
+        events = p.process_event({"event": "on_chat_model_end", "data": {"output": merged_msg}})
+
+        assert events[0].input_tokens == 7230
+        assert events[0].cache_read_tokens == 6630
+        assert events[0].cache_creation_tokens == 0
+
     def test_process_model_end_stream_usage_state_resets_between_calls(self) -> None:
         """Per-call streaming usage state must not leak into the next model call
         within the same turn (e.g. a multi-round ReAct tool-calling loop)."""

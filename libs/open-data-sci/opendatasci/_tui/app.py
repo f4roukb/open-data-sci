@@ -323,8 +323,8 @@ def main() -> None:
 Examples:
   opendatasci data.xlsx
   opendatasci data.csv --provider bedrock
-  opendatasci ./data_folder --provider openai --model gpt-4o
-  opendatasci data.csv --secondary-provider openai --secondary-model gpt-4o-mini
+  opendatasci ./data_folder --provider openai --model gpt-5.6-sol
+  opendatasci data.csv --secondary-provider openai --secondary-model gpt-5.6-luna
   opendatasci data.csv --config path/to/datasci_config.yaml
         """,
     )

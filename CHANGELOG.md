@@ -21,6 +21,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **Default models refreshed across all providers** — Anthropic `claude-sonnet-4-6` → `claude-sonnet-5`, OpenAI `gpt-5.5` → `gpt-5.6-sol` (secondary `gpt-5.4-mini` → `gpt-5.6-luna`), Bedrock `us.anthropic.claude-sonnet-4-6` → `us.anthropic.claude-sonnet-5`, Gemini / Vertex AI `gemini-2.5-pro` → `gemini-3.5-flash` (secondary `gemini-2.5-flash` → `gemini-3.1-flash-lite`), Azure OpenAI `gpt-4o` → `gpt-5.6-sol` (secondary `gpt-4o-mini` → `gpt-5.6-luna`), Ollama `llama3.2:3b` → `qwen3.5:9b`, OpenAI-compatible server `meta-llama/Llama-3.2-3B-Instruct` → `Qwen/Qwen3.5-4B` (sized to fit a 16 GB GPU at batch size 1 under vLLM's default bf16).
+- **Adaptive thinking for Claude 4.6+** — the Anthropic and Bedrock clients now send `thinking: {"type": "adaptive"}` for Claude 4.6+ models (Opus 4.6/4.7/4.8, Sonnet 4.6, Sonnet 5) and omit explicit sampling parameters, which Opus 4.7+ and Sonnet 5 reject with a 400. Models without adaptive thinking (e.g. `claude-haiku-4-5`) run without a thinking config and receive the configured `temperature`.
+- The `/models` TUI command now formats single-version Claude IDs (e.g. `claude-sonnet-5`) correctly.
+- **`OpenDataSciConfig.from_yaml` ignores unknown keys** instead of raising `ValueError`, so config files written for other versions keep loading.
 - **Tools rewritten as classes** — every `@tool`-decorated function tool (`list_python_libs`, `verify_python_code`, `enter_plan_mode`/`exit_plan_mode`, `enter_self_review_mode`/`exit_self_review_mode`, `load_skill`/`list_skills`, `ask_user_mcq`, `web_search`/`fetch_url`, worker/dataset-info/workspace tools) is now a `pydantic`-backed class deriving from new `OpenDataSciBaseTool` (async) or `OpenDataSciSyncTool` (sync, `Command`-returning) base classes in `opendatasci/tools/base.py`, instead of a closure-based factory function. Behavior is unchanged; this consolidates argument validation (including the camelCase fix below) in one place.
 - **Turn-scoped agent state** — `AgentState.messages` now holds only the in-progress turn; completed turns are folded into `turn_summaries` (window raised from 3 to 10, capped at 25) instead of accumulating raw messages indefinitely.
 - **TUI theming via CSS variables** — theme palettes are exported as Textual CSS variables, so every registered theme (including the color-blind-safe `visible` palette) restyles the entire app; the separate `styles_visible.tcss` stylesheet is gone.
@@ -45,6 +49,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Removed
 
+- `thinking_budget` config field (env: `THINKING_BUDGET`) — no supported Anthropic or Bedrock model uses a fixed thinking-token budget anymore; Claude 4.6+ models manage thinking depth automatically via adaptive thinking. Config files that still contain the key load fine; the value is ignored.
 - Dead `prompts/message_templates.py` module and unused message-utility helpers (`get_last_turn_messages`, `get_ongoing_turn_messages`, `render_turns`).
 
 ## [0.1.0] - 2026-06-21

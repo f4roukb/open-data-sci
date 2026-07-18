@@ -99,7 +99,7 @@ To use a different provider, pass `--provider`:
 
 ```bash
 opendatasci data.csv --provider openai --api-key sk-...
-opendatasci data.csv --provider ollama --model llama3.2:3b   # local, no key needed
+opendatasci data.csv --provider ollama --model qwen3.5:9b   # local, no key needed
 ```
 
 ### Setup with a config file
@@ -109,11 +109,10 @@ For a reusable configuration across projects, create a YAML file and pass it wit
 ```yaml
 # datasci.yaml
 provider: anthropic
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 secondary_provider: openai
-secondary_model: gpt-4o-mini
+secondary_model: gpt-5.6-luna
 temperature: 0.1
-thinking_budget: 8192
 ```
 
 ```bash
@@ -171,7 +170,7 @@ opendatasci PATH [OPTIONS]
 opendatasci data.xlsx
 
 # Switch provider and primary model
-opendatasci data.csv --provider openai --model gpt-4o
+opendatasci data.csv --provider openai --model gpt-5.6-sol
 
 # Bedrock with a region
 REGION=us-west-2 opendatasci ./project/ --provider bedrock
@@ -180,7 +179,7 @@ REGION=us-west-2 opendatasci ./project/ --provider bedrock
 opendatasci data.parquet --theme accessible
 
 # Mix providers — heavy model on one, lightweight secondary on another
-opendatasci data.csv --provider anthropic --secondary-provider openai --secondary-model gpt-5.4-mini
+opendatasci data.csv --provider anthropic --secondary-provider openai --secondary-model gpt-5.6-luna
 
 # See all available providers
 opendatasci --list-providers
@@ -272,7 +271,7 @@ from opendatasci import OpenDataSciConfig, create_agent
 
 config = OpenDataSciConfig(
     provider="openai",
-    model="gpt-4o",
+    model="gpt-5.6-sol",
     openai_api_key="sk-...",
     temperature=0.2,
 )
@@ -300,8 +299,7 @@ async with create_agent("data.parquet", config=config) as agent:
 | `azure_endpoint` | Azure OpenAI resource endpoint URL (env: `AZURE_OPENAI_ENDPOINT`) |
 | `azure_api_version` | Azure OpenAI API version — defaults to `2025-01-01-preview` (env: `AZURE_OPENAI_API_VERSION`) |
 | `llm_server_base_url` | Custom API base URL — required for `ollama` and `openai_compatible_server` (env: `LLM_SERVER_BASE_URL`) |
-| `temperature` | Sampling temperature — ignored for Anthropic/Bedrock when extended thinking is active (env: `TEMPERATURE`) |
-| `thinking_budget` | Token budget for extended thinking, Anthropic and Bedrock only (env: `THINKING_BUDGET`) |
+| `temperature` | Sampling temperature — not sent to Claude 4.6+ / Sonnet 5 models, which use adaptive thinking (env: `TEMPERATURE`) |
 | `name` | Display name for the agent — defaults to `"Sai"` (env: `NAME`) |
 | `mcp_servers` | List of MCP server URLs the agent may connect to (env: `MCP_SERVERS`) |
 | `extra_web_domains` | Additional hostnames the `fetch_url` tool may retrieve, on top of the built-in allowlist (env: `EXTRA_FETCH_DOMAINS`) |
@@ -320,14 +318,14 @@ OpenDataSci supports every major LLM provider. Pass `--provider` to the TUI or s
 
 | Provider | Flag | Extra required | Default model |
 |----------|------|----------------|---------------|
-| Anthropic | `anthropic` | *(none — default)* | `claude-sonnet-4-6` |
-| OpenAI | `openai` | *(none)* | `gpt-5.5` |
-| OpenAI-compatible server (e.g. vLLM) | `openai_compatible_server` | *(none)* | `meta-llama/Llama-3.2-3B-Instruct` |
-| AWS Bedrock | `bedrock` | `open-data-sci[aws]` | `us.anthropic.claude-sonnet-4-6` |
-| Google Gemini | `gemini` | `open-data-sci[gemini]` | `gemini-2.5-pro` |
-| Google Vertex AI | `vertexai` | `open-data-sci[gcp]` | `gemini-2.5-pro` |
-| Azure OpenAI | `azure` | `open-data-sci[azure]` | `gpt-4o` |
-| Ollama | `ollama` | `open-data-sci[ollama]` | `llama3.2:3b` |
+| Anthropic | `anthropic` | *(none — default)* | `claude-sonnet-5` |
+| OpenAI | `openai` | *(none)* | `gpt-5.6-sol` |
+| OpenAI-compatible server (e.g. vLLM) | `openai_compatible_server` | *(none)* | `Qwen/Qwen3.5-4B` |
+| AWS Bedrock | `bedrock` | `open-data-sci[aws]` | `us.anthropic.claude-sonnet-5` |
+| Google Gemini | `gemini` | `open-data-sci[gemini]` | `gemini-3.5-flash` |
+| Google Vertex AI | `vertexai` | `open-data-sci[gcp]` | `gemini-3.5-flash` |
+| Azure OpenAI | `azure` | `open-data-sci[azure]` | `gpt-5.6-sol` |
+| Ollama | `ollama` | `open-data-sci[ollama]` | `qwen3.5:9b` |
 
 Pass `--list-providers` to print this table from the TUI at any time.
 
@@ -424,7 +422,6 @@ async with create_agent("data.csv", config=config) as agent:
 | `AZURE_OPENAI_API_VERSION` | Azure OpenAI API version (default: `2025-01-01-preview`) |
 | `LLM_SERVER_BASE_URL` | Custom API base URL — used by `ollama` and `openai_compatible_server` providers |
 | `TEMPERATURE` | LLM sampling temperature |
-| `THINKING_BUDGET` | Token budget for extended thinking (Anthropic and Bedrock only) |
 | `MCP_SERVERS` | Comma-separated list of MCP server URLs |
 | `SKILLS_DIRECTORY` | Path to a directory of user-defined skill files |
 | `BUILTIN_SKILLS_DIRECTORY` | Path to the built-in skills directory (defaults to the bundled skills) |

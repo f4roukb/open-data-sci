@@ -13,11 +13,11 @@
 
 # ── Primary model ─────────────────────────────────────────────────────────────
 provider: gemini
-model: gemini-2.5-pro
+model: gemini-3.5-flash
 
 # ── Secondary (auxiliary) model ───────────────────────────────────────────────
 secondary_provider: gemini
-secondary_model: gemini-2.5-flash
+secondary_model: gemini-3.1-flash-lite
 
 # ── Sampling ──────────────────────────────────────────────────────────────────
 temperature: 0.1

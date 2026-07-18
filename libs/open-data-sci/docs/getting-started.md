@@ -61,14 +61,14 @@ OpenDataSci works with every major LLM provider. Select one via the `--provider`
 
 | Provider | `--provider` | Default model | Auth |
 |----------|-------------|---------------|------|
-| Anthropic *(default)* | `anthropic` | `claude-sonnet-4-6` | `ANTHROPIC_API_KEY` |
-| OpenAI | `openai` | `gpt-5.5` | `OPENAI_API_KEY` |
-| AWS Bedrock | `bedrock` | `us.anthropic.claude-sonnet-4-6` | boto3 credential chain |
-| Google Gemini | `gemini` | `gemini-2.5-pro` | `GOOGLE_API_KEY` |
-| Google Vertex AI | `vertexai` | `gemini-2.5-pro` | Application Default Credentials |
-| Azure OpenAI | `azure` | `gpt-4o` | `AZURE_OPENAI_API_KEY` or service principal |
-| Ollama | `ollama` | `llama3.2:3b` | none (local server) |
-| OpenAI-compatible server (e.g. vLLM) | `openai_compatible_server` | `meta-llama/Llama-3.2-3B-Instruct` | none (self-hosted) |
+| Anthropic *(default)* | `anthropic` | `claude-sonnet-5` | `ANTHROPIC_API_KEY` |
+| OpenAI | `openai` | `gpt-5.6-sol` | `OPENAI_API_KEY` |
+| AWS Bedrock | `bedrock` | `us.anthropic.claude-sonnet-5` | boto3 credential chain |
+| Google Gemini | `gemini` | `gemini-3.5-flash` | `GOOGLE_API_KEY` |
+| Google Vertex AI | `vertexai` | `gemini-3.5-flash` | Application Default Credentials |
+| Azure OpenAI | `azure` | `gpt-5.6-sol` | `AZURE_OPENAI_API_KEY` or service principal |
+| Ollama | `ollama` | `qwen3.5:9b` | none (local server) |
+| OpenAI-compatible server (e.g. vLLM) | `openai_compatible_server` | `Qwen/Qwen3.5-4B` | none (self-hosted) |
 
 Run `opendatasci --list-providers` to print this table at any time.
 
@@ -121,22 +121,22 @@ Run `opendatasci --list-providers` to print this table at any time.
     ```bash
     export AZURE_OPENAI_ENDPOINT=https://my-resource.openai.azure.com
     export AZURE_OPENAI_API_KEY=...
-    opendatasci data.csv --provider azure --model gpt-4o
+    opendatasci data.csv --provider azure --model gpt-5.6-sol
     ```
 
 === "Ollama"
 
     ```bash
     # Start Ollama first: ollama serve
-    opendatasci data.csv --provider ollama --model llama3.2:3b
+    opendatasci data.csv --provider ollama --model qwen3.5:9b
     ```
 
 === "OpenAI-compatible server"
 
     ```bash
     # Start any OpenAI-compatible server first, e.g. vLLM:
-    # vllm serve meta-llama/Llama-3.2-3B-Instruct
-    opendatasci data.csv --provider openai_compatible_server --model meta-llama/Llama-3.2-3B-Instruct
+    # vllm serve Qwen/Qwen3.5-4B
+    opendatasci data.csv --provider openai_compatible_server --model Qwen/Qwen3.5-4B
     ```
 
 ---
@@ -151,10 +151,10 @@ opendatasci data.csv
 opendatasci ./my-project/
 
 # Change model
-opendatasci data.csv --provider openai --model gpt-4o
+opendatasci data.csv --provider openai --model gpt-5.6-sol
 
 # Mix providers — heavy primary model, lightweight secondary
-opendatasci data.csv --provider anthropic --secondary-provider openai --secondary-model gpt-5.4-mini
+opendatasci data.csv --provider anthropic --secondary-provider openai --secondary-model gpt-5.6-luna
 
 # Colour-blind-safe theme
 opendatasci data.csv --theme accessible
@@ -208,7 +208,7 @@ from opendatasci import create_agent, OpenDataSciConfig
 
 config = OpenDataSciConfig(
     provider="openai",
-    model="gpt-4o",
+    model="gpt-5.6-sol",
     openai_api_key="sk-...",
     temperature=0.2,
 )
@@ -229,7 +229,7 @@ async for event in agent.astream(query):
             # Incremental response text
             print(event.content, end="", flush=True)
         case "reasoning":
-            # Extended-thinking token (Anthropic / Bedrock only)
+            # Thinking token (Anthropic / Bedrock only)
             pass
         case "tool_call":
             print(f"\n[tool] {event.content}")
@@ -260,13 +260,12 @@ Pass `--config path/to/file.yaml` to the TUI or use `OpenDataSciConfig.from_yaml
 ```yaml
 # opendatasci_config.yaml
 provider: anthropic
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 
 secondary_provider: openai
-secondary_model: gpt-4o-mini
+secondary_model: gpt-5.6-luna
 
 temperature: 0.1
-thinking_budget: 8000
 
 extra_web_domains:
   - arxiv.org
