@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
+from opendatasci.context.base import BaseContextStore
 from opendatasci.tools.planning import create_planning_tools
 
 _CALL_ID = "test_call_id"
@@ -18,7 +19,7 @@ _SESSION_ID = "test_session"
 
 
 def _make_context_store():
-    return MagicMock()
+    return MagicMock(spec=BaseContextStore)
 
 
 def _get_enter_tool(context_store):
@@ -33,13 +34,13 @@ def _get_exit_tool(context_store):
 
 def _invoke_enter(tool, *, communication: str = "Let me plan this.") -> Command:
     return tool.invoke(
-        {"name": tool.name, "id": _CALL_ID, "args": {"communication": communication}, "type": "tool_call"}
+        {"name": tool.name, "id": _CALL_ID, "args": {"summary": "s", "communication": communication}, "type": "tool_call"}
     )
 
 
 def _invoke_exit(tool, *, final_plan: str = "plan") -> Command:
     return tool.invoke(
-        {"name": tool.name, "id": _CALL_ID, "args": {"final_plan": final_plan}, "type": "tool_call"}
+        {"name": tool.name, "id": _CALL_ID, "args": {"final_plan": final_plan, "summary": "s", "communication": "c"}, "type": "tool_call"}
     )
 
 
@@ -133,7 +134,7 @@ class TestExitPlanMode:
 
     def test_save_called_before_state_update(self) -> None:
         call_order = []
-        context_store = MagicMock()
+        context_store = MagicMock(spec=BaseContextStore)
         context_store.save_plan.side_effect = lambda sid, p: call_order.append("save_plan")
         tool = _get_exit_tool(context_store)
         _invoke_exit(tool)

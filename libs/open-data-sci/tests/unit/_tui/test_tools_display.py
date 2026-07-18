@@ -141,8 +141,8 @@ class TestRegistryContents:
     def test_list_python_libs_icon(self) -> None:
         assert REGISTRY["list_python_libs"].icon == "📦"
 
-    def test_list_python_libs_no_summary_arg(self) -> None:
-        assert REGISTRY["list_python_libs"].summary_arg is None
+    def test_list_python_libs_summary_arg(self) -> None:
+        assert REGISTRY["list_python_libs"].summary_arg == "summary"
 
     # ── Planning ──────────────────────────────────────────────────────────────
 
@@ -172,8 +172,8 @@ class TestRegistryContents:
     def test_list_skills_label(self) -> None:
         assert REGISTRY["list_skills"].label == "Checking available skills"
 
-    def test_list_skills_display_status_false(self) -> None:
-        assert REGISTRY["list_skills"].display_status is False
+    def test_list_skills_summary_arg(self) -> None:
+        assert REGISTRY["list_skills"].summary_arg == "summary"
 
     # ── Workers ───────────────────────────────────────────────────────────────
 
@@ -183,8 +183,8 @@ class TestRegistryContents:
     def test_spawn_workers_icon(self) -> None:
         assert REGISTRY["spawn_workers"].icon == "⚙️"
 
-    def test_spawn_workers_no_summary_arg(self) -> None:
-        assert REGISTRY["spawn_workers"].summary_arg is None
+    def test_spawn_workers_summary_arg(self) -> None:
+        assert REGISTRY["spawn_workers"].summary_arg == "summary"
 
     # ── Dataset ───────────────────────────────────────────────────────────────
 
@@ -200,8 +200,8 @@ class TestRegistryContents:
     def test_update_dataset_info_label(self) -> None:
         assert REGISTRY["update_dataset_info"].label == "Updating dataset notes"
 
-    def test_update_dataset_info_display_status_false(self) -> None:
-        assert REGISTRY["update_dataset_info"].display_status is False
+    def test_update_dataset_info_summary_arg(self) -> None:
+        assert REGISTRY["update_dataset_info"].summary_arg == "summary"
 
     def test_profile_dataset_label(self) -> None:
         assert REGISTRY["profile_dataset"].label == "Profiling dataset"

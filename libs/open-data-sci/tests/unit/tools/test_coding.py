@@ -8,15 +8,18 @@ import pydantic
 import pytest
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from opendatasci.configs import OpenDataSciConfig
 from opendatasci.human_inputs.human_approval import HumanApprovalBaseManager
-from opendatasci.sandbox.base import SandboxExecResult
+from opendatasci.sandbox.base import BaseSandbox, SandboxExecResult
 from opendatasci.tools.coding import (
-    _COMMAND_DECLINED_MESSAGE,
+    ExecuteCliCommandWithApprovalTool,
+    ListPythonLibsTool,
     create_cli_tools,
     create_code_verification_tools,
     create_coding_tools,
-    list_python_libs,
 )
+
+_COMMAND_DECLINED_MESSAGE = ExecuteCliCommandWithApprovalTool._COMMAND_DECLINED_MESSAGE
 
 # ---------------------------------------------------------------------------
 # execute_python_code — error formatting (tested indirectly via the tool)
@@ -25,7 +28,7 @@ from opendatasci.tools.coding import (
 
 class TestExecutePythonCodeErrorFormatting:
     async def _run(self, code: str, error: str) -> str:
-        sandbox = MagicMock()
+        sandbox = MagicMock(spec=BaseSandbox)
         sandbox.execute = AsyncMock(return_value=SandboxExecResult(success=False, error=error))
         tools = create_coding_tools(sandbox)
         execute_python_code = next(t for t in tools if t.name == "execute_python_code")
@@ -107,7 +110,7 @@ class TestExecutePythonCodeErrorFormatting:
 
 class TestExecuteCliCommandResultFormatting:
     async def _run(self, exec_result: SandboxExecResult) -> str:
-        sandbox = MagicMock()
+        sandbox = MagicMock(spec=BaseSandbox)
         sandbox.execute_cli = AsyncMock(return_value=exec_result)
         tool = create_cli_tools(sandbox)[0]
         return await tool.ainvoke({"command": "ls", "summary": "s", "communication": "c"})
@@ -166,43 +169,50 @@ def _mock_pyproject(data: dict):
 
 
 class TestListPythonLibs:
-    def test_returns_comma_separated_libs(self) -> None:
+    @pytest.mark.asyncio
+    async def test_returns_comma_separated_libs(self) -> None:
         data = {"tool": {"opendatasci": {"opendatasci_agent_libs": ["pandas>=2.0", "numpy", "scikit-learn"]}}}
         with _mock_pyproject(data):
-            result = list_python_libs.invoke({})
+            result = await ListPythonLibsTool().ainvoke({"summary": "s", "communication": "c"})
         assert result == "pandas>=2.0,numpy,scikit-learn"
 
-    def test_single_lib_has_no_comma(self) -> None:
+    @pytest.mark.asyncio
+    async def test_single_lib_has_no_comma(self) -> None:
         data = {"tool": {"opendatasci": {"opendatasci_agent_libs": ["requests"]}}}
         with _mock_pyproject(data):
-            result = list_python_libs.invoke({})
+            result = await ListPythonLibsTool().ainvoke({"summary": "s", "communication": "c"})
         assert result == "requests"
 
-    def test_empty_opendatasci_agent_libs_returns_no_libs_message(self) -> None:
+    @pytest.mark.asyncio
+    async def test_empty_opendatasci_agent_libs_returns_no_libs_message(self) -> None:
         data = {"tool": {"opendatasci": {"opendatasci_agent_libs": []}}}
         with _mock_pyproject(data):
-            result = list_python_libs.invoke({})
+            result = await ListPythonLibsTool().ainvoke({"summary": "s", "communication": "c"})
         assert result == "No agent libraries configured."
 
-    def test_missing_opendatasci_agent_libs_key_returns_no_libs_message(self) -> None:
+    @pytest.mark.asyncio
+    async def test_missing_opendatasci_agent_libs_key_returns_no_libs_message(self) -> None:
         data = {"tool": {"opendatasci": {}}}
         with _mock_pyproject(data):
-            result = list_python_libs.invoke({})
+            result = await ListPythonLibsTool().ainvoke({"summary": "s", "communication": "c"})
         assert result == "No agent libraries configured."
 
-    def test_missing_opendatasci_section_returns_no_libs_message(self) -> None:
+    @pytest.mark.asyncio
+    async def test_missing_opendatasci_section_returns_no_libs_message(self) -> None:
         data = {"tool": {}}
         with _mock_pyproject(data):
-            result = list_python_libs.invoke({})
+            result = await ListPythonLibsTool().ainvoke({"summary": "s", "communication": "c"})
         assert result == "No agent libraries configured."
 
-    def test_missing_tool_section_returns_no_libs_message(self) -> None:
+    @pytest.mark.asyncio
+    async def test_missing_tool_section_returns_no_libs_message(self) -> None:
         data = {}
         with _mock_pyproject(data):
-            result = list_python_libs.invoke({})
+            result = await ListPythonLibsTool().ainvoke({"summary": "s", "communication": "c"})
         assert result == "No agent libraries configured."
 
-    def test_opens_pyproject_toml_in_binary_mode(self) -> None:
+    @pytest.mark.asyncio
+    async def test_opens_pyproject_toml_in_binary_mode(self) -> None:
         mock_fh = MagicMock()
         mock_path = MagicMock()
         mock_path.open.return_value.__enter__.return_value = mock_fh
@@ -212,14 +222,15 @@ class TestListPythonLibs:
             patch("opendatasci.tools.coding.PYPROJECT_TOML", mock_path),
             patch("opendatasci.tools.coding.tomllib.load", return_value=data),
         ):
-            list_python_libs.invoke({})
+            await ListPythonLibsTool().ainvoke({"summary": "s", "communication": "c"})
         mock_path.open.assert_called_once_with("rb")
 
-    def test_libs_preserve_version_constraints(self) -> None:
+    @pytest.mark.asyncio
+    async def test_libs_preserve_version_constraints(self) -> None:
         libs = ["pandas>=2.0,<3.0", "numpy~=1.26"]
         data = {"tool": {"opendatasci": {"opendatasci_agent_libs": libs}}}
         with _mock_pyproject(data):
-            result = list_python_libs.invoke({})
+            result = await ListPythonLibsTool().ainvoke({"summary": "s", "communication": "c"})
         for lib in libs:
             assert lib in result
 
@@ -231,7 +242,7 @@ class TestListPythonLibs:
 
 class TestGetCodingTools:
     def _make_sandbox(self) -> MagicMock:
-        sandbox = MagicMock()
+        sandbox = MagicMock(spec=BaseSandbox)
         sandbox.execute = AsyncMock()
         return sandbox
 
@@ -309,7 +320,7 @@ class TestGetCodingTools:
 
 class TestGetCliTool:
     def _make_sandbox(self) -> MagicMock:
-        sandbox = MagicMock()
+        sandbox = MagicMock(spec=BaseSandbox)
         sandbox.execute_cli = AsyncMock()
         return sandbox
 
@@ -365,7 +376,7 @@ class _FakeApprovalManager(HumanApprovalBaseManager):
 
 class TestCliToolApproval:
     def _make_sandbox(self) -> MagicMock:
-        sandbox = MagicMock()
+        sandbox = MagicMock(spec=BaseSandbox)
         sandbox.execute_cli = AsyncMock(return_value=SandboxExecResult(success=True, stdout="ok"))
         return sandbox
 
@@ -459,18 +470,18 @@ def _make_review_tool(
     mock_base_llm = MagicMock()
     mock_base_llm.with_structured_output.return_value = mock_structured_llm
     with patch("opendatasci.tools.coding.create_model", return_value=mock_base_llm):
-        tool = create_code_verification_tools(MagicMock())[0]
+        tool = create_code_verification_tools(OpenDataSciConfig())[0]
     return tool, mock_structured_llm
 
 
 class TestGetReviewTool:
     def test_returns_tool_named_review_my_code(self) -> None:
         with patch("opendatasci.tools.coding.create_model"):
-            tool = create_code_verification_tools(MagicMock())[0]
+            tool = create_code_verification_tools(OpenDataSciConfig())[0]
         assert tool.name == "verify_python_code"
 
     def test_creates_model_from_agent_config(self) -> None:
-        datasci_config = MagicMock()
+        datasci_config = OpenDataSciConfig()
         with patch("opendatasci.tools.coding.create_model") as mock_create:
             create_code_verification_tools(datasci_config)[0]
         mock_create.assert_called_once_with(datasci_config)
@@ -478,7 +489,7 @@ class TestGetReviewTool:
     def test_with_structured_output_called_with_code_review_schema(self) -> None:
         mock_base_llm = MagicMock()
         with patch("opendatasci.tools.coding.create_model", return_value=mock_base_llm):
-            create_code_verification_tools(MagicMock()[0])
+            create_code_verification_tools(OpenDataSciConfig())[0]
         mock_base_llm.with_structured_output.assert_called_once()
         schema_cls = mock_base_llm.with_structured_output.call_args[0][0]
         assert issubclass(schema_cls, pydantic.BaseModel)
@@ -487,7 +498,7 @@ class TestGetReviewTool:
     def test_model_created_once_not_per_invocation(self) -> None:
         """create_model must be called at tool-creation time, not per call."""
         with patch("opendatasci.tools.coding.create_model") as mock_create:
-            tool = create_code_verification_tools(MagicMock()[0])
+            tool = create_code_verification_tools(OpenDataSciConfig())[0]
         assert mock_create.call_count == 1
         _ = tool
 
@@ -496,31 +507,31 @@ class TestReviewMyCodeStaticChecks:
     @pytest.mark.asyncio
     async def test_syntax_error_returns_static_check_failure(self) -> None:
         tool, _ = _make_review_tool()
-        result = await tool.ainvoke({"code": "def bad("})
+        result = await tool.ainvoke({"code": "def bad(", "summary": "s", "communication": "c"})
         assert "Static check failed [SyntaxError]" in result
 
     @pytest.mark.asyncio
     async def test_syntax_error_includes_line_number(self) -> None:
         tool, _ = _make_review_tool()
-        result = await tool.ainvoke({"code": "x = 1\ndef bad("})
+        result = await tool.ainvoke({"code": "x = 1\ndef bad(", "summary": "s", "communication": "c"})
         assert "line" in result.lower()
 
     @pytest.mark.asyncio
     async def test_syntax_error_does_not_call_llm(self) -> None:
         tool, mock_structured_llm = _make_review_tool()
-        await tool.ainvoke({"code": "def bad("})
+        await tool.ainvoke({"code": "def bad(", "summary": "s", "communication": "c"})
         mock_structured_llm.ainvoke.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_syntax_error_instructs_to_fix(self) -> None:
         tool, _ = _make_review_tool()
-        result = await tool.ainvoke({"code": "def bad("})
+        result = await tool.ainvoke({"code": "def bad(", "summary": "s", "communication": "c"})
         assert "Fix" in result or "fix" in result
 
     @pytest.mark.asyncio
     async def test_valid_syntax_passes_static_check(self) -> None:
         tool, _ = _make_review_tool()
-        result = await tool.ainvoke({"code": "x = 1 + 2"})
+        result = await tool.ainvoke({"code": "x = 1 + 2", "summary": "s", "communication": "c"})
         assert "Static check failed" not in result
 
 
@@ -528,13 +539,13 @@ class TestReviewMyCodeLlmCall:
     @pytest.mark.asyncio
     async def test_valid_code_calls_llm(self) -> None:
         tool, mock_structured_llm = _make_review_tool()
-        await tool.ainvoke({"code": "x = [i**2 for i in range(100)]"})
+        await tool.ainvoke({"code": "x = [i**2 for i in range(100)]", "summary": "s", "communication": "c"})
         mock_structured_llm.ainvoke.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_llm_receives_system_and_human_messages(self) -> None:
         tool, mock_structured_llm = _make_review_tool()
-        await tool.ainvoke({"code": "x = 1"})
+        await tool.ainvoke({"code": "x = 1", "summary": "s", "communication": "c"})
         messages = mock_structured_llm.ainvoke.call_args[0][0]
         assert any(isinstance(m, SystemMessage) for m in messages)
         assert any(isinstance(m, HumanMessage) for m in messages)
@@ -542,7 +553,7 @@ class TestReviewMyCodeLlmCall:
     @pytest.mark.asyncio
     async def test_system_prompt_mentions_correctness(self) -> None:
         tool, mock_structured_llm = _make_review_tool()
-        await tool.ainvoke({"code": "x = 1"})
+        await tool.ainvoke({"code": "x = 1", "summary": "s", "communication": "c"})
         messages = mock_structured_llm.ainvoke.call_args[0][0]
         sys_msg = next(m for m in messages if isinstance(m, SystemMessage))
         assert "Correctness" in sys_msg.content or "correctness" in sys_msg.content.lower()
@@ -550,7 +561,7 @@ class TestReviewMyCodeLlmCall:
     @pytest.mark.asyncio
     async def test_system_prompt_mentions_optimality(self) -> None:
         tool, mock_structured_llm = _make_review_tool()
-        await tool.ainvoke({"code": "x = 1"})
+        await tool.ainvoke({"code": "x = 1", "summary": "s", "communication": "c"})
         messages = mock_structured_llm.ainvoke.call_args[0][0]
         sys_msg = next(m for m in messages if isinstance(m, SystemMessage))
         assert "Optimality" in sys_msg.content or "optimality" in sys_msg.content.lower()
@@ -559,7 +570,7 @@ class TestReviewMyCodeLlmCall:
     async def test_code_is_embedded_in_human_message(self) -> None:
         snippet = "result = df.groupby('id').sum()"
         tool, mock_structured_llm = _make_review_tool()
-        await tool.ainvoke({"code": snippet})
+        await tool.ainvoke({"code": snippet, "summary": "s", "communication": "c"})
         messages = mock_structured_llm.ainvoke.call_args[0][0]
         human_msg = next(m for m in messages if isinstance(m, HumanMessage))
         assert snippet in human_msg.content
@@ -567,7 +578,7 @@ class TestReviewMyCodeLlmCall:
     @pytest.mark.asyncio
     async def test_context_is_embedded_in_human_message(self) -> None:
         tool, mock_structured_llm = _make_review_tool()
-        await tool.ainvoke({"code": "x = 1", "context": "Must run in under 5 s"})
+        await tool.ainvoke({"code": "x = 1", "context": "Must run in under 5 s", "summary": "s", "communication": "c"})
         messages = mock_structured_llm.ainvoke.call_args[0][0]
         human_msg = next(m for m in messages if isinstance(m, HumanMessage))
         assert "Must run in under 5 s" in human_msg.content
@@ -575,7 +586,7 @@ class TestReviewMyCodeLlmCall:
     @pytest.mark.asyncio
     async def test_no_context_omits_context_prefix(self) -> None:
         tool, mock_structured_llm = _make_review_tool()
-        await tool.ainvoke({"code": "x = 1"})
+        await tool.ainvoke({"code": "x = 1", "summary": "s", "communication": "c"})
         messages = mock_structured_llm.ainvoke.call_args[0][0]
         human_msg = next(m for m in messages if isinstance(m, HumanMessage))
         assert "Context:" not in human_msg.content
@@ -585,26 +596,26 @@ class TestReviewMyCodeOutput:
     @pytest.mark.asyncio
     async def test_lgtm_verdict_appears_in_output(self) -> None:
         tool, _ = _make_review_tool(verdict="LGTM")
-        result = await tool.ainvoke({"code": "x = 1"})
+        result = await tool.ainvoke({"code": "x = 1", "summary": "s", "communication": "c"})
         assert "VERDICT: LGTM" in result
 
     @pytest.mark.asyncio
     async def test_needs_changes_verdict_appears_in_output(self) -> None:
         tool, _ = _make_review_tool(verdict="NEEDS CHANGES")
-        result = await tool.ainvoke({"code": "x = 1"})
+        result = await tool.ainvoke({"code": "x = 1", "summary": "s", "communication": "c"})
         assert "VERDICT: NEEDS CHANGES" in result
 
     @pytest.mark.asyncio
     async def test_correctness_findings_appear_under_heading(self) -> None:
         tool, _ = _make_review_tool(correctness="Off-by-one in loop at line 3.")
-        result = await tool.ainvoke({"code": "x = 1"})
+        result = await tool.ainvoke({"code": "x = 1", "summary": "s", "communication": "c"})
         assert "### Correctness" in result
         assert "Off-by-one in loop at line 3." in result
 
     @pytest.mark.asyncio
     async def test_optimality_findings_appear_under_heading(self) -> None:
         tool, _ = _make_review_tool(optimality="Use vectorised ops instead of the for loop.")
-        result = await tool.ainvoke({"code": "x = 1"})
+        result = await tool.ainvoke({"code": "x = 1", "summary": "s", "communication": "c"})
         assert "### Optimality" in result
         assert "Use vectorised ops instead of the for loop." in result
 
@@ -615,7 +626,7 @@ class TestReviewMyCodeOutput:
             correctness="No issues found.",
             optimality="No issues found.",
         )
-        result = await tool.ainvoke({"code": "x = 1"})
+        result = await tool.ainvoke({"code": "x = 1", "summary": "s", "communication": "c"})
         assert result == (
             "VERDICT: LGTM\n\n"
             "### Correctness\nNo issues found.\n\n"
