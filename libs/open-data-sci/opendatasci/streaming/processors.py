@@ -191,9 +191,7 @@ class AgentTurnStreamProcessor:
                     details = usage_meta.get("input_token_details") or {}
                     if isinstance(details, dict):
                         self._stream_cache_read_tokens = int(details.get("cache_read") or 0)
-                        self._stream_cache_creation_tokens = int(
-                            details.get("cache_creation") or 0
-                        )
+                        self._stream_cache_creation_tokens = int(details.get("cache_creation") or 0)
             out_tok = usage_meta.get("output_tokens")
             if out_tok:
                 self._stream_final_output_tokens = int(out_tok)

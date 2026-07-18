@@ -216,12 +216,20 @@ class TestOllamaFactory:
             with pytest.raises(ValueError, match="langchain-ollama is not installed"):
                 factory(ollama_config)
 
-    def test_primary_model_kwargs(self, ollama_config) -> None:
+    def test_primary_model_kwargs_default_base_url(self, ollama_config) -> None:
         fake = _fake_module("langchain_ollama", ChatOllama=_RecordingModel)
         with patch.dict(sys.modules, {"langchain_ollama": fake}):
             model = local_models.create_ollama_model(ollama_config)
         assert model.kwargs["model"] == "llama3"
         assert model.kwargs["temperature"] == 0.2
+        assert model.kwargs["base_url"] == "http://localhost:11434"
+
+    def test_primary_model_uses_configured_base_url(self, ollama_config) -> None:
+        config = ollama_config.model_copy(update={"llm_server_base_url": "http://gpu-box:11434"})
+        fake = _fake_module("langchain_ollama", ChatOllama=_RecordingModel)
+        with patch.dict(sys.modules, {"langchain_ollama": fake}):
+            model = local_models.create_ollama_model(config)
+        assert model.kwargs["base_url"] == "http://gpu-box:11434"
 
     def test_secondary_model_kwargs(self, ollama_config) -> None:
         fake = _fake_module("langchain_ollama", ChatOllama=_RecordingModel)
@@ -230,6 +238,7 @@ class TestOllamaFactory:
         assert model.kwargs["model"] == "llama3-small"
         assert model.kwargs["temperature"] == 0
         assert model.kwargs["num_predict"] == 1000
+        assert model.kwargs["base_url"] == "http://localhost:11434"
 
 
 # ---------------------------------------------------------------------------

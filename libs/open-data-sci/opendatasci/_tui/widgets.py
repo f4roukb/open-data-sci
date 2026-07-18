@@ -640,7 +640,7 @@ class WorkspacePanel(Widget):
         self._selected = max(0, self._selected - self.PAGE_SIZE)
         if self._selected < self._offset:
             self._offset = self._selected
-            self._update_content()
+        self._update_content()
 
     def action_move_page_down(self) -> None:
         if not self._files or self._selected >= len(self._files) - 1:
@@ -648,7 +648,7 @@ class WorkspacePanel(Widget):
         self._selected = min(len(self._files) - 1, self._selected + self.PAGE_SIZE)
         if self._selected >= self._offset + self.PAGE_SIZE:
             self._offset = self._selected - self.PAGE_SIZE + 1
-            self._update_content()
+        self._update_content()
 
     def action_close_panel(self) -> None:
         self.remove_class("active")

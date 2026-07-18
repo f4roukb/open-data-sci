@@ -60,7 +60,6 @@ class OpenDataSciApp(App[None]):
 
     BINDINGS = [
         Binding("ctrl+c", "request_quit", "Stop/Quit"),
-        Binding("ctrl+d", "quit", "Quit", show=False),
         Binding("ctrl+r", "reset", "Reset"),
         Binding("ctrl+l", "clear_conv", "Clear", show=False),
         Binding("escape", "focus_input", "Focus", show=False),
