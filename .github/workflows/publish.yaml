@@ -6,6 +6,13 @@
 #
 # Decoupling publish from tagging means a tag can exist without being on PyPI
 # yet, and a failed publish can be re-run on the same tag.
+#
+# Before touching real PyPI, the package is built as {version}+test.{sha},
+# pushed to TestPyPI, installed from there into a clean venv, and import-tested.
+# The real build+publish only runs if that gate passes, so a broken TestPyPI
+# upload/install stops the release before it reaches PyPI.
+# Requires a TEST_PYPI_API_TOKEN repo secret (TestPyPI API token) in addition
+# to the existing PYPI_API_TOKEN.
 name: Publish
 
 on:
@@ -59,8 +66,40 @@ jobs:
         with:
           python-version: "3.12"
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compute TestPyPI version
+        id: test_version
+        run: |
+          VERSION=$(sed -n 's/^version = "\([^"]*\)".*/\1/p' pyproject.toml | head -n1)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          TEST_VERSION="${VERSION}+test.${SHORT_SHA}"
+          echo "version=$TEST_VERSION" >> "$GITHUB_OUTPUT"
+          echo "TestPyPI version: $TEST_VERSION"
+
+      - name: Publish to TestPyPI
+        run: |
+          sed -i "s/^version = \".*\"/version = \"${{ steps.test_version.outputs.version }}\"/" pyproject.toml
+          ./dev/scripts/test_pypi_publish.sh -t "$TESTPYPI_TOKEN"
+          git checkout -- pyproject.toml
+        env:
+          TESTPYPI_TOKEN: ${{ secrets.TEST_PYPI_API_TOKEN }}
+
+      - name: Install from TestPyPI and verify import
+        run: |
+          python -m venv test-pypi-install
+          source test-pypi-install/bin/activate
+          ./dev/scripts/test_pypi_install.sh -v "${{ steps.test_version.outputs.version }}"
+          python -c "import opendatasci; print('ok')"
+          deactivate
+          rm -rf test-pypi-install
+
       - name: Build
-        run: uv build
+        run: |
+          rm -rf dist/
+          uv build
 
       - name: Publish to PyPI
         run: uv publish
