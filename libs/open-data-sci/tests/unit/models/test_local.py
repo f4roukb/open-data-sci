@@ -66,19 +66,19 @@ class TestCreateOllamaPrimaryModel:
         monkeypatch.delenv("LLM_SERVER_BASE_URL", raising=False)
         config = OpenDataSciConfig(provider="ollama", llm_server_base_url="http://custom:11434")  # type: ignore[arg-type]
         create_ollama_model(config)
-        assert fake_chat_ollama["llm_server_base_url"] == "http://custom:11434"
+        assert fake_chat_ollama["base_url"] == "http://custom:11434"
 
     def test_base_url_from_env_var(self, fake_chat_ollama, monkeypatch) -> None:
         monkeypatch.setenv("LLM_SERVER_BASE_URL", "http://env-host:11434")
         config = OpenDataSciConfig(provider="ollama")  # type: ignore[arg-type]
         create_ollama_model(config)
-        assert fake_chat_ollama["llm_server_base_url"] == "http://env-host:11434"
+        assert fake_chat_ollama["base_url"] == "http://env-host:11434"
 
     def test_base_url_defaults_to_localhost(self, fake_chat_ollama, monkeypatch) -> None:
         monkeypatch.delenv("LLM_SERVER_BASE_URL", raising=False)
         config = OpenDataSciConfig(provider="ollama")  # type: ignore[arg-type]
         create_ollama_model(config)
-        assert fake_chat_ollama["llm_server_base_url"] == "http://localhost:11434"
+        assert fake_chat_ollama["base_url"] == "http://localhost:11434"
 
     def test_missing_package_raises_llm_provider_error(self, monkeypatch) -> None:
         monkeypatch.delitem(sys.modules, "langchain_ollama", raising=False)
@@ -104,7 +104,7 @@ class TestCreateOllamaSecondaryModel:
     def test_base_url_defaults_to_localhost(self, fake_chat_ollama, monkeypatch) -> None:
         monkeypatch.delenv("LLM_SERVER_BASE_URL", raising=False)
         create_ollama_secondary_model(OpenDataSciConfig(provider="ollama"))  # type: ignore[arg-type]
-        assert fake_chat_ollama["llm_server_base_url"] == "http://localhost:11434"
+        assert fake_chat_ollama["base_url"] == "http://localhost:11434"
 
     def test_missing_package_raises_llm_provider_error(self, monkeypatch) -> None:
         monkeypatch.delitem(sys.modules, "langchain_ollama", raising=False)

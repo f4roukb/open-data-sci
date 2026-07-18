@@ -211,9 +211,11 @@ class TestTurnStatusBarContextSuffix:
         suffix = self._bar(6500, 2601)._context_suffix()
         assert "(40.1% cached)" in suffix
 
-    def test_full_cache_shows_100_percent(self) -> None:
+    def test_full_cache_shows_capped_percent(self) -> None:
+        # Cache-read is always a subset of input tokens, so a "full" cache hit
+        # is capped just under 100% rather than displayed as a bare 100.0%.
         suffix = self._bar(5000, 5000)._context_suffix()
-        assert "(100.0% cached)" in suffix
+        assert "(99.9% cached)" in suffix
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +251,16 @@ class TestTurnStatusBarUpdateContext:
         rendered = t.update.call_args[0][0]
         assert "Context:" in rendered
         assert "(45.0% cached)" in rendered
+
+    def test_update_context_clamps_cached_over_context(self) -> None:
+        # Reproduces the Anthropic streaming case where langchain_anthropic
+        # sums usage across message_start/message_delta chunks, so cache_read
+        # can come back larger than input+output tokens for the same call.
+        t = self._bar()
+        t.update = MagicMock()
+        t.update_context(70, 9000)
+        rendered = t.update.call_args[0][0]
+        assert "(99.9% cached)" in rendered
 
     def test_update_context_none_cached_renders_without_parens(self) -> None:
         # None means the API doesn't provide cache metrics

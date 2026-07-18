@@ -100,7 +100,6 @@ Args:
             initial_skill = self.store.load(subtask.skill)
             if initial_skill is None:
                 logger.warning(
-                    "Worker %d: requested skill %r is unknown; starting without a preloaded skill.",
                     idx,
                     subtask.skill,
                 )

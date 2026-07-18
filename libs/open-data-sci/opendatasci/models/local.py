@@ -13,7 +13,7 @@ def create_ollama_model(config: OpenDataSciConfig) -> BaseChatModel:
         ) from exc
     model: BaseChatModel = ChatOllama(
         model=config.model,
-        llm_server_base_url=config.llm_server_base_url or "http://localhost:11434",
+        base_url=config.llm_server_base_url or "http://localhost:11434",
         temperature=config.temperature,
     )
     return model
@@ -29,7 +29,7 @@ def create_ollama_secondary_model(config: OpenDataSciConfig) -> BaseChatModel:
         ) from exc
     model: BaseChatModel = ChatOllama(
         model=config.secondary_model,
-        llm_server_base_url=config.llm_server_base_url or "http://localhost:11434",
+        base_url=config.llm_server_base_url or "http://localhost:11434",
         temperature=0,
         num_predict=1000,
     )
