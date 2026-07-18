@@ -379,6 +379,78 @@ class TestStreamEventProcessor:
         events = p.process_event({"event": "on_chat_model_end", "data": {"output": msg}})
         assert events == []
 
+    def test_process_model_end_uses_stream_totals_not_merged_double_count(self) -> None:
+        """langchain_anthropic emits usage on both the message_start chunk (input
+        + cache totals) and the message_delta chunk (repeats those totals plus
+        the final output_tokens). LangChain merges chunks by summing matching
+        usage fields, so the AIMessage.usage_metadata seen at on_chat_model_end
+        double-counts input/cache tokens. The processor must instead use the
+        per-chunk totals captured while streaming: input/cache from the first
+        usage-bearing chunk, output_tokens from the last."""
+        p = self._proc()
+        start_chunk = _make_chunk("")
+        start_chunk.usage_metadata = {
+            "input_tokens": 9050,
+            "output_tokens": 1,
+            "input_token_details": {"cache_read": 9000, "cache_creation": 0},
+        }
+        p.process_event(_stream_event(start_chunk))
+
+        text_chunk = _make_chunk("hello")
+        p.process_event(_stream_event(text_chunk))
+
+        delta_chunk = _make_chunk("")
+        delta_chunk.usage_metadata = {
+            "input_tokens": 9050,
+            "output_tokens": 20,
+            "input_token_details": {"cache_read": 9000, "cache_creation": 0},
+        }
+        p.process_event(_stream_event(delta_chunk))
+
+        # The merged message LangGraph hands to on_chat_model_end sums both
+        # chunks' usage fields (the actual upstream bug).
+        merged_msg = MagicMock()
+        merged_msg.usage_metadata = {
+            "input_tokens": 18100,
+            "output_tokens": 21,
+            "input_token_details": {"cache_read": 18000, "cache_creation": 0},
+        }
+        events = p.process_event({"event": "on_chat_model_end", "data": {"output": merged_msg}})
+
+        assert events[0].input_tokens == 9050
+        assert events[0].output_tokens == 20
+        assert events[0].cache_read_tokens == 9000
+
+    def test_process_model_end_stream_usage_state_resets_between_calls(self) -> None:
+        """Per-call streaming usage state must not leak into the next model call
+        within the same turn (e.g. a multi-round ReAct tool-calling loop)."""
+        p = self._proc()
+
+        first_chunk = _make_chunk("")
+        first_chunk.usage_metadata = {
+            "input_tokens": 100,
+            "output_tokens": 1,
+            "input_token_details": {"cache_read": 0, "cache_creation": 0},
+        }
+        p.process_event(_stream_event(first_chunk))
+        first_msg = MagicMock()
+        first_msg.usage_metadata = {"input_tokens": 100, "output_tokens": 10}
+        first_events = p.process_event(
+            {"event": "on_chat_model_end", "data": {"output": first_msg}}
+        )
+        assert first_events[0].input_tokens == 100
+
+        # A second round in the same turn with no usage-bearing stream chunk
+        # (streaming didn't happen / usage wasn't reported) must fall back to
+        # the merged message's own usage, not the first round's stale totals.
+        second_msg = MagicMock()
+        second_msg.usage_metadata = {"input_tokens": 500, "output_tokens": 30}
+        second_events = p.process_event(
+            {"event": "on_chat_model_end", "data": {"output": second_msg}}
+        )
+        assert second_events[0].input_tokens == 500
+        assert second_events[0].output_tokens == 30
+
     def test_process_chain_end_falls_back_to_msg_content_when_no_tokens_streamed_string(
         self,
     ) -> None:

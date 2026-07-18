@@ -196,7 +196,12 @@ class TurnStatusBar(Static):
         size = self._fmt_tokens(self._context_tokens)
         if self._cached_tokens is None:
             return f" | Context: {size} tokens"
-        pct = math.ceil(self._cached_tokens / max(self._context_tokens, 1) * 1000) / 10
+        # cached_tokens is the fraction of the total context (input + output)
+        # that was served from cache. Clamped defensively: cache_read is a
+        # subset of input_tokens by construction, so the ratio should never
+        # exceed 1, but this guards against any upstream provider quirk that
+        # breaks that invariant.
+        pct = min(99.9, math.ceil(self._cached_tokens / max(self._context_tokens, 1) * 1000) / 10)
         return f" | Context: {size} tokens ({pct:.1f}% cached)"
 
     def _tick(self) -> None:

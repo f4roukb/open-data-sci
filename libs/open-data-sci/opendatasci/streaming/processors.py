@@ -45,6 +45,9 @@ class AgentTurnStreamProcessor:
         self._pending_tool_calls: list[dict[str, Any]] = []
         # Per-model-call state for incremental usage estimates
         self._stream_input_tokens: int | None = None
+        self._stream_cache_read_tokens: int = 0
+        self._stream_cache_creation_tokens: int = 0
+        self._stream_final_output_tokens: int | None = None
         self._stream_output_chars: int = 0
 
     def process_event(self, event: dict[str, Any]) -> list[AgentStreamEvent]:
@@ -167,13 +170,33 @@ class AgentTurnStreamProcessor:
                     )
 
     def _update_stream_usage(self, chunk: Any, out: list[AgentStreamEvent]) -> None:
-        """Capture input tokens once and emit an incremental usage estimate per text chunk."""
-        # Anthropic includes input_tokens in the initial message_start chunk.
+        """Capture input/cache tokens once and emit an incremental usage estimate per text chunk.
+
+        Anthropic sends usage on *both* the ``message_start`` chunk (authoritative
+        input/cache totals) and the ``message_delta`` chunk (repeats those totals
+        alongside the final output_tokens). langchain_anthropic merges chunks by
+        summing matching usage fields, so the final ``AIMessage.usage_metadata``
+        seen in ``_handle_model_end`` double-counts input/cache tokens. Reading
+        each raw chunk here — before that merge happens — lets us take the
+        input/cache totals from the *first* usage-bearing chunk (correct, not yet
+        summed) and the output total from the *last* one (the true final count),
+        instead of trusting the merged message.
+        """
         usage_meta = getattr(chunk, "usage_metadata", None)
-        if isinstance(usage_meta, dict) and self._stream_input_tokens is None:
-            in_tok = usage_meta.get("input_tokens")
-            if in_tok:
-                self._stream_input_tokens = int(in_tok)
+        if isinstance(usage_meta, dict):
+            if self._stream_input_tokens is None:
+                in_tok = usage_meta.get("input_tokens")
+                if in_tok:
+                    self._stream_input_tokens = int(in_tok)
+                    details = usage_meta.get("input_token_details") or {}
+                    if isinstance(details, dict):
+                        self._stream_cache_read_tokens = int(details.get("cache_read") or 0)
+                        self._stream_cache_creation_tokens = int(
+                            details.get("cache_creation") or 0
+                        )
+            out_tok = usage_meta.get("output_tokens")
+            if out_tok:
+                self._stream_final_output_tokens = int(out_tok)
 
         chars_this_call = sum(len(ev.content) for ev in out if isinstance(ev, TokenEvent))
         if chars_this_call > 0 and self._stream_input_tokens is not None:
@@ -184,6 +207,14 @@ class AgentTurnStreamProcessor:
                     output_tokens=max(1, self._stream_output_chars // 4),
                 )
             )
+
+    def _reset_stream_usage_state(self) -> None:
+        """Clear per-model-call usage bookkeeping so it doesn't leak into the next call."""
+        self._stream_input_tokens = None
+        self._stream_cache_read_tokens = 0
+        self._stream_cache_creation_tokens = 0
+        self._stream_final_output_tokens = None
+        self._stream_output_chars = 0
 
     def _handle_chain_end(self, event: dict[str, Any]) -> list[AgentStreamEvent]:
         out: list[AgentStreamEvent] = []
@@ -352,30 +383,61 @@ class AgentTurnStreamProcessor:
         )
         return out
 
+    @staticmethod
+    def _usage_totals(usage: dict[str, Any]) -> tuple[int, int, int, int]:
+        """Normalize a single (non-merged) usage dict into
+        (input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens),
+        with input_tokens always including the cached subset.
+        """
+        input_tokens = int(usage.get("input_tokens") or 0)
+        output_tokens = int(usage.get("output_tokens") or 0)
+        cache_read_tokens = 0
+        cache_creation_tokens = 0
+        # Anthropic direct: cache tokens nested under input_token_details,
+        # already folded into input_tokens.
+        details = usage.get("input_token_details", {})
+        if isinstance(details, dict):
+            cache_read_tokens += int(details.get("cache_read") or 0)
+            cache_creation_tokens += int(details.get("cache_creation") or 0)
+        # Bedrock (langchain_aws): cache tokens at top level after
+        # cacheReadInputTokens → cache_read_input_tokens conversion.
+        # Bedrock reports input_tokens as the non-cached portion only, so
+        # add cache tokens back to input_tokens to match Anthropic's convention
+        # (where input_tokens already includes the cached subset).
+        bedrock_cache_read = int(usage.get("cache_read_input_tokens") or 0)
+        bedrock_cache_write = int(usage.get("cache_write_input_tokens") or 0)
+        cache_read_tokens += bedrock_cache_read
+        cache_creation_tokens += bedrock_cache_write
+        input_tokens += bedrock_cache_read + bedrock_cache_write
+        return input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens
+
     def _handle_model_end(self, event: dict[str, Any]) -> list[AgentStreamEvent]:
-        output_msg = event.get("data", {}).get("output")
-        if output_msg:
-            usage = getattr(output_msg, "usage_metadata", None)
+        try:
+            if self._stream_input_tokens is not None:
+                # Streaming call: use the per-chunk totals captured in
+                # _update_stream_usage instead of output_msg.usage_metadata,
+                # which langchain_anthropic double-counts by summing the
+                # message_start and message_delta chunks together.
+                output_tokens = (
+                    self._stream_final_output_tokens
+                    if self._stream_final_output_tokens is not None
+                    else max(1, self._stream_output_chars // 4)
+                )
+                return [
+                    UsageEvent(
+                        input_tokens=self._stream_input_tokens,
+                        output_tokens=output_tokens,
+                        cache_read_tokens=self._stream_cache_read_tokens,
+                        cache_creation_tokens=self._stream_cache_creation_tokens,
+                    )
+                ]
+
+            output_msg = event.get("data", {}).get("output")
+            usage = getattr(output_msg, "usage_metadata", None) if output_msg else None
             if usage:
-                input_tokens = usage.get("input_tokens", 0)
-                output_tokens = usage.get("output_tokens", 0)
-                cache_read_tokens = 0
-                cache_creation_tokens = 0
-                # Anthropic direct: cache tokens nested under input_token_details
-                details = usage.get("input_token_details", {})
-                if isinstance(details, dict):
-                    cache_read_tokens += details.get("cache_read", 0)
-                    cache_creation_tokens += details.get("cache_creation", 0)
-                # Bedrock (langchain_aws): cache tokens at top level after
-                # cacheReadInputTokens → cache_read_input_tokens conversion.
-                # Bedrock reports input_tokens as the non-cached portion only, so
-                # add cache tokens back to input_tokens to match Anthropic's convention
-                # (where input_tokens already includes the cached subset).
-                bedrock_cache_read = usage.get("cache_read_input_tokens", 0)
-                bedrock_cache_write = usage.get("cache_write_input_tokens", 0)
-                cache_read_tokens += bedrock_cache_read
-                cache_creation_tokens += bedrock_cache_write
-                input_tokens += bedrock_cache_read + bedrock_cache_write
+                input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens = (
+                    self._usage_totals(usage)
+                )
                 return [
                     UsageEvent(
                         input_tokens=input_tokens,
@@ -384,4 +446,6 @@ class AgentTurnStreamProcessor:
                         cache_creation_tokens=cache_creation_tokens,
                     )
                 ]
-        return []
+            return []
+        finally:
+            self._reset_stream_usage_state()
