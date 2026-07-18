@@ -18,11 +18,11 @@ DEFAULT_MODEL: MappingProxyType[Provider, str] = MappingProxyType(
         Provider.ANTHROPIC: "claude-sonnet-5",
         Provider.OPENAI: "gpt-5.6-sol",
         Provider.BEDROCK: "us.anthropic.claude-sonnet-5",
-        Provider.GEMINI: "gemini-2.5-pro",
-        Provider.VERTEXAI: "gemini-2.5-pro",
-        Provider.AZURE: "gpt-4o",
-        Provider.OLLAMA: "llama3.2:3b",
-        Provider.OPENAI_COMPATIBLE_SERVER: "meta-llama/Llama-3.2-3B-Instruct",
+        Provider.GEMINI: "gemini-3.5-flash",
+        Provider.VERTEXAI: "gemini-3.5-flash",
+        Provider.AZURE: "gpt-5.6-sol",
+        Provider.OLLAMA: "qwen3.5:9b",
+        Provider.OPENAI_COMPATIBLE_SERVER: "Qwen/Qwen3.5-4B",
     }
 )
 
@@ -31,11 +31,11 @@ DEFAULT_SECONDARY_MODEL: MappingProxyType[Provider, str] = MappingProxyType(
         Provider.ANTHROPIC: "claude-haiku-4-5",
         Provider.OPENAI: "gpt-5.6-luna",
         Provider.BEDROCK: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-        Provider.GEMINI: "gemini-2.5-flash",
-        Provider.VERTEXAI: "gemini-2.5-flash",
-        Provider.AZURE: "gpt-4o-mini",
-        Provider.OLLAMA: "llama3.2:3b",
-        Provider.OPENAI_COMPATIBLE_SERVER: "meta-llama/Llama-3.2-3B-Instruct",
+        Provider.GEMINI: "gemini-3.1-flash-lite",
+        Provider.VERTEXAI: "gemini-3.1-flash-lite",
+        Provider.AZURE: "gpt-5.6-luna",
+        Provider.OLLAMA: "qwen3.5:9b",
+        Provider.OPENAI_COMPATIBLE_SERVER: "Qwen/Qwen3.5-4B",
     }
 )
 
@@ -85,11 +85,9 @@ class OpenDataSciConfig(BaseSettings):
                            falls back to ``http://localhost:11434`` and
                            ``http://localhost:8000/v1`` respectively when
                            not set.
-        temperature:     LLM sampling temperature.  Ignored for Anthropic and
-                         Bedrock when extended thinking is active (those
-                         providers require temperature ``1``).
-        thinking_budget: Token budget for extended thinking / reasoning
-                         (Anthropic and Bedrock only).
+        temperature:     LLM sampling temperature.  Not sent to Anthropic and
+                         Bedrock models that use adaptive thinking (Claude
+                         4.6+), which reject explicit sampling parameters.
         name:            Display name of the agent.  Defaults to ``"Sai"``.
         mcp_servers: List of MCP server URLs the agent may connect to
                          (``MCP_SERVERS``).
@@ -185,7 +183,6 @@ class OpenDataSciConfig(BaseSettings):
 
     # ── Sampling & reasoning ──────────────────────────────────────────────────
     temperature: float = Field(default=0.0, alias="TEMPERATURE")
-    thinking_budget: int = Field(default=8192, alias="THINKING_BUDGET")
 
     # ── Agent Customization ───────────────────────────────────────────────────────
     name: str = Field(default="Sai", alias="NAME")
@@ -257,14 +254,13 @@ class OpenDataSciConfig(BaseSettings):
         """Load an ``OpenDataSciConfig`` from a YAML file.
 
         The file must be a YAML mapping whose keys match ``OpenDataSciConfig``
-        field names.  Unknown keys raise ``ValueError`` with a descriptive
-        message.  Environment variables are still applied for any field not
-        present in the file.
+        field names.  Unknown keys are ignored, so config files written for
+        other versions keep loading.  Environment variables are still applied
+        for any field not present in the file.
 
         Raises:
             ImportError: If PyYAML is not installed.
-            ValueError: If the file does not contain a mapping, or contains
-                unknown field names.
+            ValueError: If the file does not contain a mapping.
         """
         try:
             import yaml  # type: ignore[import-untyped]
@@ -283,12 +279,9 @@ class OpenDataSciConfig(BaseSettings):
                 f"got {type(data).__name__}"
             )
 
+        # Ignore unknown keys so config files written for other versions
+        # (e.g. containing removed fields) keep loading.
         valid_fields = set(cls.model_fields.keys())
-        unknown = set(data) - valid_fields
-        if unknown:
-            raise ValueError(
-                f"Unknown fields in YAML config '{path}': {', '.join(sorted(unknown))}. "
-                f"Valid fields: {', '.join(sorted(valid_fields))}"
-            )
+        known = {k: v for k, v in data.items() if k in valid_fields}
 
-        return cls(**data)
+        return cls(**known)

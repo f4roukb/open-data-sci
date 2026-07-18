@@ -134,13 +134,13 @@ opendatasci sales.csv
 opendatasci sales.csv --provider openai --model gpt-5.6-sol
 
 # Google Gemini
-opendatasci sales.csv --provider gemini --model gemini-2.5-pro
+opendatasci sales.csv --provider gemini --model gemini-3.5-flash
 
 # Local model via Ollama  (no API key needed)
-opendatasci sales.csv --provider ollama --model llama3.2:3b
+opendatasci sales.csv --provider ollama --model qwen3.5:9b
 
 # Self-hosted OpenAI-compatible server (e.g. vLLM)
-opendatasci sales.csv --provider openai_compatible_server --model meta-llama/Llama-3.2-3B-Instruct
+opendatasci sales.csv --provider openai_compatible_server --model Qwen/Qwen3.5-4B
 ```
 
 AWS Bedrock, Azure OpenAI, and Google Vertex AI are also supported —

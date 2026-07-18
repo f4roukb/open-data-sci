@@ -38,14 +38,14 @@ vLLM exposes an OpenAI-compatible HTTP API. Start it with the model you want
 before launching OpenDataSci:
 
 ```bash
-# Llama 3.2 3B — fits in ~8 GB VRAM, fast on a single consumer GPU
-vllm serve meta-llama/Llama-3.2-3B-Instruct
+# Qwen 3.5 4B — fits a 16 GB GPU at batch size 1, fast on a single consumer GPU
+vllm serve Qwen/Qwen3.5-4B
 
-# Larger model — better reasoning, needs more VRAM
-vllm serve meta-llama/Llama-3.1-8B-Instruct --port 8000
+# Larger model — better reasoning, needs more VRAM (~24 GB at bf16)
+vllm serve Qwen/Qwen3.5-9B --port 8000
 
 # Quantized model — lower VRAM at some quality cost
-vllm serve meta-llama/Llama-3.2-3B-Instruct --quantization awq
+vllm serve Qwen/Qwen3.5-4B --quantization awq
 ```
 
 The server listens on `http://localhost:8000/v1` by default.
@@ -71,11 +71,11 @@ huggingface-cli login
 ## Launching
 
 ```bash
-# Default model (meta-llama/Llama-3.2-3B-Instruct)
+# Default model (Qwen/Qwen3.5-4B)
 opendatasci sales.csv --provider openai_compatible_server
 
 # Choose a different model — must match what the running server is serving
-opendatasci sales.csv --provider openai_compatible_server --model meta-llama/Llama-3.1-8B-Instruct
+opendatasci sales.csv --provider openai_compatible_server --model Qwen/Qwen3.5-9B
 
 # Custom server URL
 LLM_SERVER_BASE_URL=http://192.168.1.10:8000/v1 opendatasci sales.csv --provider openai_compatible_server
@@ -131,13 +131,14 @@ cloud providers; only the setup differs.
 
 ## Tips for local models
 
-**Context window:** Smaller open-weight models often have shorter context windows
-(4 K–8 K tokens) than frontier cloud models. Use `/compact` earlier than you would
-with Anthropic or OpenAI to avoid running out of context.
+**Context window:** Qwen 3.5 models support a 256K context window, but serving the
+full window costs VRAM — vLLM caps `--max-model-len` to what fits on your GPU. If
+you serve a reduced window, use `/compact` earlier than you would with Anthropic or
+OpenAI to avoid running out of context.
 
-**Reasoning quality:** A 3B model will handle straightforward EDA and summaries well
-but may struggle with complex multi-step ML pipelines. Upgrade to a 70B+ model (e.g.
-`meta-llama/Llama-3.3-70B-Instruct`) for harder problems — but check VRAM requirements.
+**Reasoning quality:** A 4B model will handle straightforward EDA and summaries well
+but may struggle with complex multi-step ML pipelines. Upgrade to a larger model
+(e.g. `Qwen/Qwen3.5-27B`) for harder problems — but check VRAM requirements.
 
 **Secondary model:** The secondary model (used for memory summarisation) defaults to
 the same model as the primary. This is fine for local setups but doubles VRAM usage

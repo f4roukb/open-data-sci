@@ -25,11 +25,11 @@
 # not the underlying model name — they may differ depending on how you named
 # the deployment in the Azure portal.
 provider: azure
-model: gpt-4o
+model: gpt-5.6-sol
 
 # ── Secondary (auxiliary) model ───────────────────────────────────────────────
 secondary_provider: azure
-secondary_model: gpt-4o-mini
+secondary_model: gpt-5.6-luna
 
 # ── Sampling ──────────────────────────────────────────────────────────────────
 temperature: 0.1

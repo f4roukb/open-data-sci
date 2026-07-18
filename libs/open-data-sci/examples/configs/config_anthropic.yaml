@@ -24,15 +24,10 @@ model: claude-sonnet-5
 secondary_provider: openai
 secondary_model: gpt-5.6-luna
 
-# ── Sampling & reasoning ──────────────────────────────────────────────────────
-# temperature: Anthropic overrides this to 1 automatically when extended
-# thinking is active, so this value only affects non-thinking calls.
+# ── Sampling ──────────────────────────────────────────────────────────────────
+# temperature: not sent to Claude 4.6+ / Sonnet 5 models (they use adaptive
+# thinking and reject explicit sampling parameters); applies to other models.
 temperature: 0.1
-
-# Extended thinking token budget for deep multi-step reasoning.
-# Only used by pre-4.6 Claude models; Claude 4.6+ / Sonnet 5 / Fable 5 use
-# adaptive thinking automatically and ignore this value.
-thinking_budget: 8000
 
 # ── Agent identity ────────────────────────────────────────────────────────────
 name: Sai

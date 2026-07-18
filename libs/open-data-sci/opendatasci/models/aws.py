@@ -54,7 +54,7 @@ def create_bedrock_model(config: OpenDataSciConfig) -> BaseChatModel:
         model=config.model,
         region_name=config.aws_region,
         # No explicit temperature: adaptive thinking doesn't require it, and
-        # Opus 4.7+/Sonnet 5/Fable 5 reject sampling parameters with a 400.
+        # Opus 4.7+/Sonnet 5 reject sampling parameters with a 400.
         max_tokens=16000,
         additional_model_request_fields={
             "thinking": {"type": "adaptive"},
@@ -75,7 +75,7 @@ def create_bedrock_secondary_model(config: OpenDataSciConfig) -> BaseChatModel:
     if _BedrockBase is None:
         raise ValueError("langchain-aws is not installed.")
     if supports_adaptive_thinking(config.secondary_model):
-        # Explicit temperature is rejected on Opus 4.7+, Sonnet 5, and Fable 5.
+        # Explicit temperature is rejected on Opus 4.7+ and Sonnet 5.
         return _BedrockBase(  # type: ignore[no-any-return]
             model=config.secondary_model,
             region_name=config.aws_region,

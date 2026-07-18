@@ -31,7 +31,7 @@ existing `event.type == "token"` comparisons continue to work alongside
 
 | Class | `type` | Key fields | Description |
 |-------|--------|------------|-------------|
-| `ReasoningEvent` | `"reasoning"` | `content` | Extended-thinking token (Anthropic / Bedrock only) |
+| `ReasoningEvent` | `"reasoning"` | `content` | Thinking token (Anthropic / Bedrock only) |
 | `TokenEvent` | `"token"` | `content` | Incremental response text |
 | `ToolCallEvent` | `"tool_call"` | `content`, `tool`, `tool_call_id`, `summary`, `worker_summaries` | Agent is invoking a tool |
 | `ToolCommunicationEvent` | `"tool_communication"` | `content`, `tool_call_id`, `tool_name` | In-progress status from a long-running tool |
