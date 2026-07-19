@@ -274,6 +274,35 @@ class TestStreamEventProcessor:
         assert len(tool_results) == 1
         assert tool_results[0].tool_call_id == "msg-tc"
 
+    def test_process_tool_error_emits_error_tool_result(self) -> None:
+        """When a tool raises instead of returning, LangChain emits on_tool_error
+        rather than on_tool_end. Without a handler, no tool_result is ever
+        produced and the ephemeral block's spinner in the TUI never resolves.
+
+        Regression: previously on_tool_error was unhandled and process_event
+        silently returned []."""
+        p = self._proc()
+        event = {
+            "event": "on_tool_error",
+            "data": {"error": RuntimeError("boom")},
+            "metadata": {"tool_call_id": "tc-err"},
+        }
+        results = p.process_event(event)
+        tool_results = [e for e in results if e.type == "tool_result"]
+        assert len(tool_results) == 1
+        assert tool_results[0].is_error is True
+        assert tool_results[0].tool_call_id == "tc-err"
+        assert "boom" in tool_results[0].content
+
+    def test_process_tool_error_without_metadata_has_no_tool_call_id(self) -> None:
+        p = self._proc()
+        event = {"event": "on_tool_error", "data": {"error": ValueError("bad input")}}
+        results = p.process_event(event)
+        tool_results = [e for e in results if e.type == "tool_result"]
+        assert len(tool_results) == 1
+        assert tool_results[0].tool_call_id is None
+        assert tool_results[0].is_error is True
+
     def test_process_model_end_emits_per_call_tokens(self) -> None:
         p = self._proc()
         msg = MagicMock()

@@ -46,6 +46,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `verify_python_code` sends its review request with the correct message role for provider compatibility.
 - Agent replies are wrapped in `AgentMessage` so they carry timestamps like every other message.
 - `get_message_text_content()` strips whitespace from all text parts.
+- A tool call that raises instead of returning a `ToolMessage` no longer leaves its ephemeral block's spinner running forever in the TUI — `on_tool_error` events are now handled and produce an error `ToolResultEvent`.
+- The command-approval prompt now states its purpose ("I need your approval to run a bash script") before showing the command, and the heads-up warning is condensed to a single line instead of a separate labeled block.
 
 ### Removed
 

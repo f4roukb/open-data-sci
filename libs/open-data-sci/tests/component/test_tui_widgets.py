@@ -378,7 +378,7 @@ class TestCommandApprovalPrompt:
         app, pilot, pane = harness
         pane.show_approval_prompt("Delete rows", "Data loss possible")
         await pilot.pause()
-        assert "Heads-up" in _plain(app.query_one("#approval-prompt-content", Static))
+        assert "⚠️  Data loss possible" in _plain(app.query_one("#approval-prompt-content", Static))
         await pilot.press("down", "enter")
         assert app.decisions == [False]
 
@@ -405,7 +405,18 @@ class TestCommandApprovalPrompt:
         app, pilot, pane = harness
         pane.show_approval_prompt("Benign action", "")
         await pilot.pause()
-        assert "Heads-up" not in _plain(app.query_one("#approval-prompt-content", Static))
+        assert "⚠️" not in _plain(app.query_one("#approval-prompt-content", Static))
+
+    async def test_content_layout_signposts_description_and_heads_up(self, harness) -> None:
+        app, pilot, pane = harness
+        pane.show_approval_prompt("Deletes temporary files", "Files are gone for good")
+        await pilot.pause()
+        text = _plain(app.query_one("#approval-prompt-content", Static))
+        lines = text.splitlines()
+        assert lines[0] == "🛡  Approval required"
+        signpost = lines.index("I need your approval to run a bash script:")
+        assert lines[signpost + 1] == "Deletes temporary files"
+        assert lines[signpost + 2] == "⚠️  Files are gone for good"
 
 
 # ---------------------------------------------------------------------------
