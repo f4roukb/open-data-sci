@@ -60,7 +60,6 @@ class OpenDataSciApp(App[None]):
 
     BINDINGS = [
         Binding("ctrl+c", "request_quit", "Stop/Quit"),
-        Binding("ctrl+d", "quit", "Quit", show=False),
         Binding("ctrl+r", "reset", "Reset"),
         Binding("ctrl+l", "clear_conv", "Clear", show=False),
         Binding("escape", "focus_input", "Focus", show=False),
@@ -324,8 +323,8 @@ def main() -> None:
 Examples:
   opendatasci data.xlsx
   opendatasci data.csv --provider bedrock
-  opendatasci ./data_folder --provider openai --model gpt-4o
-  opendatasci data.csv --secondary-provider openai --secondary-model gpt-4o-mini
+  opendatasci ./data_folder --provider openai --model gpt-5.6-sol
+  opendatasci data.csv --secondary-provider openai --secondary-model gpt-5.6-luna
   opendatasci data.csv --config path/to/datasci_config.yaml
         """,
     )

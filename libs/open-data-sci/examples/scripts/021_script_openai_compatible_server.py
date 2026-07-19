@@ -6,7 +6,7 @@ No API key is required; the server must be running before this script starts.
 
 Start a vLLM server first (or any other OpenAI-compatible server):
 
-    vllm serve meta-llama/Llama-3.2-3B-Instruct
+    vllm serve Qwen/Qwen3.5-4B
 
 Then run this script:
 
@@ -108,7 +108,7 @@ async def main() -> None:
     # http://localhost:8000/v1 — e.g. LLM_SERVER_BASE_URL=http://gpu-box:8000/v1
     config = OpenDataSciConfig(
         provider="openai_compatible_server",
-        model="meta-llama/Llama-3.2-3B-Instruct",
+        model="Qwen/Qwen3.5-4B",
         temperature=0.1,
     )
 

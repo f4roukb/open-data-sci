@@ -29,7 +29,7 @@ def _get_exit_tool():
 
 def _invoke_enter(tool, *, skill: str | None = None, is_plan_mode: bool = False) -> Command:
     state = AgentState(is_plan_mode=is_plan_mode)
-    args: dict = {"state": state}
+    args: dict = {"summary": "s", "communication": "c", "state": state}
     if skill is not None:
         args["skill"] = skill
     return tool.invoke({"name": tool.name, "id": _CALL_ID, "args": args, "type": "tool_call"})
@@ -37,7 +37,7 @@ def _invoke_enter(tool, *, skill: str | None = None, is_plan_mode: bool = False)
 
 def _invoke_exit(tool, *, review: str = "Looks good.") -> Command:
     return tool.invoke(
-        {"name": tool.name, "id": _CALL_ID, "args": {"review": review}, "type": "tool_call"}
+        {"name": tool.name, "id": _CALL_ID, "args": {"review": review, "summary": "s", "communication": "c"}, "type": "tool_call"}
     )
 
 

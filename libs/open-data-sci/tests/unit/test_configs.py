@@ -129,10 +129,10 @@ class TestAgentConfigFromYaml:
 
     def test_loads_scalar_fields(self, tmp_path: Path) -> None:
         f = tmp_path / "cfg.yaml"
-        f.write_text("temperature: 0.5\nthinking_budget: 2000\nname: TestBot\n")
+        f.write_text("temperature: 0.5\nworker_timeout_seconds: 120\nname: TestBot\n")
         cfg = OpenDataSciConfig.from_yaml(f)
         assert cfg.temperature == 0.5
-        assert cfg.thinking_budget == 2000
+        assert cfg.worker_timeout_seconds == 120
         assert cfg.name == "TestBot"
 
     def test_loads_list_fields(self, tmp_path: Path) -> None:
@@ -160,11 +160,12 @@ class TestAgentConfigFromYaml:
         cfg = OpenDataSciConfig.from_yaml(str(f))
         assert cfg.provider == "openai"
 
-    def test_unknown_key_raises_value_error(self, tmp_path: Path) -> None:
+    def test_unknown_keys_are_ignored(self, tmp_path: Path) -> None:
         f = tmp_path / "cfg.yaml"
         f.write_text("provider: anthropic\nunknown_field: oops\n")
-        with pytest.raises(ValueError, match="Unknown fields"):
-            OpenDataSciConfig.from_yaml(f)
+        cfg = OpenDataSciConfig.from_yaml(f)
+        assert cfg.provider == "anthropic"
+        assert not hasattr(cfg, "unknown_field")
 
     def test_non_mapping_yaml_raises_value_error(self, tmp_path: Path) -> None:
         f = tmp_path / "cfg.yaml"

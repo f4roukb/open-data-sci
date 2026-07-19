@@ -111,7 +111,7 @@ async def main() -> None:
     # the region you are authenticated against.
     config = OpenDataSciConfig(
         provider="bedrock",
-        model="us.anthropic.claude-sonnet-4-6",
+        model="us.anthropic.claude-sonnet-5",
         temperature=0.1,
     )
 

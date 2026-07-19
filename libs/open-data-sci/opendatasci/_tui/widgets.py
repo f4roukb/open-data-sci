@@ -196,7 +196,12 @@ class TurnStatusBar(Static):
         size = self._fmt_tokens(self._context_tokens)
         if self._cached_tokens is None:
             return f" | Context: {size} tokens"
-        pct = math.ceil(self._cached_tokens / max(self._context_tokens, 1) * 1000) / 10
+        # cached_tokens is the fraction of the total context (input + output)
+        # that was served from cache. Clamped defensively: cache_read is a
+        # subset of input_tokens by construction, so the ratio should never
+        # exceed 1, but this guards against any upstream provider quirk that
+        # breaks that invariant.
+        pct = min(99.9, math.ceil(self._cached_tokens / max(self._context_tokens, 1) * 1000) / 10)
         return f" | Context: {size} tokens ({pct:.1f}% cached)"
 
     def _tick(self) -> None:
@@ -635,7 +640,7 @@ class WorkspacePanel(Widget):
         self._selected = max(0, self._selected - self.PAGE_SIZE)
         if self._selected < self._offset:
             self._offset = self._selected
-            self._update_content()
+        self._update_content()
 
     def action_move_page_down(self) -> None:
         if not self._files or self._selected >= len(self._files) - 1:
@@ -643,7 +648,7 @@ class WorkspacePanel(Widget):
         self._selected = min(len(self._files) - 1, self._selected + self.PAGE_SIZE)
         if self._selected >= self._offset + self.PAGE_SIZE:
             self._offset = self._selected - self.PAGE_SIZE + 1
-            self._update_content()
+        self._update_content()
 
     def action_close_panel(self) -> None:
         self.remove_class("active")
@@ -706,16 +711,14 @@ class CommandApprovalPrompt(Widget):
 
     def _refresh_content(self) -> None:
         lines = [
-            f"[bold {theme['warning']}]🛡 Approval required[/bold {theme['warning']}]",
+            f"[bold {theme['warning']}]🛡  Approval required[/bold {theme['warning']}]",
             "",
+            f"[{theme['text_primary']}]I need your approval to run a bash "
+            f"script:[/{theme['text_primary']}]",
             f"[{theme['text_primary']}]{escape(self._description)}[/{theme['text_primary']}]",
         ]
         if self._heads_up:
-            lines += [
-                "",
-                f"[bold {theme['warning']}]⚠️ Heads-up[/bold {theme['warning']}]  "
-                f"[{theme['warning']}]{escape(self._heads_up)}[/{theme['warning']}]",
-            ]
+            lines.append(f"[{theme['warning']}]⚠️  {escape(self._heads_up)}[/{theme['warning']}]")
         lines.append("")
         for idx, option in enumerate(self._OPTIONS):
             if self._resolved:

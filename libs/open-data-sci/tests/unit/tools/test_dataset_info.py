@@ -7,7 +7,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from opendatasci.sandbox.base import SandboxExecResult
+from opendatasci.context.base import BaseContextStore
+from opendatasci.sandbox.base import BaseSandbox, SandboxExecResult
 from opendatasci.tools.dataset_info import (
     build_profile_code,
     create_data_context_tools,
@@ -21,11 +22,11 @@ from opendatasci.tools.dataset_info import (
 
 
 def _make_context() -> MagicMock:
-    return MagicMock()
+    return MagicMock(spec=BaseContextStore)
 
 
 def _make_sandbox() -> MagicMock:
-    sandbox = MagicMock()
+    sandbox = MagicMock(spec=BaseSandbox)
     sandbox.execute = AsyncMock()
     return sandbox
 
@@ -345,7 +346,7 @@ class TestUpdateDatasetInfoTool:
     @pytest.mark.asyncio
     async def test_no_context_returns_error(self) -> None:
         tool = self._get_update_tool(None)
-        result = await tool.ainvoke({"path": "/data.csv", "update": "notes"})
+        result = await tool.ainvoke({"path": "/data.csv", "update": "notes", "summary": "s", "communication": "c"})
         assert "Error" in result
 
     @pytest.mark.asyncio
@@ -355,7 +356,7 @@ class TestUpdateDatasetInfoTool:
             return_value="/ws/.opendatasci/dataset_notes/2026/05/04/abc.md"
         )
         tool = self._get_update_tool(context)
-        result = await tool.ainvoke({"path": "/data.csv", "update": "some notes"})
+        result = await tool.ainvoke({"path": "/data.csv", "update": "some notes", "summary": "s", "communication": "c"})
         assert "/ws/.opendatasci/dataset_notes" in result
 
     @pytest.mark.asyncio
@@ -363,7 +364,7 @@ class TestUpdateDatasetInfoTool:
         context = _make_context()
         context.update_dataset_info = AsyncMock(return_value="/path.md")
         tool = self._get_update_tool(context)
-        await tool.ainvoke({"path": "/data.csv", "update": "notes"})
+        await tool.ainvoke({"path": "/data.csv", "update": "notes", "summary": "s", "communication": "c"})
         context.update_dataset_info.assert_called_once_with("/data.csv", "notes", merge=False)
 
     @pytest.mark.asyncio
@@ -371,7 +372,7 @@ class TestUpdateDatasetInfoTool:
         context = _make_context()
         context.update_dataset_info = AsyncMock(return_value="/path.md")
         tool = self._get_update_tool(context)
-        await tool.ainvoke({"path": "/data.csv", "update": "replace", "merge": False})
+        await tool.ainvoke({"path": "/data.csv", "update": "replace", "merge": False, "summary": "s", "communication": "c"})
         context.update_dataset_info.assert_called_once_with(
             "/data.csv", "replace", merge=False
         )
@@ -381,7 +382,7 @@ class TestUpdateDatasetInfoTool:
         context = _make_context()
         context.update_dataset_info = AsyncMock(side_effect=FileNotFoundError("gone"))
         tool = self._get_update_tool(context)
-        result = await tool.ainvoke({"path": "/gone.csv", "update": "x"})
+        result = await tool.ainvoke({"path": "/gone.csv", "update": "x", "summary": "s", "communication": "c"})
         assert "Error" in result
 
     @pytest.mark.asyncio
@@ -389,7 +390,7 @@ class TestUpdateDatasetInfoTool:
         context = _make_context()
         context.update_dataset_info = AsyncMock(side_effect=OSError("disk full"))
         tool = self._get_update_tool(context)
-        result = await tool.ainvoke({"path": "/data.csv", "update": "x"})
+        result = await tool.ainvoke({"path": "/data.csv", "update": "x", "summary": "s", "communication": "c"})
         assert "Error updating dataset info" in result
         assert "OSError" in result
 

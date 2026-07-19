@@ -102,14 +102,14 @@ class TestGetSkillTools:
 
 class TestListSkillsTool:
     def test_returns_json_with_domains(self) -> None:
-        result = _list_skills_tool().invoke({})
+        result = _list_skills_tool().invoke({"summary": "s", "communication": "c"})
         payload = json.loads(result)
         assert "competitive_data_science" in payload["domains"]
         assert "data_science" in payload["domains"]
         assert "machine_learning" in payload["domains"]
 
     def test_domain_scoped_skills_excluded_from_standalone_list(self) -> None:
-        result = _list_skills_tool().invoke({})
+        result = _list_skills_tool().invoke({"summary": "s", "communication": "c"})
         payload = json.loads(result)
         assert not any("::" in name for name in payload["standalone_skills"])
         assert "competitive_data_science::reconnaissance" not in payload["standalone_skills"]

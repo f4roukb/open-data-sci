@@ -274,6 +274,35 @@ class TestStreamEventProcessor:
         assert len(tool_results) == 1
         assert tool_results[0].tool_call_id == "msg-tc"
 
+    def test_process_tool_error_emits_error_tool_result(self) -> None:
+        """When a tool raises instead of returning, LangChain emits on_tool_error
+        rather than on_tool_end. Without a handler, no tool_result is ever
+        produced and the ephemeral block's spinner in the TUI never resolves.
+
+        Regression: previously on_tool_error was unhandled and process_event
+        silently returned []."""
+        p = self._proc()
+        event = {
+            "event": "on_tool_error",
+            "data": {"error": RuntimeError("boom")},
+            "metadata": {"tool_call_id": "tc-err"},
+        }
+        results = p.process_event(event)
+        tool_results = [e for e in results if e.type == "tool_result"]
+        assert len(tool_results) == 1
+        assert tool_results[0].is_error is True
+        assert tool_results[0].tool_call_id == "tc-err"
+        assert "boom" in tool_results[0].content
+
+    def test_process_tool_error_without_metadata_has_no_tool_call_id(self) -> None:
+        p = self._proc()
+        event = {"event": "on_tool_error", "data": {"error": ValueError("bad input")}}
+        results = p.process_event(event)
+        tool_results = [e for e in results if e.type == "tool_result"]
+        assert len(tool_results) == 1
+        assert tool_results[0].tool_call_id is None
+        assert tool_results[0].is_error is True
+
     def test_process_model_end_emits_per_call_tokens(self) -> None:
         p = self._proc()
         msg = MagicMock()
@@ -378,6 +407,112 @@ class TestStreamEventProcessor:
         msg.usage_metadata = None
         events = p.process_event({"event": "on_chat_model_end", "data": {"output": msg}})
         assert events == []
+
+    def test_process_model_end_uses_stream_totals_not_merged_double_count(self) -> None:
+        """langchain_anthropic emits usage on both the message_start chunk (input
+        + cache totals) and the message_delta chunk (repeats those totals plus
+        the final output_tokens). LangChain merges chunks by summing matching
+        usage fields, so the AIMessage.usage_metadata seen at on_chat_model_end
+        double-counts input/cache tokens. The processor must instead use the
+        per-chunk totals captured while streaming: input/cache from the first
+        usage-bearing chunk, output_tokens from the last."""
+        p = self._proc()
+        start_chunk = _make_chunk("")
+        start_chunk.usage_metadata = {
+            "input_tokens": 9050,
+            "output_tokens": 1,
+            "input_token_details": {"cache_read": 9000, "cache_creation": 0},
+        }
+        p.process_event(_stream_event(start_chunk))
+
+        text_chunk = _make_chunk("hello")
+        p.process_event(_stream_event(text_chunk))
+
+        delta_chunk = _make_chunk("")
+        delta_chunk.usage_metadata = {
+            "input_tokens": 9050,
+            "output_tokens": 20,
+            "input_token_details": {"cache_read": 9000, "cache_creation": 0},
+        }
+        p.process_event(_stream_event(delta_chunk))
+
+        # The merged message LangGraph hands to on_chat_model_end sums both
+        # chunks' usage fields (the actual upstream bug).
+        merged_msg = MagicMock()
+        merged_msg.usage_metadata = {
+            "input_tokens": 18100,
+            "output_tokens": 21,
+            "input_token_details": {"cache_read": 18000, "cache_creation": 0},
+        }
+        events = p.process_event({"event": "on_chat_model_end", "data": {"output": merged_msg}})
+
+        assert events[0].input_tokens == 9050
+        assert events[0].output_tokens == 20
+        assert events[0].cache_read_tokens == 9000
+
+    def test_stream_usage_captures_bedrock_style_cache_tokens(self) -> None:
+        """Bedrock's ChatBedrockConverse runs with disable_streaming=False, so its
+        usage_metadata is captured via the per-chunk streaming path
+        (_update_stream_usage), not the non-streaming on_chat_model_end branch.
+        That path must normalize Bedrock's top-level cache_read_input_tokens /
+        cache_write_input_tokens the same way _usage_totals does, or the
+        authoritative end-of-call UsageEvent silently reports 0 cache tokens
+        for every Bedrock response (making the TUI's cache % always 0.0%)."""
+        p = self._proc()
+        start_chunk = _make_chunk("")
+        start_chunk.usage_metadata = {
+            "input_tokens": 600,
+            "output_tokens": 1,
+            "cache_read_input_tokens": 6630,
+            "cache_write_input_tokens": 0,
+        }
+        p.process_event(_stream_event(start_chunk))
+
+        text_chunk = _make_chunk("hello")
+        p.process_event(_stream_event(text_chunk))
+
+        merged_msg = MagicMock()
+        merged_msg.usage_metadata = {
+            "input_tokens": 600,
+            "output_tokens": 141,
+            "cache_read_input_tokens": 6630,
+            "cache_write_input_tokens": 0,
+        }
+        events = p.process_event({"event": "on_chat_model_end", "data": {"output": merged_msg}})
+
+        assert events[0].input_tokens == 7230
+        assert events[0].cache_read_tokens == 6630
+        assert events[0].cache_creation_tokens == 0
+
+    def test_process_model_end_stream_usage_state_resets_between_calls(self) -> None:
+        """Per-call streaming usage state must not leak into the next model call
+        within the same turn (e.g. a multi-round ReAct tool-calling loop)."""
+        p = self._proc()
+
+        first_chunk = _make_chunk("")
+        first_chunk.usage_metadata = {
+            "input_tokens": 100,
+            "output_tokens": 1,
+            "input_token_details": {"cache_read": 0, "cache_creation": 0},
+        }
+        p.process_event(_stream_event(first_chunk))
+        first_msg = MagicMock()
+        first_msg.usage_metadata = {"input_tokens": 100, "output_tokens": 10}
+        first_events = p.process_event(
+            {"event": "on_chat_model_end", "data": {"output": first_msg}}
+        )
+        assert first_events[0].input_tokens == 100
+
+        # A second round in the same turn with no usage-bearing stream chunk
+        # (streaming didn't happen / usage wasn't reported) must fall back to
+        # the merged message's own usage, not the first round's stale totals.
+        second_msg = MagicMock()
+        second_msg.usage_metadata = {"input_tokens": 500, "output_tokens": 30}
+        second_events = p.process_event(
+            {"event": "on_chat_model_end", "data": {"output": second_msg}}
+        )
+        assert second_events[0].input_tokens == 500
+        assert second_events[0].output_tokens == 30
 
     def test_process_chain_end_falls_back_to_msg_content_when_no_tokens_streamed_string(
         self,

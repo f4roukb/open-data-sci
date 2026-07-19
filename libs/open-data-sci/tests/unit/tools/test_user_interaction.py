@@ -6,7 +6,7 @@ import pytest
 
 from opendatasci.tools.user_interaction import create_user_interaction_tools
 
-_ARGS = {"question": "Q?", "choice_a": "A", "choice_b": "B", "choice_c": "C"}
+_ARGS = {"question": "Q?", "choice_a": "A", "choice_b": "B", "choice_c": "C", "summary": "s", "communication": "c"}
 
 
 def _get_tool():
@@ -41,7 +41,14 @@ class TestAskUserMcq:
         tool = _get_tool()
         with patch("opendatasci.tools.user_interaction.interrupt", return_value="B") as mock_intr:
             await tool.ainvoke(
-                {"question": "Pick?", "choice_a": "X", "choice_b": "Y", "choice_c": "Z"}
+                {
+                    "question": "Pick?",
+                    "choice_a": "X",
+                    "choice_b": "Y",
+                    "choice_c": "Z",
+                    "summary": "s",
+                    "communication": "c",
+                }
             )
         assert mock_intr.call_args[0][0]["choices"] == ["X", "Y", "Z"]
 

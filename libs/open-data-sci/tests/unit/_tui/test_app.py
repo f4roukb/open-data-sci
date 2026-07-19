@@ -64,12 +64,12 @@ class TestMainArgparse:
         assert self._agent_config(["data.csv"]).provider == "anthropic"
 
     def test_default_model_anthropic_is_claude_sonnet(self) -> None:
-        assert self._agent_config(["data.csv"]).model == "claude-sonnet-4-6"
+        assert self._agent_config(["data.csv"]).model == "claude-sonnet-5"
 
     def test_default_model_openai_resolves_from_provider_default(self) -> None:
         cfg = self._agent_config(["data.csv", "--provider", "openai"])
         assert cfg.provider == "openai"
-        assert cfg.model == "gpt-5.5"
+        assert cfg.model == "gpt-5.6-sol"
 
     def test_explicit_model_overrides_default(self) -> None:
         assert (

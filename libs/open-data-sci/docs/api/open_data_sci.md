@@ -22,7 +22,7 @@ from opendatasci import create_agent, OpenDataSciConfig
 
 config = OpenDataSciConfig(
     provider="openai",
-    model="gpt-4o",
+    model="gpt-5.6-sol",
     openai_api_key="sk-...",
 )
 

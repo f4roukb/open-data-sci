@@ -18,16 +18,16 @@
 # ── Primary model ─────────────────────────────────────────────────────────────
 # Cross-region inference requires the regional prefix (us., eu., ap.).
 provider: bedrock
-model: us.anthropic.claude-sonnet-4-6
+model: us.anthropic.claude-sonnet-5
 
 # ── Secondary (auxiliary) model ───────────────────────────────────────────────
 secondary_provider: bedrock
 secondary_model: us.anthropic.claude-haiku-4-5-20251001-v1:0
 
-# ── Sampling & reasoning ──────────────────────────────────────────────────────
-# Anthropic on Bedrock overrides temperature to 1 when extended thinking is active.
+# ── Sampling ──────────────────────────────────────────────────────────────────
+# temperature: not sent to Claude 4.6+ / Sonnet 5 models (they use adaptive
+# thinking and reject explicit sampling parameters); applies to other models.
 temperature: 0.1
-thinking_budget: 8000
 
 # ── Region ────────────────────────────────────────────────────────────────────
 # Falls back to REGION env var, then us-east-1.
