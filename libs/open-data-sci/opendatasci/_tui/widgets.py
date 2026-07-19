@@ -711,16 +711,14 @@ class CommandApprovalPrompt(Widget):
 
     def _refresh_content(self) -> None:
         lines = [
-            f"[bold {theme['warning']}]🛡 Approval required[/bold {theme['warning']}]",
+            f"[bold {theme['warning']}]🛡  Approval required[/bold {theme['warning']}]",
             "",
+            f"[{theme['text_primary']}]I need your approval to run a bash "
+            f"script:[/{theme['text_primary']}]",
             f"[{theme['text_primary']}]{escape(self._description)}[/{theme['text_primary']}]",
         ]
         if self._heads_up:
-            lines += [
-                "",
-                f"[bold {theme['warning']}]⚠️ Heads-up[/bold {theme['warning']}]  "
-                f"[{theme['warning']}]{escape(self._heads_up)}[/{theme['warning']}]",
-            ]
+            lines.append(f"[{theme['warning']}]⚠️  {escape(self._heads_up)}[/{theme['warning']}]")
         lines.append("")
         for idx, option in enumerate(self._OPTIONS):
             if self._resolved:

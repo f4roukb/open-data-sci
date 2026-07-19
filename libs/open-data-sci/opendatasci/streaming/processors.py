@@ -65,6 +65,8 @@ class AgentTurnStreamProcessor:
             return self._handle_chain_end(event)
         if kind == "on_tool_end":
             return self._handle_tool_end(event)
+        if kind == "on_tool_error":
+            return self._handle_tool_error(event)
         if kind == "on_chat_model_end":
             return self._handle_model_end(event)
         if kind == "on_custom_event" and event.get("name") == "worker_event":
@@ -381,6 +383,23 @@ class AgentTurnStreamProcessor:
             )
         )
         return out
+
+    def _handle_tool_error(self, event: dict[str, Any]) -> list[AgentStreamEvent]:
+        """Handle a tool call that raised instead of returning a ToolMessage.
+
+        Without this, a raising tool never produces a ``ToolResultEvent`` and
+        its ephemeral block's spinner in the TUI runs forever (see
+        ``_unwrap_command_output`` for the analogous ``on_tool_end`` fix).
+        """
+        error = event.get("data", {}).get("error")
+        tool_call_id = event.get("metadata", {}).get("tool_call_id")
+        return [
+            ToolResultEvent(
+                content=f"Error: {error}",
+                tool_call_id=tool_call_id,
+                is_error=True,
+            )
+        ]
 
     @staticmethod
     def _usage_totals(usage: dict[str, Any]) -> tuple[int, int, int, int]:

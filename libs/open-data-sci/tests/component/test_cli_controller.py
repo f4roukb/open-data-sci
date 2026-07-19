@@ -156,6 +156,7 @@ class _RecordingUI(UIAdapter):
         self.input_values: list[tuple[str, int | None]] = []
         self.pending_messages: list[_RecordingPendingMessage] = []
         self.approval_prompts: list[tuple[str, str]] = []
+        self.ephemerals: list[_RecordingEphemeral] = []
 
     def add_message(self, role: str, content: str = "") -> MessageHandle:
         h = _RecordingMessageHandle(role, content)
@@ -174,10 +175,14 @@ class _RecordingUI(UIAdapter):
         return h
 
     def add_ephemeral_block(self, communication: str, label: str, summary: str) -> EphemeralHandle:
-        return _RecordingEphemeral()
+        h = _RecordingEphemeral()
+        self.ephemerals.append(h)
+        return h
 
     def add_worker_block(self, communication: str, worker_summaries: list[str]) -> EphemeralHandle:
-        return _RecordingEphemeral()
+        h = _RecordingEphemeral()
+        self.ephemerals.append(h)
+        return h
 
     def add_thinking_block(self) -> ThinkingHandle:
         return _RecordingThinking()
@@ -470,6 +475,30 @@ class TestRunAgent:
         await ctrl.run_agent("ls")
         # The presenter must have closed by handle_response — no exceptions raised.
         assert ctrl._agent_running is False
+
+    async def test_failed_tool_call_resolves_ephemeral_as_error(self):
+        """A tool_result with is_error=True must mark the running ephemeral block
+        as errored (not leave it spinning). This is the TUI-visible symptom of
+        the on_tool_error regression: the tool-call block spun forever because
+        no ToolResultEvent was ever produced for a raising tool."""
+        events = [
+            ToolCallEvent(
+                content="{}",
+                tool="list_workspace_files",
+                tool_call_id="id1",
+                summary="Listing",
+            ),
+            ToolResultEvent(content="Error: boom", tool_call_id="id1", is_error=True),
+            ResponseEvent(content="done"),
+        ]
+        svc = _make_service_stub(astream_events=events)
+        ctrl, ui = _make_controller(service=svc)
+        await ctrl.run_agent("ls")
+        assert ctrl._agent_running is False
+        assert len(ui.ephemerals) == 1
+        assert ui.ephemerals[0].error is True
+        assert ui.ephemerals[0].done is False
+        assert not ui.ephemerals[0].is_running()
 
     async def test_input_required_event_opens_prompt(self):
         events = [
