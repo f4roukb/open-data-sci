@@ -74,8 +74,7 @@ jobs:
         id: test_version
         run: |
           VERSION=$(sed -n 's/^version = "\([^"]*\)".*/\1/p' pyproject.toml | head -n1)
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          TEST_VERSION="${VERSION}+test.${SHORT_SHA}"
+          TEST_VERSION="${VERSION}.dev${GITHUB_RUN_ID}"
           echo "version=$TEST_VERSION" >> "$GITHUB_OUTPUT"
           echo "TestPyPI version: $TEST_VERSION"
 
