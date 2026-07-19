@@ -416,7 +416,7 @@ class TestCommandApprovalPrompt:
         assert lines[0] == "🛡  Approval required"
         signpost = lines.index("I need your approval to run a bash script:")
         assert lines[signpost + 1] == "Deletes temporary files"
-        assert lines[signpost + 2] == "⚠️ Files are gone for good"
+        assert lines[signpost + 2] == "⚠️  Files are gone for good"
 
 
 # ---------------------------------------------------------------------------
