@@ -34,6 +34,9 @@ from .widgets import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 def _print_providers() -> None:
     table = Table(title=None, show_header=True, header_style="bold")
     table.add_column("Provider")
@@ -47,7 +50,7 @@ def _get_version() -> str:
     try:
         return importlib.metadata.version("open-data-sci")
     except importlib.metadata.PackageNotFoundError:
-        logging.getLogger(__name__).warning(
+        logger.warning(
             "open-data-sci package not found; falling back to hardcoded version '0.2.0'"
         )
         return "0.2.0"
@@ -313,6 +316,18 @@ _PROVIDER_KEY_FIELD: dict[Provider, str | None] = {
 }
 
 
+def _resolve_region(region: str | None, provider: Provider) -> str | None:
+    """Return *region* if applicable to *provider*, else log and ignore it."""
+    if region is None:
+        return None
+    if provider != Provider.BEDROCK:
+        logger.warning(
+            "--region is ignored for provider '%s' (only 'bedrock' uses it)", provider
+        )
+        return None
+    return region
+
+
 def main() -> None:
     load_dotenv()
 
@@ -364,6 +379,12 @@ Examples:
         dest="api_key",
         default=None,
         help="API key for the primary provider (or set via environment variable)",
+    )
+    parser.add_argument(
+        "--region",
+        dest="region",
+        default=None,
+        help="AWS region, required for the 'bedrock' provider (ignored otherwise)",
     )
     parser.add_argument(
         "--theme",
@@ -421,6 +442,11 @@ Examples:
                     f"--api-key is not supported for provider '{effective_provider}' "
                     f"(uses cloud-native authentication)"
                 )
+        if args.region is not None:
+            effective_provider = Provider(str(args.provider or datasci_config.provider))
+            region = _resolve_region(args.region, effective_provider)
+            if region is not None:
+                overrides["aws_region"] = region
         if overrides:
             datasci_config = datasci_config.model_copy(update=overrides)
     else:
@@ -442,6 +468,9 @@ Examples:
                     f"--api-key is not supported for provider '{provider}' "
                     f"(uses cloud-native authentication)"
                 )
+        region = _resolve_region(args.region, provider)
+        if region is not None:
+            kwargs["aws_region"] = region
         datasci_config = OpenDataSciConfig(**kwargs)  # type: ignore[arg-type]
 
     session_id = uuid.uuid4().hex
