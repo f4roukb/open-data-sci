@@ -51,7 +51,7 @@ class AgentGraphFactory:
 
         graph = StateGraph(AgentState)
         graph.add_node("agent", agent_node.to_async_callable())
-        graph.add_node("tools", ToolNode(self._tools))
+        graph.add_node("tools", ToolNode(self._tools, handle_tool_errors=True))
         graph.add_edge(START, "agent")
         graph.add_conditional_edges("agent", _route_after_llm_call, {"tools": "tools", "end": END})
         graph.add_edge("tools", "agent")
@@ -81,7 +81,7 @@ class WorkerGraphFactory:
 
         graph = StateGraph(AgentState)
         graph.add_node("agent", agent_node.to_async_callable())
-        graph.add_node("tools", ToolNode(self._tools))
+        graph.add_node("tools", ToolNode(self._tools, handle_tool_errors=True))
         graph.add_edge(START, "agent")
         graph.add_conditional_edges("agent", _route_after_llm_call, {"tools": "tools", "end": END})
         graph.add_edge("tools", "agent")
