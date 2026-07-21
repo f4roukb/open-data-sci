@@ -1,7 +1,7 @@
 """Unit tests for _TurnPresenter (opendatasci._tui.presenter)."""
 
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -25,8 +25,9 @@ from opendatasci._tui.presenter import _TurnPresenter, apply_usage_event
 def _make_ui() -> MagicMock:
     ui = MagicMock()
     msg = MagicMock()
-    msg.append = MagicMock()
-    msg.finish = MagicMock()
+    msg.append = AsyncMock()
+    msg.set_content = AsyncMock()
+    msg.finish = AsyncMock()
     ui.add_message.return_value = msg
     ui.add_thinking_block.return_value = MagicMock()
     return ui
@@ -47,13 +48,13 @@ class TestThinkingBlockSpinner:
         _TurnPresenter(ui)
         ui.add_thinking_block.assert_called_once()
 
-    def test_spinner_reshown_after_tool_result(self) -> None:
+    async def test_spinner_reshown_after_tool_result(self) -> None:
         # The spinner is dismissed by tool_call and must reappear after tool_result.
         ui = _make_ui()
         eph = MagicMock()
         ui.add_ephemeral_block.return_value = eph
         p = _TurnPresenter(ui)
-        p.handle_tool_call(
+        await p.handle_tool_call(
             ToolCallEvent(
                 tool="execute_python_code",
                 tool_call_id="tc1",
@@ -100,21 +101,21 @@ class TestHandleReasoning:
 
 
 class TestCleanup:
-    def test_cleanup_finalises_thinking_block_with_summary(self) -> None:
+    async def test_cleanup_finalises_thinking_block_with_summary(self) -> None:
         ui = _make_ui()
         p = _TurnPresenter(ui)
         block = ui.add_thinking_block.return_value
         p.handle_reasoning(_reasoning("pondering"))
-        p.cleanup()
+        await p.cleanup()
         block.finish.assert_called_once()
         summary_arg = block.finish.call_args.args[0]
         assert "Thought for" in summary_arg
 
-    def test_cleanup_dismisses_thinking_block_when_no_reasoning(self) -> None:
+    async def test_cleanup_dismisses_thinking_block_when_no_reasoning(self) -> None:
         ui = _make_ui()
         p = _TurnPresenter(ui)
         block = ui.add_thinking_block.return_value
-        p.cleanup()
+        await p.cleanup()
         block.dismiss.assert_called_once()
         block.finish.assert_not_called()
 
@@ -185,36 +186,36 @@ class TestDisplayFalse:
         ui.add_ephemeral_block.return_value = eph
         return _TurnPresenter(ui), ui
 
-    def test_no_ephemeral_block_created_for_hidden_tool(self) -> None:
+    async def test_no_ephemeral_block_created_for_hidden_tool(self) -> None:
         p, ui = self._setup()
-        p.handle_tool_call(_hidden_tool_call())
+        await p.handle_tool_call(_hidden_tool_call())
         ui.add_ephemeral_block.assert_not_called()
 
-    def test_thinking_block_not_dismissed_for_hidden_tool(self) -> None:
+    async def test_thinking_block_not_dismissed_for_hidden_tool(self) -> None:
         p, ui = self._setup()
         thinking = ui.add_thinking_block.return_value
-        p.handle_tool_call(_hidden_tool_call())
+        await p.handle_tool_call(_hidden_tool_call())
         thinking.dismiss.assert_not_called()
 
-    def test_tool_result_for_hidden_tool_does_not_warn(
+    async def test_tool_result_for_hidden_tool_does_not_warn(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
         import logging
 
         p, ui = self._setup()
-        p.handle_tool_call(_hidden_tool_call("h1"))
+        await p.handle_tool_call(_hidden_tool_call("h1"))
         with caplog.at_level(logging.WARNING):
             p.handle_tool_result(ToolResultEvent(tool_call_id="h1"))
         assert not caplog.records
 
-    def test_tool_result_for_hidden_tool_does_not_reshow_thinking_block(self) -> None:
+    async def test_tool_result_for_hidden_tool_does_not_reshow_thinking_block(self) -> None:
         p, ui = self._setup()
-        p.handle_tool_call(_hidden_tool_call("h1"))
+        await p.handle_tool_call(_hidden_tool_call("h1"))
         ui.add_thinking_block.reset_mock()
         p.handle_tool_result(ToolResultEvent(tool_call_id="h1"))
         ui.add_thinking_block.assert_not_called()
 
-    def test_pending_comm_block_kept_as_comm_only_when_tool_is_hidden(self) -> None:
+    async def test_pending_comm_block_kept_as_comm_only_when_tool_is_hidden(self) -> None:
         """No flash: a pre-mounted comm block (unregistered tool_name at comm
         time) must be KEPT when the tool turns out to be hidden — downgraded to
         communication-only (empty label/summary), not dismissed."""
@@ -232,18 +233,18 @@ class TestDisplayFalse:
         )
         assert ui.add_ephemeral_block.call_count == 1
         # tool_call fires with display_status=False — block survives without a status line
-        p.handle_tool_call(_hidden_tool_call("h1"))
+        await p.handle_tool_call(_hidden_tool_call("h1"))
         comm_block.dismiss.assert_not_called()
         comm_block.upgrade.assert_called_once_with("", "")
 
-    def test_pending_comm_block_dismissed_when_hidden_and_narration_present(self) -> None:
+    async def test_pending_comm_block_dismissed_when_hidden_and_narration_present(self) -> None:
         """When the agent already narrated in a regular message, the hidden
         tool's comm block is redundant and must be retracted."""
         p, ui = self._setup()
         comm_block = MagicMock()
         comm_block.is_running.return_value = True
         ui.add_ephemeral_block.return_value = comm_block
-        p.handle_token(TokenEvent(content="I'm saving my notes now."))
+        await p.handle_token(TokenEvent(content="I'm saving my notes now."))
         p.handle_tool_communication(
             ToolCommunicationEvent(
                 content="Saving notes…",
@@ -251,11 +252,11 @@ class TestDisplayFalse:
                 tool_name="internal_action",
             )
         )
-        p.handle_tool_call(_hidden_tool_call("h1"))
+        await p.handle_tool_call(_hidden_tool_call("h1"))
         comm_block.dismiss.assert_called_once()
         comm_block.upgrade.assert_not_called()
 
-    def test_comm_for_registered_hidden_tool_creates_comm_only_block(self) -> None:
+    async def test_comm_for_registered_hidden_tool_creates_comm_only_block(self) -> None:
         """The user must still get updates for hidden tools: their comm
         pre-mounts a communication-only block (empty label, empty summary)."""
         p, ui = self._setup()
@@ -268,7 +269,7 @@ class TestDisplayFalse:
         )
         ui.add_ephemeral_block.assert_called_once_with("Reading dataset notes…", "", "")
 
-    def test_full_hidden_tool_lifecycle_shows_narration_without_status_line(
+    async def test_full_hidden_tool_lifecycle_shows_narration_without_status_line(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
         """comm → tool_call → tool_result for a hidden tool: the narration
@@ -287,7 +288,7 @@ class TestDisplayFalse:
                 tool_name="ask_user_mcq",  # display_status=False in tools_display.py
             )
         )
-        p.handle_tool_call(ToolCallEvent(tool="ask_user_mcq", tool_call_id="h1", summary=""))
+        await p.handle_tool_call(ToolCallEvent(tool="ask_user_mcq", tool_call_id="h1", summary=""))
         ui.add_thinking_block.reset_mock()
         with caplog.at_level(logging.WARNING):
             p.handle_tool_result(ToolResultEvent(tool_call_id="h1"))
@@ -297,17 +298,17 @@ class TestDisplayFalse:
         ui.add_thinking_block.assert_called_once()
         assert not caplog.records
 
-    def test_visible_tool_after_hidden_tool_still_creates_ephemeral(self) -> None:
+    async def test_visible_tool_after_hidden_tool_still_creates_ephemeral(self) -> None:
         p, ui = self._setup()
-        p.handle_tool_call(_hidden_tool_call("h1"))
+        await p.handle_tool_call(_hidden_tool_call("h1"))
         p.handle_tool_result(ToolResultEvent(tool_call_id="h1"))
         ui.add_ephemeral_block.reset_mock()
-        p.handle_tool_call(_visible_tool_call("v1"))
+        await p.handle_tool_call(_visible_tool_call("v1"))
         ui.add_ephemeral_block.assert_called_once()
 
-    def test_hidden_tool_call_id_cleared_after_result(self) -> None:
+    async def test_hidden_tool_call_id_cleared_after_result(self) -> None:
         p, _ = self._setup()
-        p.handle_tool_call(_hidden_tool_call("h1"))
+        await p.handle_tool_call(_hidden_tool_call("h1"))
         assert "h1" in p._hidden_tool_call_ids
         p.handle_tool_result(ToolResultEvent(tool_call_id="h1"))
         assert "h1" not in p._hidden_tool_call_ids
@@ -338,10 +339,10 @@ class TestCommunicationSuppressedByNarration:
         ui.add_ephemeral_block.return_value = eph
         return _TurnPresenter(ui), ui
 
-    def test_communication_shown_when_no_narration(self) -> None:
+    async def test_communication_shown_when_no_narration(self) -> None:
         p, ui = self._setup()
         p.handle_tool_communication(_tool_comm("tc1", "Fetching results…"))
-        p.handle_tool_call(_visible_tool_call("tc1"))
+        await p.handle_tool_call(_visible_tool_call("tc1"))
         _, call_kwargs = (
             ui.add_ephemeral_block.call_args_list[-1].args,
             ui.add_ephemeral_block.call_args_list[-1],
@@ -351,33 +352,33 @@ class TestCommunicationSuppressedByNarration:
         eph = ui.add_ephemeral_block.return_value
         eph.set_communication.assert_not_called()
 
-    def test_communication_suppressed_for_new_block_when_narration_present(self) -> None:
+    async def test_communication_suppressed_for_new_block_when_narration_present(self) -> None:
         p, ui = self._setup()
         # Token arrives before tool_call → narration present
-        p.handle_token(_token("Let me run that."))
+        await p.handle_token(_token("Let me run that."))
         p.handle_tool_communication(_tool_comm("tc1", "Fetching results…"))
         ui.add_ephemeral_block.reset_mock()
-        p.handle_tool_call(_visible_tool_call("tc1"))
+        await p.handle_tool_call(_visible_tool_call("tc1"))
         # The pre-mounted block is upgraded; check set_communication(None) was called on it
         eph = ui.add_ephemeral_block.return_value
         eph.set_communication.assert_called_once_with(None)
 
-    def test_communication_suppressed_for_direct_new_block_when_narration_present(self) -> None:
+    async def test_communication_suppressed_for_direct_new_block_when_narration_present(self) -> None:
         """No pre-mounted ephemeral but comm buffered: block gets empty comm when narration present."""
         p, ui = self._setup()
-        p.handle_token(_token("Here we go."))
+        await p.handle_token(_token("Here we go."))
         # Directly buffer comm without pre-mounting (edge case: comm arrived after narration)
         p._comm_buffers["tc1"] = "Running analysis…"
-        p.handle_tool_call(_visible_tool_call("tc1"))
+        await p.handle_tool_call(_visible_tool_call("tc1"))
         comm_arg = ui.add_ephemeral_block.call_args.args[0]
         assert comm_arg == ""
 
-    def test_communication_passed_through_when_no_narration(self) -> None:
+    async def test_communication_passed_through_when_no_narration(self) -> None:
         """No narration → comm forwarded verbatim to the new ephemeral block."""
         p, ui = self._setup()
         # Pre-buffer communication without going through a pre-mounted block
         p._comm_buffers["tc1"] = "Running analysis…"
-        p.handle_tool_call(_visible_tool_call("tc1"))
+        await p.handle_tool_call(_visible_tool_call("tc1"))
         comm_arg = ui.add_ephemeral_block.call_args.args[0]
         assert comm_arg == "Running analysis…"
 
@@ -399,33 +400,33 @@ class TestToolResultErrorHandling:
         ui.add_ephemeral_block.return_value = eph
         return _TurnPresenter(ui), ui
 
-    def test_successful_result_calls_set_done(self) -> None:
+    async def test_successful_result_calls_set_done(self) -> None:
         p, ui = self._setup()
         eph = ui.add_ephemeral_block.return_value
-        p.handle_tool_call(_visible_tool_call("tc1"))
+        await p.handle_tool_call(_visible_tool_call("tc1"))
         p.handle_tool_result(_tool_result("tc1", is_error=False))
         eph.set_done.assert_called_once()
         eph.set_error.assert_not_called()
 
-    def test_error_result_calls_set_error(self) -> None:
+    async def test_error_result_calls_set_error(self) -> None:
         p, ui = self._setup()
         eph = ui.add_ephemeral_block.return_value
-        p.handle_tool_call(_visible_tool_call("tc1"))
+        await p.handle_tool_call(_visible_tool_call("tc1"))
         p.handle_tool_result(_tool_result("tc1", is_error=True))
         eph.set_error.assert_called_once()
         eph.set_done.assert_not_called()
 
-    def test_missing_is_error_key_defaults_to_set_done(self) -> None:
+    async def test_missing_is_error_key_defaults_to_set_done(self) -> None:
         p, ui = self._setup()
         eph = ui.add_ephemeral_block.return_value
-        p.handle_tool_call(_visible_tool_call("tc1"))
+        await p.handle_tool_call(_visible_tool_call("tc1"))
         p.handle_tool_result(ToolResultEvent(content="output", tool_call_id="tc1"))
         eph.set_done.assert_called_once()
         eph.set_error.assert_not_called()
 
-    def test_spinner_reshown_after_error_result(self) -> None:
+    async def test_spinner_reshown_after_error_result(self) -> None:
         p, ui = self._setup()
-        p.handle_tool_call(_visible_tool_call("tc1"))
+        await p.handle_tool_call(_visible_tool_call("tc1"))
         ui.add_thinking_block.reset_mock()
         p.handle_tool_result(_tool_result("tc1", is_error=True))
         ui.add_thinking_block.assert_called_once()
@@ -474,58 +475,58 @@ class TestSpawnWorkers:
         ui.add_ephemeral_block.return_value = eph
         return _TurnPresenter(ui), ui, worker_block
 
-    def test_spawn_workers_creates_worker_block_with_summaries(self) -> None:
+    async def test_spawn_workers_creates_worker_block_with_summaries(self) -> None:
         p, ui, _ = self._setup()
-        p.handle_tool_call(_spawn_workers_call("sw1", ["Task A", "Task B"]))
+        await p.handle_tool_call(_spawn_workers_call("sw1", ["Task A", "Task B"]))
         ui.add_worker_block.assert_called_once_with("", ["Task A", "Task B"])
 
-    def test_worker_done_success_marks_worker_done(self) -> None:
+    async def test_worker_done_success_marks_worker_done(self) -> None:
         p, _, wb = self._setup()
-        p.handle_tool_call(_spawn_workers_call("sw1"))
+        await p.handle_tool_call(_spawn_workers_call("sw1"))
         p.handle_worker_done(_worker_done(0, success=True))
         wb.mark_worker_done.assert_called_once_with(0)
 
-    def test_worker_done_failure_marks_worker_error(self) -> None:
+    async def test_worker_done_failure_marks_worker_error(self) -> None:
         p, _, wb = self._setup()
-        p.handle_tool_call(_spawn_workers_call("sw1"))
+        await p.handle_tool_call(_spawn_workers_call("sw1"))
         p.handle_worker_done(_worker_done(1, success=False))
         wb.mark_worker_error.assert_called_once_with(1)
 
-    def test_subagent_event_updates_worker_activity(self) -> None:
+    async def test_subagent_event_updates_worker_activity(self) -> None:
         p, _, wb = self._setup()
-        p.handle_tool_call(_spawn_workers_call("sw1"))
+        await p.handle_tool_call(_spawn_workers_call("sw1"))
         p.handle_subagent_event(_subagent_event(0, "execute_python_code", "Training model"))
         wb.update_worker_activity.assert_called_once()
         idx, activity = wb.update_worker_activity.call_args.args
         assert idx == 0
         assert "Training model" in activity
 
-    def test_worker_block_survives_subsequent_tool_call(self) -> None:
+    async def test_worker_block_survives_subsequent_tool_call(self) -> None:
         """Regression: a non-spawn_workers tool call after spawn_workers must not clobber _worker_block."""
         p, _, wb = self._setup()
-        p.handle_tool_call(_spawn_workers_call("sw1"))
+        await p.handle_tool_call(_spawn_workers_call("sw1"))
         # A second tool call fires while workers are still running
-        p.handle_tool_call(_visible_tool_call("v1"))
+        await p.handle_tool_call(_visible_tool_call("v1"))
         p.handle_worker_done(_worker_done(0, success=True))
         wb.mark_worker_done.assert_called_once_with(0)
 
-    def test_subagent_event_reaches_block_after_subsequent_tool_call(self) -> None:
+    async def test_subagent_event_reaches_block_after_subsequent_tool_call(self) -> None:
         """Regression: activity updates must not be dropped after a concurrent tool call."""
         p, _, wb = self._setup()
-        p.handle_tool_call(_spawn_workers_call("sw1"))
-        p.handle_tool_call(_visible_tool_call("v1"))
+        await p.handle_tool_call(_spawn_workers_call("sw1"))
+        await p.handle_tool_call(_visible_tool_call("v1"))
         p.handle_subagent_event(_subagent_event(1, "execute_python_code", "Fitting"))
         wb.update_worker_activity.assert_called_once()
 
-    def test_tool_result_for_spawn_workers_marks_block_done(self) -> None:
+    async def test_tool_result_for_spawn_workers_marks_block_done(self) -> None:
         p, _, wb = self._setup()
-        p.handle_tool_call(_spawn_workers_call("sw1"))
+        await p.handle_tool_call(_spawn_workers_call("sw1"))
         p.handle_tool_result(ToolResultEvent(tool_call_id="sw1"))
         wb.set_done.assert_called_once()
 
-    def test_tool_result_error_for_spawn_workers_marks_block_error(self) -> None:
+    async def test_tool_result_error_for_spawn_workers_marks_block_error(self) -> None:
         p, _, wb = self._setup()
-        p.handle_tool_call(_spawn_workers_call("sw1"))
+        await p.handle_tool_call(_spawn_workers_call("sw1"))
         p.handle_tool_result(ToolResultEvent(tool_call_id="sw1", is_error=True))
         wb.set_error.assert_called_once()
         wb.set_done.assert_not_called()
@@ -540,13 +541,13 @@ class TestSpawnWorkers:
         p.handle_subagent_event(_subagent_event(0))
         wb.update_worker_activity.assert_not_called()
 
-    def test_worker_tool_result_clears_activity(self) -> None:
+    async def test_worker_tool_result_clears_activity(self) -> None:
         """Regression: a finished tool call inside a worker must clear the inline
         activity so the row reverts to the subtask summary while the LLM is
         deciding the next step — otherwise the row would keep displaying the
         previous tool's name long after it finished."""
         p, _, wb = self._setup()
-        p.handle_tool_call(_spawn_workers_call("sw1"))
+        await p.handle_tool_call(_spawn_workers_call("sw1"))
         result_event = SubagentEvent(
             content="execute_python_code",
             worker_idx=0,
@@ -556,7 +557,7 @@ class TestSpawnWorkers:
         p.handle_subagent_event(result_event)
         wb.update_worker_activity.assert_called_once_with(0, "")
 
-    def test_spawn_workers_replaces_pre_mounted_ephemeral(self) -> None:
+    async def test_spawn_workers_replaces_pre_mounted_ephemeral(self) -> None:
         """When tool_communication arrives before the tool_call, a placeholder
         ephemeral is pre-mounted.  For spawn_workers the placeholder must be
         dismissed and replaced with a proper worker block."""
@@ -571,7 +572,7 @@ class TestSpawnWorkers:
         p.handle_tool_communication(_tool_comm("sw1", "Preparing…"))
         assert pre_mount in p._ephemerals
 
-        p.handle_tool_call(_spawn_workers_call("sw1", ["Task A"]))
+        await p.handle_tool_call(_spawn_workers_call("sw1", ["Task A"]))
 
         pre_mount.dismiss.assert_called_once()
         assert pre_mount not in p._ephemerals
@@ -600,7 +601,7 @@ class TestToolCommunicationToRunningBlock:
 
         running_block.set_communication.assert_called_once_with("second")
 
-    def test_set_communication_not_forwarded_when_block_finished(self) -> None:
+    async def test_set_communication_not_forwarded_when_block_finished(self) -> None:
         """If the block has finished running, no further communication should be pushed."""
         ui = _make_ui()
         finished_block = MagicMock()
@@ -620,16 +621,16 @@ class TestToolCommunicationToRunningBlock:
 
 
 class TestSubagentEventActivityFallbacks:
-    def _setup(self) -> tuple[_TurnPresenter, MagicMock]:
+    async def _setup(self) -> tuple[_TurnPresenter, MagicMock]:
         ui = _make_ui()
         worker_block = MagicMock()
         ui.add_worker_block.return_value = worker_block
         ui.add_ephemeral_block.return_value = MagicMock(is_running=MagicMock(return_value=True))
         p = _TurnPresenter(ui)
-        p.handle_tool_call(_spawn_workers_call("sw1"))
+        await p.handle_tool_call(_spawn_workers_call("sw1"))
         return p, worker_block
 
-    def test_activity_falls_back_to_registry_label_when_no_summary(self) -> None:
+    async def test_activity_falls_back_to_registry_label_when_no_summary(self) -> None:
         """When the subagent event carries no summary but the tool has a
         ToolDisplay in REGISTRY, the row activity must surface the registry
         label (with icon) instead of the raw tool name."""
@@ -638,7 +639,7 @@ class TestSubagentEventActivityFallbacks:
         original = _registry.get("fake_demo_tool")
         register("fake_demo_tool", ToolDisplay(label="Demo Tool", icon="🎯"))
         try:
-            p, wb = self._setup()
+            p, wb = await self._setup()
             p.handle_subagent_event(
                 SubagentEvent(
                     content="fake_demo_tool",
@@ -656,10 +657,12 @@ class TestSubagentEventActivityFallbacks:
             else:
                 _registry.pop("fake_demo_tool", None)
 
-    def test_activity_falls_back_to_raw_tool_name_when_no_display_and_no_summary(self) -> None:
+    async def test_activity_falls_back_to_raw_tool_name_when_no_display_and_no_summary(
+        self,
+    ) -> None:
         """Last-ditch fallback: unknown tool + no summary → render the bare tool name."""
         # "unregistered_xyz" is never registered; no setup needed.
-        p, wb = self._setup()
+        p, wb = await self._setup()
         p.handle_subagent_event(
             SubagentEvent(
                 content="unregistered_xyz",
