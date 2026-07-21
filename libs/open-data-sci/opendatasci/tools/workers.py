@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import Annotated, Any, override
+from typing import Annotated, Any, Callable, Coroutine, Literal, override
 
 from annotated_types import MaxLen, MinLen
 from langchain_core.callbacks.manager import adispatch_custom_event
@@ -21,31 +21,31 @@ from opendatasci.tools.base import OpenDataSciBaseTool
 from opendatasci.tools.coding import create_cli_tools, create_coding_tools
 from opendatasci.tools.skills import create_skill_tools
 from opendatasci.tools.web import create_web_tools
+from opendatasci.workers import BaseWorker, ConcurrentWorker, ParallelWorker
 from opendatasci.workspace.base import BaseWorkspace
 
 logger = logging.getLogger(__name__)
 
 
-class WorkerTask(BaseModel):
-    """A subtask descriptor for a worker."""
-
-    subtask: str
-    """Specific, self-contained subtask with all context the worker needs."""
-    summary: str
-    """3-4 word status label (e.g. ``'Shapiro-Wilk on age'``)."""
-    skill: str | None = None
-    """Optional skill profile to preload before the subtask runs
-    (e.g. ``'data_science'``, ``'ml_engineering'``). ``None`` = no skill."""
-    allow_web_tools: bool = False
-    """When ``True``, the worker can use ``web_search`` and ``fetch_url``
-    to look up documentation, papers, or API references."""
-
-
 class SpawnWorkersTool(OpenDataSciBaseTool):
     """Spawn parallel worker agents to execute independent subtasks."""
 
+    class WorkerRunConfig(BaseModel):
+        """Everything a worker needs to run a single subtask to completion."""
+
+        subtask: str
+        """Specific, self-contained subtask with all context the worker needs."""
+        summary: str
+        """3-4 word status label (e.g. ``'Shapiro-Wilk on age'``)."""
+        skill: str | None = None
+        """Optional skill profile to preload before the subtask runs
+        (e.g. ``'data_science'``, ``'ml_engineering'``). ``None`` = no skill."""
+        allow_web_tools: bool = False
+        """When ``True``, the worker can use ``web_search`` and ``fetch_url``
+        to look up documentation, papers, or API references."""
+
     class CallArgs(BaseModel):
-        subtasks: Annotated[list[WorkerTask], MinLen(1), MaxLen(3)]
+        subtasks: Annotated[list["SpawnWorkersTool.WorkerRunConfig"], MinLen(1), MaxLen(3)]
         summary: str
         communication: str
 
@@ -72,7 +72,7 @@ other subtasks. Each subtask runs to completion independently before results are
 - Assign a ``skill`` when the subtask benefits from domain-specific guidance.
 
 Args:
-    subtasks:      1-3 subtask descriptors (see WorkerTask fields).
+    subtasks:      1-3 subtask descriptors (see WorkerRunConfig fields).
     communication: Brief message to the user about what you're doing
                    (e.g. "Running three checks in parallel.").
 """.strip()
@@ -83,8 +83,15 @@ Args:
     datasci_config: OpenDataSciConfig | None
     sandbox_factory: BaseSandboxFactory
     store: BaseSkillStore
+    run_mode: Literal["parallel", "concurrent"] = "concurrent"
 
-    async def _arun_one(self, idx: int, subtask: WorkerTask, outer_config: RunnableConfig) -> str:
+    async def _arun_one(
+        self,
+        idx: int,
+        subtask: WorkerRunConfig,
+        outer_config: RunnableConfig,
+        schedule: "Callable[[Coroutine[Any, Any, None]], Any] | None" = None,
+    ) -> str:
         """Run a single worker subtask inside its own sandbox.
 
         Args:
@@ -94,6 +101,13 @@ Args:
                           any inner graph run can overwrite the context var — ensures
                           ``adispatch_custom_event`` always targets the right callback
                           chain regardless of which async context is active at fire time.
+            schedule:     How to schedule the ``adispatch_custom_event`` coroutine.
+                          ``None`` schedules it on the currently running loop (the
+                          worker's own loop, whether that's the shared concurrent
+                          loop or this worker's dedicated parallel-mode loop). When
+                          running in parallel mode, this is instead
+                          ``run_coroutine_threadsafe`` targeting the caller's loop,
+                          since the callback machinery in *outer_config* lives there.
         """
         initial_skill = None
         if subtask.skill is not None:
@@ -105,18 +119,20 @@ Args:
                 )
 
         def emit(event_type: str, content: str, metadata: dict[str, Any] | None = None) -> None:
-            asyncio.get_running_loop().create_task(
-                adispatch_custom_event(
-                    "worker_event",
-                    {
-                        "worker_idx": idx,
-                        "event_type": event_type,
-                        "content": content,
-                        **(metadata or {}),
-                    },
-                    config=outer_config,
-                )
+            coro = adispatch_custom_event(
+                "worker_event",
+                {
+                    "worker_idx": idx,
+                    "event_type": event_type,
+                    "content": content,
+                    **(metadata or {}),
+                },
+                config=outer_config,
             )
+            if schedule is not None:
+                schedule(coro)
+            else:
+                asyncio.get_running_loop().create_task(coro)
 
         cancelled = False
         exc_info: BaseException | None = None
@@ -169,18 +185,18 @@ Args:
     @override
     async def _arun(
         self,
-        subtasks: Annotated[list[WorkerTask], MinLen(1), MaxLen(3)],
+        subtasks: Annotated[list[WorkerRunConfig], MinLen(1), MaxLen(3)],
         summary: str,
         communication: str,
         **kwargs: Any,
     ) -> str:
         outer_config = ensure_config()
         timeout = (self.datasci_config or OpenDataSciConfig()).worker_timeout_seconds
+        worker: BaseWorker = (
+            ParallelWorker() if self.run_mode == "parallel" else ConcurrentWorker()
+        )
         results = await asyncio.wait_for(
-            asyncio.gather(
-                *[self._arun_one(i, t, outer_config) for i, t in enumerate(subtasks)],
-                return_exceptions=True,
-            ),
+            worker.run(subtasks, outer_config, self._arun_one),
             timeout=timeout,
         )
 
@@ -207,6 +223,7 @@ def create_worker_tools(
     datasci_config: OpenDataSciConfig | None,
     sandbox_factory: BaseSandboxFactory,
     store: BaseSkillStore | None = None,
+    run_mode: Literal["parallel", "concurrent"] = "concurrent",
 ) -> list[BaseTool]:
     """Return the spawn_workers tool.
 
@@ -225,6 +242,10 @@ def create_worker_tools(
         store:           Skill store shared across all spawned workers.  Defaults
                          to a :class:`~opendatasci.skills.local.LocalSkillStore`
                          rooted at ``<context.root>/skills``.
+        run_mode:        ``"concurrent"`` (default) runs subtasks cooperatively on a
+                         single event loop, as before. ``"parallel"`` runs each
+                         subtask on its own OS thread with a dedicated event loop
+                         for true parallel execution.
     """
     if store is None:
         user_skills_dir = Path(context.root) / "skills" if context is not None else None
@@ -240,5 +261,6 @@ def create_worker_tools(
             datasci_config=datasci_config,
             sandbox_factory=sandbox_factory,
             store=store,
+            run_mode=run_mode,
         )
     ]
