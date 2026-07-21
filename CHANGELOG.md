@@ -6,13 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-### Changed
+## [0.2.1] - 2026-07-21
 
-- `aws_region` now defaults to `"us-east-1"`, and unknown `.env` keys are ignored instead of raising.
-- TUI message streaming now goes through Textual's own `MarkdownStream` instead of a hand-rolled flush timer; `MessageHandle` methods are async accordingly.
-- Bumped major dependency versions across the LangChain/LangGraph stack, numpy, pandas, and several other libraries (see `pyproject.toml`).
-- Refreshed a few tool display icons.
-- Tool nodes now set `handle_tool_errors=True`, required by the LangGraph 1.x upgrade to keep a raising tool from killing the agent turn.
+### Fixed
+
+- **Streamed usage totals no longer double-count cached tokens** — Anthropic sends usage on both the `message_start` chunk (authoritative input/cache totals) and the `message_delta` chunk (repeats those totals alongside the final `output_tokens`); `langchain_anthropic` merges chunks by summing matching usage fields, so the final `AIMessage.usage_metadata` double-counted input/cache tokens for streamed calls. The stream processor now reads raw chunks directly, taking input/cache totals from the first usage-bearing chunk and the output total from the last one.
+- CI: fixed the TestPyPI publish workflow (executable bit on publish/install scripts, dev-build version suffix generation) so pre-release packages publish correctly.
+
+### Added
+
+- Component test coverage for the TUI app/widgets, model factories, and sandbox runner.
 
 ## [0.2.0] - 2026-07-18
 
