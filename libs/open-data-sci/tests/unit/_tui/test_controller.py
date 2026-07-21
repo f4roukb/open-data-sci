@@ -1012,13 +1012,13 @@ class TestRunAgent:
         await loaded_controller.run_agent("q")
         mock_ui.add_divider.assert_called_once()
 
-    async def test_run_agent_spawn_workers_block_marked_done_on_tool_result(
+    async def test_run_agent_task_block_marked_done_on_tool_result(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
-        """Worker block turns green (set_done) when spawn_workers tool_result arrives."""
+        """Worker block turns green (set_done) when task tool_result arrives."""
         wb = mock_ui.add_worker_block.return_value
         events = [
-            ToolCallEvent(tool="spawn_workers", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
+            ToolCallEvent(tool="task", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
             WorkerDoneEvent(worker_idx=0, success=True),
             WorkerDoneEvent(worker_idx=1, success=True),
             ToolResultEvent(content="done", tool_call_id="sw1"),
@@ -1027,13 +1027,13 @@ class TestRunAgent:
         await loaded_controller.run_agent("q")
         wb.set_done.assert_called()
 
-    async def test_run_agent_spawn_workers_worker_done_updates_block(
+    async def test_run_agent_task_worker_done_updates_block(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
         """Each worker_done event calls mark_worker_done on the worker block."""
         wb = mock_ui.add_worker_block.return_value
         events = [
-            ToolCallEvent(tool="spawn_workers", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
+            ToolCallEvent(tool="task", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
             WorkerDoneEvent(worker_idx=0, success=True),
             WorkerDoneEvent(worker_idx=1, success=True),
             ToolResultEvent(content="done", tool_call_id="sw1"),
@@ -1043,7 +1043,7 @@ class TestRunAgent:
         wb.mark_worker_done.assert_any_call(0)
         wb.mark_worker_done.assert_any_call(1)
 
-    async def test_run_agent_spawn_workers_worker_done_not_lost_when_parallel_tool_result_fires_first(
+    async def test_run_agent_task_worker_done_not_lost_when_parallel_tool_result_fires_first(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
         """Regression: when a parallel tool's tool_result fires before worker_done events,
@@ -1053,11 +1053,11 @@ class TestRunAgent:
         subsequent worker_done events to be silently dropped — leaving the block blue.
         """
         wb = mock_ui.add_worker_block.return_value
-        # Simulate: Tool A and spawn_workers called in parallel.
+        # Simulate: Tool A and task called in parallel.
         # Tool A's tool_result arrives BEFORE the worker_done events (Tool A was faster).
         events = [
             ToolCallEvent(tool="execute_python_code", tool_call_id="tc_a"),
-            ToolCallEvent(tool="spawn_workers", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
+            ToolCallEvent(tool="task", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
             # Tool A finishes first — its tool_result arrives before worker_done
             ToolResultEvent(content="result", tool_call_id="tc_a"),
             # Workers complete after Tool A's result

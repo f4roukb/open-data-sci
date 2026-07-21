@@ -432,16 +432,16 @@ class TestToolResultErrorHandling:
 
 
 # ---------------------------------------------------------------------------
-# spawn_workers — worker block lifecycle
+# task — worker block lifecycle
 # ---------------------------------------------------------------------------
 
 
-def _spawn_workers_call(
+def _task_call(
     tool_call_id: str = "sw1",
     worker_summaries: list[str] | None = None,
 ) -> ToolCallEvent:
     return ToolCallEvent(
-        tool="spawn_workers",
+        tool="task",
         tool_call_id=tool_call_id,
         worker_summaries=worker_summaries if worker_summaries is not None else ["Task A", "Task B"],
     )
@@ -474,26 +474,26 @@ class TestSpawnWorkers:
         ui.add_ephemeral_block.return_value = eph
         return _TurnPresenter(ui), ui, worker_block
 
-    def test_spawn_workers_creates_worker_block_with_summaries(self) -> None:
+    def test_task_creates_worker_block_with_summaries(self) -> None:
         p, ui, _ = self._setup()
-        p.handle_tool_call(_spawn_workers_call("sw1", ["Task A", "Task B"]))
+        p.handle_tool_call(_task_call("sw1", ["Task A", "Task B"]))
         ui.add_worker_block.assert_called_once_with("", ["Task A", "Task B"])
 
     def test_worker_done_success_marks_worker_done(self) -> None:
         p, _, wb = self._setup()
-        p.handle_tool_call(_spawn_workers_call("sw1"))
+        p.handle_tool_call(_task_call("sw1"))
         p.handle_worker_done(_worker_done(0, success=True))
         wb.mark_worker_done.assert_called_once_with(0)
 
     def test_worker_done_failure_marks_worker_error(self) -> None:
         p, _, wb = self._setup()
-        p.handle_tool_call(_spawn_workers_call("sw1"))
+        p.handle_tool_call(_task_call("sw1"))
         p.handle_worker_done(_worker_done(1, success=False))
         wb.mark_worker_error.assert_called_once_with(1)
 
     def test_subagent_event_updates_worker_activity(self) -> None:
         p, _, wb = self._setup()
-        p.handle_tool_call(_spawn_workers_call("sw1"))
+        p.handle_tool_call(_task_call("sw1"))
         p.handle_subagent_event(_subagent_event(0, "execute_python_code", "Training model"))
         wb.update_worker_activity.assert_called_once()
         idx, activity = wb.update_worker_activity.call_args.args
@@ -501,9 +501,9 @@ class TestSpawnWorkers:
         assert "Training model" in activity
 
     def test_worker_block_survives_subsequent_tool_call(self) -> None:
-        """Regression: a non-spawn_workers tool call after spawn_workers must not clobber _worker_block."""
+        """Regression: a non-task tool call after task must not clobber _worker_block."""
         p, _, wb = self._setup()
-        p.handle_tool_call(_spawn_workers_call("sw1"))
+        p.handle_tool_call(_task_call("sw1"))
         # A second tool call fires while workers are still running
         p.handle_tool_call(_visible_tool_call("v1"))
         p.handle_worker_done(_worker_done(0, success=True))
@@ -512,30 +512,30 @@ class TestSpawnWorkers:
     def test_subagent_event_reaches_block_after_subsequent_tool_call(self) -> None:
         """Regression: activity updates must not be dropped after a concurrent tool call."""
         p, _, wb = self._setup()
-        p.handle_tool_call(_spawn_workers_call("sw1"))
+        p.handle_tool_call(_task_call("sw1"))
         p.handle_tool_call(_visible_tool_call("v1"))
         p.handle_subagent_event(_subagent_event(1, "execute_python_code", "Fitting"))
         wb.update_worker_activity.assert_called_once()
 
-    def test_tool_result_for_spawn_workers_marks_block_done(self) -> None:
+    def test_tool_result_for_task_marks_block_done(self) -> None:
         p, _, wb = self._setup()
-        p.handle_tool_call(_spawn_workers_call("sw1"))
+        p.handle_tool_call(_task_call("sw1"))
         p.handle_tool_result(ToolResultEvent(tool_call_id="sw1"))
         wb.set_done.assert_called_once()
 
-    def test_tool_result_error_for_spawn_workers_marks_block_error(self) -> None:
+    def test_tool_result_error_for_task_marks_block_error(self) -> None:
         p, _, wb = self._setup()
-        p.handle_tool_call(_spawn_workers_call("sw1"))
+        p.handle_tool_call(_task_call("sw1"))
         p.handle_tool_result(ToolResultEvent(tool_call_id="sw1", is_error=True))
         wb.set_error.assert_called_once()
         wb.set_done.assert_not_called()
 
-    def test_worker_done_is_no_op_before_spawn_workers(self) -> None:
+    def test_worker_done_is_no_op_before_task(self) -> None:
         p, _, wb = self._setup()
         p.handle_worker_done(_worker_done(0))
         wb.mark_worker_done.assert_not_called()
 
-    def test_subagent_event_is_no_op_before_spawn_workers(self) -> None:
+    def test_subagent_event_is_no_op_before_task(self) -> None:
         p, _, wb = self._setup()
         p.handle_subagent_event(_subagent_event(0))
         wb.update_worker_activity.assert_not_called()
@@ -546,7 +546,7 @@ class TestSpawnWorkers:
         deciding the next step — otherwise the row would keep displaying the
         previous tool's name long after it finished."""
         p, _, wb = self._setup()
-        p.handle_tool_call(_spawn_workers_call("sw1"))
+        p.handle_tool_call(_task_call("sw1"))
         result_event = SubagentEvent(
             content="execute_python_code",
             worker_idx=0,
@@ -556,9 +556,9 @@ class TestSpawnWorkers:
         p.handle_subagent_event(result_event)
         wb.update_worker_activity.assert_called_once_with(0, "")
 
-    def test_spawn_workers_replaces_pre_mounted_ephemeral(self) -> None:
+    def test_task_replaces_pre_mounted_ephemeral(self) -> None:
         """When tool_communication arrives before the tool_call, a placeholder
-        ephemeral is pre-mounted.  For spawn_workers the placeholder must be
+        ephemeral is pre-mounted.  For task the placeholder must be
         dismissed and replaced with a proper worker block."""
         ui = _make_ui()
         pre_mount = MagicMock()
@@ -571,7 +571,7 @@ class TestSpawnWorkers:
         p.handle_tool_communication(_tool_comm("sw1", "Preparing…"))
         assert pre_mount in p._ephemerals
 
-        p.handle_tool_call(_spawn_workers_call("sw1", ["Task A"]))
+        p.handle_tool_call(_task_call("sw1", ["Task A"]))
 
         pre_mount.dismiss.assert_called_once()
         assert pre_mount not in p._ephemerals
@@ -626,7 +626,7 @@ class TestSubagentEventActivityFallbacks:
         ui.add_worker_block.return_value = worker_block
         ui.add_ephemeral_block.return_value = MagicMock(is_running=MagicMock(return_value=True))
         p = _TurnPresenter(ui)
-        p.handle_tool_call(_spawn_workers_call("sw1"))
+        p.handle_tool_call(_task_call("sw1"))
         return p, worker_block
 
     def test_activity_falls_back_to_registry_label_when_no_summary(self) -> None:

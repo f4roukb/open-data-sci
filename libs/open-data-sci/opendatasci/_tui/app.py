@@ -18,7 +18,7 @@ from opendatasci.configs import DEFAULT_MODEL, DEFAULT_SECONDARY_MODEL, OpenData
 from opendatasci.models.providers import Provider
 
 from . import theme as _theme
-from .adapter import UIAdapter
+from .adapter import SubmitAction
 from .controller import CLIController
 from .widgets import (
     AppHeader,
@@ -200,9 +200,9 @@ class OpenDataSciApp(App[None]):
             self.query_one("#user-input", SmartInput).push_history(raw)
         self.query_one("#user-input", Input).value = ""
         action, query = await self._controller.on_submit(raw)
-        if action == "run":
+        if action is SubmitAction.RUN:
             self._run_agent(query)
-        elif action == "quit":
+        elif action is SubmitAction.QUIT:
             self.exit()
 
     @on(CommandApprovalPrompt.Decision)
@@ -452,11 +452,6 @@ Examples:
         datasci_config=datasci_config,
         theme=args.theme,
     ).run()
-
-
-# Register OpenDataSciApp as a virtual subclass of UIAdapter to avoid the metaclass
-# conflict between Textual's _MessagePumpMeta and ABCMeta.
-UIAdapter.register(OpenDataSciApp)
 
 
 if __name__ == "__main__":

@@ -26,13 +26,6 @@ try:
 except ImportError:
     _TUIImage = None
 
-from .adapter import (
-    EphemeralHandle,
-    MessageHandle,
-    PendingMessageHandle,
-    ThinkingHandle,
-    TurnStatusHandle,
-)
 from .commands import SLASH_COMMANDS, _fmt_model
 from .models import SPINNER, SPINNER_INTERVAL
 from .theme import active as theme
@@ -992,7 +985,7 @@ class ToolCallBlock(Static):
 
     Shows blue while the tool is running; call ``set_done()`` to turn green.
     Call ``dismiss()`` to remove from the DOM entirely.
-    For ``spawn_workers``, pass ``worker_summaries`` to get one status line per worker.
+    For ``task``, pass ``worker_summaries`` to get one status line per worker.
     Worker rows can be individually marked done (green ✓) or error (red ✗).
 
     When both ``label`` and ``summary`` are empty the block is
@@ -1166,13 +1159,3 @@ class ToolCallBlock(Static):
 
     def dismiss(self) -> None:
         self.remove()
-
-
-# Register Textual widget implementations as virtual subclasses of their ABCs.
-# Direct inheritance is not possible due to a metaclass conflict between
-# Textual's _MessagePumpMeta and ABCMeta.
-MessageHandle.register(MessageBubble)
-EphemeralHandle.register(ToolCallBlock)
-TurnStatusHandle.register(TurnStatusBar)
-ThinkingHandle.register(ThinkingBlock)
-PendingMessageHandle.register(PendingMessageBubble)

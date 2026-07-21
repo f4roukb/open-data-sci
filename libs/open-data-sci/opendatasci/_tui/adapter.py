@@ -1,110 +1,93 @@
-"""Abstract base classes for the TUI's UI adapter pattern.
+"""Interfaces shared across the controller/UI boundary of the TUI.
 
-``CLIController`` depends only on these interfaces; concrete Textual widgets
-register themselves as virtual subclasses in ``widgets.py`` and ``app.py``
-to avoid the metaclass conflict between Textual's ``_MessagePumpMeta`` and
-``ABCMeta``.
+``CLIController`` depends only on the ``UIAdapter``-family interfaces below,
+expressed as ``typing.Protocol``s. Protocols are structural: a class satisfies
+one simply by having matching methods, with no inheritance or registration
+required. That keeps the concrete Textual widgets (``app.py``, ``widgets.py``)
+free of any metaclass entanglement with these interfaces, and free of
+ceremony for what is, today, a single concrete implementation
+(``OpenDataSciApp``).
+
+``SubmitAction`` is the other direction of that boundary: the typed result
+``CLIController.on_submit`` hands back to ``OpenDataSciApp`` so it knows what
+to do next, in place of ad hoc string literals.
 """
 
-from abc import ABC, abstractmethod
+from enum import Enum
+from typing import Protocol
 
 
-class MessageHandle(ABC):
-    @abstractmethod
+class SubmitAction(str, Enum):
+    """What ``OpenDataSciApp`` should do after ``CLIController.on_submit``.
+
+    A ``str`` subclass so existing equality checks against plain strings
+    (tests, logging) keep working, while call sites get a named, typo-proof
+    symbol instead of a bare string literal.
+    """
+
+    NONE = ""
+    RUN = "run"
+    QUIT = "quit"
+
+
+class MessageHandle(Protocol):
     def append(self, chunk: str) -> None: ...
-    @abstractmethod
     def set_content(self, text: str) -> None: ...
-    @abstractmethod
     def finish(self) -> None: ...
 
 
-class EphemeralHandle(ABC):
-    @abstractmethod
+class EphemeralHandle(Protocol):
     def dismiss(self) -> None: ...
-    @abstractmethod
     def set_done(self) -> None: ...
-    @abstractmethod
     def set_error(self) -> None: ...
-    @abstractmethod
     def is_running(self) -> bool: ...
-    @abstractmethod
     def mark_worker_done(self, idx: int) -> None: ...
-    @abstractmethod
     def mark_worker_error(self, idx: int) -> None: ...
-    @abstractmethod
     def update_worker_activity(self, idx: int, activity: str) -> None: ...
-    @abstractmethod
     def set_communication(self, text: str | None) -> None: ...
-    @abstractmethod
     def upgrade(self, label: str, summary: str) -> None: ...
 
 
-class ThinkingHandle(ABC):
-    @abstractmethod
+class ThinkingHandle(Protocol):
     def dismiss(self) -> None: ...
-    @abstractmethod
     def finish(self, summary: str) -> None: ...
 
 
-class TurnStatusHandle(ABC):
-    @abstractmethod
+class TurnStatusHandle(Protocol):
     def stop(self) -> None: ...
-
-    @abstractmethod
     def update_context(self, context_tokens: int | None, cached_tokens: int | None) -> None: ...
 
 
-class PendingMessageHandle(ABC):
+class PendingMessageHandle(Protocol):
     """A pinned indicator for a message queued while the agent was busy."""
 
-    @abstractmethod
     def remove(self) -> None: ...
 
 
-class UIAdapter(ABC):
-    @abstractmethod
+class UIAdapter(Protocol):
     def add_message(self, role: str, content: str = "") -> MessageHandle: ...
-    @abstractmethod
     def add_divider(self) -> None: ...
-    @abstractmethod
     def add_turn_status_bar(self) -> TurnStatusHandle: ...
-    @abstractmethod
     def add_pending_message(self, text: str) -> PendingMessageHandle: ...
-    @abstractmethod
     def add_ephemeral_block(
         self, communication: str, label: str, summary: str
     ) -> EphemeralHandle: ...
-    @abstractmethod
     def add_worker_block(
         self, communication: str, worker_summaries: list[str]
     ) -> EphemeralHandle: ...
-    @abstractmethod
     def add_thinking_block(self) -> ThinkingHandle: ...
-    @abstractmethod
     def clear_messages(self) -> None: ...
-    @abstractmethod
     def set_workspace(self, name: str) -> None: ...
-    @abstractmethod
     def set_file_count(self, description: str) -> None: ...
-    @abstractmethod
     def set_input_placeholder(self, text: str) -> None: ...
-    @abstractmethod
     def add_input_class(self, cls: str) -> None: ...
-    @abstractmethod
     def remove_input_class(self, cls: str) -> None: ...
-    @abstractmethod
     def set_input_value(self, value: str, cursor: int | None = None) -> None: ...
-    @abstractmethod
     def show_completion(self, matches: list[str], selected: int) -> None: ...
-    @abstractmethod
     def hide_completion(self) -> None: ...
-    @abstractmethod
     def show_workspace_panel(self, files: list[str]) -> None: ...
-    @abstractmethod
     def show_approval_prompt(self, description: str, heads_up: str) -> None: ...
-    @abstractmethod
     def show_attachment(self, label: str) -> None: ...
-    @abstractmethod
     def hide_attachment(self) -> None: ...
 
     def stop_agent(self) -> None:

@@ -555,7 +555,7 @@ class TestStreamingAllEventTypes:
             ToolResultEvent(content="files: a.csv", tool_call_id="tc1", is_error=False),
             ToolCallEvent(
                 content="{}",
-                tool="spawn_workers",
+                tool="task",
                 tool_call_id="tc2",
                 worker_summaries=["w1", "w2"],
             ),

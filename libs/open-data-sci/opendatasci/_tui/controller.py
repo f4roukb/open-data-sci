@@ -47,6 +47,7 @@ from opendatasci.tools.mcp import load_mcp_servers
 from . import theme as _theme
 from .adapter import (
     PendingMessageHandle,
+    SubmitAction,
     TurnStatusHandle,
     UIAdapter,
 )
@@ -68,6 +69,10 @@ from .presenter import _TurnPresenter, apply_usage_event
 from .theme import active as theme
 
 logger = logging.getLogger(__name__)
+
+# The resume query sent to the agent when the user cancels a choice prompt —
+# a real (if synthetic) turn of conversation, not a control-flow sentinel.
+_CHOICE_CANCELLED_QUERY = "cancel"
 
 
 class CLIController:
@@ -250,13 +255,13 @@ class CLIController:
 
     # ── Submit ────────────────────────────────────────────────────────────────
 
-    async def on_submit(self, raw: str) -> tuple[str, str]:
+    async def on_submit(self, raw: str) -> tuple[SubmitAction, str]:
         """Handle input submission.
 
         Returns ``(action, payload)`` where *action* is one of:
-        - ``"run"``  — caller should run the agent with *payload* as the query
-        - ``"quit"`` — caller should exit
-        - ``""``     — action handled internally, nothing more to do
+        - ``SubmitAction.RUN``  — caller should run the agent with *payload* as the query
+        - ``SubmitAction.QUIT`` — caller should exit
+        - ``SubmitAction.NONE`` — action handled internally, nothing more to do
         """
         self.hide_completion()
 
@@ -268,29 +273,29 @@ class CLIController:
 
         if self._awaiting_choice:
             if not raw:
-                return "", ""
+                return SubmitAction.NONE, ""
             if raw.split()[0] in {"/exit", "/reset", "/clear"}:
                 self._exit_choice_mode()
                 should_quit = await self._handle_slash(raw)
-                return ("quit" if should_quit else ""), ""
+                return (SubmitAction.QUIT if should_quit else SubmitAction.NONE), ""
             answer = self._handle_user_choice(raw)
             if answer is not None:
-                return "run", answer
-            return "", ""
+                return SubmitAction.RUN, answer
+            return SubmitAction.NONE, ""
 
         if self._awaiting_approval:
             # The decision is made in the approval prompt widget (↑/↓ + Enter);
             # typed input is ignored except for quitting the app.
             if raw.split() and raw.split()[0] == "/exit":
-                return "quit", ""
-            return "", ""
+                return SubmitAction.QUIT, ""
+            return SubmitAction.NONE, ""
 
         if not raw and attachment is None:
-            return "", ""
+            return SubmitAction.NONE, ""
 
         if raw.startswith("/"):
             should_quit = await self._handle_slash(raw)
-            return ("quit" if should_quit else ""), ""
+            return (SubmitAction.QUIT if should_quit else SubmitAction.NONE), ""
 
         clean_text, refs = _parse_file_refs(raw)
         valid_refs, missing_refs = _split_existing_file_refs(refs)
@@ -298,7 +303,7 @@ class CLIController:
             self._ui.add_message("agent", f"⚠️ File not found: {escape_markup(ref._path)}").finish()
 
         if refs and not clean_text and not valid_refs and attachment is None:
-            return "", ""
+            return SubmitAction.NONE, ""
 
         display = _build_user_display(clean_text, valid_refs) if refs else escape_markup(raw)
         agent_query = _build_agent_query(clean_text, valid_refs)
@@ -309,11 +314,11 @@ class CLIController:
 
         if self._agent_running:
             self._enqueue_pending(agent_query, display)
-            return "", ""
+            return SubmitAction.NONE, ""
 
         self._ui.add_message("user", display)
         self._active_turn_status = self._ui.add_turn_status_bar()
-        return "run", agent_query
+        return SubmitAction.RUN, agent_query
 
     def _enqueue_pending(self, agent_query: str, display: str) -> None:
         """Pin *display* in the UI and queue *agent_query* for when the agent is free."""
@@ -471,14 +476,15 @@ class CLIController:
     def cancel_choice(self) -> str | None:
         """Exit choice mode and return the resume input to send to the agent.
 
-        Returns ``"cancel"`` when a choice was active (caller must pass this
-        to ``run_agent``), or ``None`` when there was nothing to cancel.
+        Returns ``_CHOICE_CANCELLED_QUERY`` when a choice was active (caller
+        must pass this to ``run_agent``), or ``None`` when there was nothing
+        to cancel.
         """
         if not self._awaiting_choice:
             return None
         self._exit_choice_mode()
         self._ui.add_message("agent", "Choice cancelled.").finish()
-        return "cancel"
+        return _CHOICE_CANCELLED_QUERY
 
     def _handle_user_choice(self, raw: str) -> str | None:
         raw_stripped = raw.strip()

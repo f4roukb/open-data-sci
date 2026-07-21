@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 
+from opendatasci._tui.adapter import SubmitAction
 from opendatasci._tui.app import OpenDataSciApp, _get_version, main
 from opendatasci.configs import OpenDataSciConfig
 
@@ -180,7 +181,7 @@ def _make_app() -> tuple[OpenDataSciApp, MagicMock]:
 class TestOnSubmitHistory:
     async def test_push_history_called_for_non_empty_submission(self) -> None:
         app, mock_input = _make_app()
-        app._controller.on_submit = AsyncMock(return_value=("", ""))
+        app._controller.on_submit = AsyncMock(return_value=(SubmitAction.NONE, ""))
         event = MagicMock()
         event.value = "  analyse the data  "
 
@@ -190,7 +191,7 @@ class TestOnSubmitHistory:
 
     async def test_push_history_not_called_for_whitespace_only(self) -> None:
         app, mock_input = _make_app()
-        app._controller.on_submit = AsyncMock(return_value=("", ""))
+        app._controller.on_submit = AsyncMock(return_value=(SubmitAction.NONE, ""))
         event = MagicMock()
         event.value = "   "
 

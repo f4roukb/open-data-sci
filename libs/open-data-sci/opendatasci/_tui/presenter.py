@@ -179,7 +179,7 @@ class _TurnPresenter:
         buffered_comm = self._comm_buffers.pop(tool_call_id, "")
         comm = "" if has_narration else buffered_comm
 
-        if str(event.tool) == ToolName.SPAWN_WORKERS:
+        if str(event.tool) == ToolName.TASK:
             if existing is not None:
                 existing.dismiss()
                 self._ephemerals = [e for e in self._ephemerals if e is not existing]
