@@ -258,7 +258,8 @@ class TestKeyRouting:
     async def test_up_with_no_history_resets_completing_flag(self, running_app) -> None:
         app, pilot, stub = running_app
         await pilot.press("up")
-        assert stub._completing is False
+        stub.suppress_next_input_change.assert_called_once()
+        stub.cancel_input_change_suppression.assert_called_once()
 
     async def test_escape_cancels_choice_and_resumes(self, running_app) -> None:
         app, pilot, stub = running_app

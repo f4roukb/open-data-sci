@@ -798,11 +798,11 @@ class TestOnInputChanged:
 
     def test_completing_flag_returns_true_without_showing_popup(self):
         ctrl, ui = _make_controller(service=_make_service_stub())
-        ctrl._completing = True  # simulate: completion handler set the flag
+        ctrl.suppress_next_input_change()  # simulate: completion handler set the flag
         result = ctrl.on_input_changed("/clear")
         assert result is True
-        # Flag was cleared
-        assert not ctrl._completing
+        # Flag was cleared after being consumed
+        assert not ctrl.is_suppressing_input_change
 
     def test_plain_text_does_not_show_completion(self):
         ctrl, ui = _make_controller(service=_make_service_stub())
