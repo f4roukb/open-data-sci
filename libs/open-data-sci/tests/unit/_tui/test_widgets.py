@@ -1,7 +1,8 @@
 ﻿"""Unit tests for opendatasci._tui.widgets — pure logic only (no Textual app context)."""
 
+import asyncio
 import time
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 from rich.text import Text
@@ -739,9 +740,10 @@ def _make_bubble(role: str, content: str = "") -> MessageBubble:
     bubble._role = role
     bubble._content = content
     bubble._inner = None
-    bubble._flush_timer = None
-    bubble._dirty = False
-    bubble._flush_scheduled = False
+    bubble._stream = None
+    bubble._written_len = 0
+    bubble._write_lock = asyncio.Lock()
+    bubble._ready = asyncio.Event()
     return bubble
 
 
@@ -771,11 +773,10 @@ class TestMessageBubbleCompose:
 
     def test_agent_role_starts_empty_regardless_of_pre_compose_appends(self) -> None:
         # Tokens may stream in before the bubble finishes mounting, but compose()
-        # still produces an empty Markdown widget; on_mount() schedules a flush
-        # to render whatever has accumulated in _content.
+        # still produces an empty Markdown widget; the stream (created in
+        # on_mount) is what flushes whatever has accumulated in _content.
         bubble = _make_bubble("agent", "")
         bubble._content = "tok1tok2"
-        bubble._dirty = True
         inner = self._composed_inner(bubble)
         assert isinstance(inner, TUIMarkdown)
         assert inner._markdown == ""
@@ -792,341 +793,190 @@ class TestMessageBubbleCompose:
         assert isinstance(inner, Static)
 
 
-class TestMessageBubbleOnMountSafetyNet:
-    """on_mount() must catch up any flush that fired before mount completed.
+class TestMessageBubbleOnMount:
+    """on_mount() must open the streaming gate for agent bubbles via a
+    background worker (which creates the MarkdownStream); other roles open
+    the gate immediately since they never touch a stream."""
 
-    This is the core regression test for the "agent message never appears"
-    bug.  When finish() / set_content() schedule a flush via
-    call_after_refresh, that flush can fire before the bubble has finished
-    mounting.  In that case _flush_agent early-returns leaving _dirty=True;
-    on_mount must re-schedule a flush so the buffered content eventually
-    reaches the Markdown widget.
-    """
+    def test_agent_role_schedules_stream_bootstrap(self) -> None:
+        bubble = _make_bubble("agent", "")
+        with (
+            patch.object(bubble, "run_worker") as run_worker,
+            patch.object(bubble, "_refresh_content"),
+        ):
+            bubble.on_mount()
+        run_worker.assert_called_once()
+        run_worker.call_args[0][0].close()  # avoid an unawaited-coroutine ResourceWarning
+        assert bubble._ready.is_set() is False  # gate stays closed until the worker runs
 
-    def test_dirty_agent_bubble_schedules_flush_on_mount(self) -> None:
-        bubble = _make_bubble("agent", "Hi")
-        bubble._dirty = True
-        bubble._flush_scheduled = False
+    def test_non_agent_role_opens_the_gate_immediately(self) -> None:
+        bubble = _make_bubble("user", "hi")
+        with patch.object(bubble, "_refresh_content"):
+            bubble.on_mount()
+        assert bubble._ready.is_set() is True
+
+
+class TestMessageBubbleBootstrapStream:
+    """_bootstrap_stream creates the stream, flushes pre-mount content, then
+    opens the gate — the core regression coverage for the original
+    "agent message never appears" bug: content set at construction (or via
+    append()/finish() called before Textual has mounted the widget) must
+    still reach the stream once it exists."""
+
+    @pytest.mark.asyncio
+    async def test_flushes_content_set_before_mount(self) -> None:
+        bubble = _make_bubble("agent", "buffered before mount")
         bubble._inner = MagicMock(spec=TUIMarkdown)
-        with (
-            patch.object(bubble, "_schedule_final_flush") as schedule,
-            patch.object(bubble, "set_interval"),
-            patch.object(bubble, "_refresh_content"),
-        ):
-            bubble.on_mount()
-        schedule.assert_called_once()
+        stream = MagicMock()
+        stream.write = AsyncMock()
+        with patch.object(TUIMarkdown, "get_stream", return_value=stream):
+            await bubble._bootstrap_stream()
+        stream.write.assert_awaited_once_with("buffered before mount")
+        assert bubble._written_len == len("buffered before mount")
+        assert bubble._ready.is_set() is True
 
-    def test_clean_agent_bubble_does_not_schedule_flush_on_mount(self) -> None:
+    @pytest.mark.asyncio
+    async def test_no_write_when_no_pre_mount_content(self) -> None:
         bubble = _make_bubble("agent", "")
-        bubble._dirty = False
-        with (
-            patch.object(bubble, "_schedule_final_flush") as schedule,
-            patch.object(bubble, "set_interval"),
-            patch.object(bubble, "_refresh_content"),
-        ):
-            bubble.on_mount()
-        schedule.assert_not_called()
-
-    def test_agent_bubble_with_initial_content_schedules_flush_on_mount(self) -> None:
-        # Regression: add_message("agent", text).finish() sets content in the
-        # constructor and calls finish() before mount completes.  on_mount() must
-        # schedule a flush so the content reaches the Markdown widget even when
-        # _dirty was False before on_mount ran (e.g. finish() already cleared it).
-        bubble = _make_bubble("agent", "✓ Context cleared.")
-        bubble._dirty = False  # simulate: finish() ran and _flush_agent already cleared dirty
         bubble._inner = MagicMock(spec=TUIMarkdown)
-        with (
-            patch.object(bubble, "_schedule_final_flush") as schedule,
-            patch.object(bubble, "set_interval"),
-            patch.object(bubble, "_refresh_content"),
-        ):
-            bubble.on_mount()
-        schedule.assert_called_once()
+        stream = MagicMock()
+        stream.write = AsyncMock()
+        with patch.object(TUIMarkdown, "get_stream", return_value=stream):
+            await bubble._bootstrap_stream()
+        stream.write.assert_not_called()
+        assert bubble._ready.is_set() is True
 
-    def test_dirty_user_bubble_does_not_schedule_flush_on_mount(self) -> None:
-        # The flush mechanism is agent-only; other roles render synchronously
-        # via _refresh_content.
-        bubble = _make_bubble("user", "Hello")
-        bubble._dirty = True
-        with (
-            patch.object(bubble, "_schedule_final_flush") as schedule,
-            patch.object(bubble, "set_interval"),
-            patch.object(bubble, "_refresh_content"),
-        ):
-            bubble.on_mount()
-        schedule.assert_not_called()
+    @pytest.mark.asyncio
+    async def test_opens_the_gate_even_if_get_stream_raises(self) -> None:
+        # If the stream can't be created, callers must not deadlock forever
+        # waiting on _ready — they'll just find _stream is None and skip.
+        bubble = _make_bubble("agent", "x")
+        bubble._inner = MagicMock(spec=TUIMarkdown)
+        with patch.object(TUIMarkdown, "get_stream", side_effect=RuntimeError("boom")):
+            await bubble._bootstrap_stream()  # must not raise
+        assert bubble._ready.is_set() is True
+        assert bubble._stream is None
 
-class TestMessageBubbleScheduleFinalFlush:
-    """_schedule_final_flush must be idempotent within one refresh cycle."""
 
-    def test_first_call_posts_callback(self) -> None:
-        bubble = _make_bubble("agent", "")
-        bubble._flush_scheduled = False
-        with patch.object(bubble, "call_after_refresh") as car:
-            bubble._schedule_final_flush()
-        car.assert_called_once_with(bubble._flush_agent)
-        assert bubble._flush_scheduled is True
+class TestMessageBubbleWritePendingLocked:
+    """The write cursor (_written_len) only ever sends the unwritten tail of
+    _content — the guard that prevents double-writing content set both at
+    construction and via a concurrent append()/finish()."""
 
-    def test_second_call_is_deduplicated(self) -> None:
-        bubble = _make_bubble("agent", "")
-        bubble._flush_scheduled = True  # already scheduled
-        with patch.object(bubble, "call_after_refresh") as car:
-            bubble._schedule_final_flush()
-        car.assert_not_called()
+    @pytest.mark.asyncio
+    async def test_only_sends_unwritten_tail(self) -> None:
+        bubble = _make_bubble("agent", "abcdef")
+        bubble._written_len = 3
+        stream = MagicMock()
+        stream.write = AsyncMock()
+        bubble._stream = stream
+        await bubble._write_pending_locked()
+        stream.write.assert_awaited_once_with("def")
+        assert bubble._written_len == 6
+
+    @pytest.mark.asyncio
+    async def test_noop_when_fully_written(self) -> None:
+        bubble = _make_bubble("agent", "abc")
+        bubble._written_len = 3
+        stream = MagicMock()
+        stream.write = AsyncMock()
+        bubble._stream = stream
+        await bubble._write_pending_locked()
+        stream.write.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_noop_when_stream_is_none(self) -> None:
+        bubble = _make_bubble("agent", "abc")
+        bubble._stream = None
+        await bubble._write_pending_locked()  # must not raise
+        assert bubble._written_len == 0
 
 
 class TestMessageBubbleAppend:
-    """append() must mark the bubble dirty and start the rate-limit timer."""
-
-    def test_agent_append_marks_dirty(self) -> None:
+    @pytest.mark.asyncio
+    async def test_agent_append_writes_the_new_chunk(self) -> None:
         bubble = _make_bubble("agent", "")
-        with patch.object(bubble, "set_interval", return_value=MagicMock(name="timer")):
-            bubble.append("hello")
+        stream = MagicMock()
+        stream.write = AsyncMock()
+        bubble._stream = stream
+        bubble._ready.set()
+        await bubble.append("hello")
         assert bubble._content == "hello"
-        assert bubble._dirty is True
+        stream.write.assert_awaited_once_with("hello")
+        assert bubble._written_len == len("hello")
 
-    def test_agent_append_starts_timer_only_once(self) -> None:
+    @pytest.mark.asyncio
+    async def test_agent_append_blocks_until_ready(self) -> None:
         bubble = _make_bubble("agent", "")
-        timer_sentinel = MagicMock(name="flush_timer")
-        with patch.object(bubble, "set_interval", return_value=timer_sentinel) as si:
-            bubble.append("a")
-            bubble.append("b")
-        # The interval is created only on the first append; subsequent appends
-        # reuse it.
-        assert si.call_count == 1
-        assert bubble._content == "ab"
+        stream = MagicMock()
+        stream.write = AsyncMock()
+        bubble._stream = stream
+        task = asyncio.ensure_future(bubble.append("late"))
+        await asyncio.sleep(0)
+        assert not task.done()  # still waiting on _ready
+        bubble._ready.set()
+        await task
+        stream.write.assert_awaited_once_with("late")
 
-    def test_agent_flush_timer_rate_is_throttled(self) -> None:
-        bubble = _make_bubble("agent", "")
-        with patch.object(bubble, "set_interval", return_value=MagicMock()) as si:
-            bubble.append("hello")
-        interval = si.call_args[0][0]
-        assert (
-            interval >= 0.2
-        ), f"flush interval {interval}s is too fast — would cause excessive Markdown rebuilds"
-
-    def test_non_agent_append_calls_refresh_content(self) -> None:
+    @pytest.mark.asyncio
+    async def test_non_agent_append_calls_refresh_content_without_touching_ready(self) -> None:
         bubble = _make_bubble("user", "Hello")
         with patch.object(bubble, "_refresh_content") as refresh:
-            bubble.append(" world")
+            await bubble.append(" world")
         refresh.assert_called_once()
         assert bubble._content == "Hello world"
-        assert bubble._dirty is False  # not used for non-agent
+        assert bubble._ready.is_set() is False  # non-agent roles never touch the gate
 
 
 class TestMessageBubbleSetContent:
-    """set_content must replace the buffer and schedule a final flush for agents."""
+    @pytest.mark.asyncio
+    async def test_agent_set_content_stops_stream_replaces_and_reopens(self) -> None:
+        bubble = _make_bubble("agent", "partial")
+        bubble._written_len = 7
+        old_stream = MagicMock()
+        old_stream.stop = AsyncMock()
+        bubble._stream = old_stream
+        bubble._inner = MagicMock(spec=TUIMarkdown)
+        bubble._inner.update = AsyncMock()
+        bubble._ready.set()
+        new_stream = MagicMock()
+        with patch.object(TUIMarkdown, "get_stream", return_value=new_stream) as get_stream:
+            await bubble.set_content("final")
+        old_stream.stop.assert_awaited_once()
+        bubble._inner.update.assert_awaited_once_with("final")
+        assert bubble._content == "final"
+        assert bubble._written_len == len("final")
+        get_stream.assert_called_once_with(bubble._inner)
+        assert bubble._stream is new_stream
 
-    def test_agent_set_content_marks_dirty_and_schedules_flush(self) -> None:
-        bubble = _make_bubble("agent", "")
-        with (
-            patch.object(bubble, "_stop_flush_timer") as stop,
-            patch.object(bubble, "_schedule_final_flush") as schedule,
-        ):
-            bubble.set_content("replaced")
-        assert bubble._content == "replaced"
-        assert bubble._dirty is True
-        stop.assert_called_once()
-        schedule.assert_called_once()
-
-    def test_non_agent_set_content_calls_refresh_content(self) -> None:
+    @pytest.mark.asyncio
+    async def test_non_agent_set_content_calls_refresh_content(self) -> None:
         bubble = _make_bubble("user", "old")
         with patch.object(bubble, "_refresh_content") as refresh:
-            bubble.set_content("new")
+            await bubble.set_content("new")
         assert bubble._content == "new"
         refresh.assert_called_once()
 
 
 class TestMessageBubbleFinish:
-    """finish() must stop the streaming timer and request one final flush."""
-
-    def test_agent_finish_marks_dirty_and_schedules_flush(self) -> None:
-        bubble = _make_bubble("agent", "Hi")
-        with (
-            patch.object(bubble, "_stop_flush_timer") as stop,
-            patch.object(bubble, "_schedule_final_flush") as schedule,
-        ):
-            bubble.finish()
-        assert bubble._dirty is True
-        stop.assert_called_once()
-        schedule.assert_called_once()
-
-
-class TestMessageBubbleFlushAgent:
-    """_flush_agent must NEVER drop content silently when the bubble isn't
-    yet ready — it must leave _dirty=True so the on_mount safety net (or the
-    streaming timer) can pick it back up."""
+    @pytest.mark.asyncio
+    async def test_agent_finish_flushes_pending_then_stops_stream(self) -> None:
+        bubble = _make_bubble("agent", "unflushed")
+        stream = MagicMock()
+        stream.write = AsyncMock()
+        stream.stop = AsyncMock()
+        bubble._stream = stream
+        bubble._ready.set()
+        await bubble.finish()
+        stream.write.assert_awaited_once_with("unflushed")
+        stream.stop.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_flush_agent_no_op_when_not_dirty(self) -> None:
-        bubble = _make_bubble("agent", "abc")
-        bubble._dirty = False
-        bubble._flush_scheduled = True
-        bubble._inner = MagicMock(spec=TUIMarkdown)
-        await bubble._flush_agent()
-        assert bubble._flush_scheduled is False
-        bubble._inner.update.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_flush_agent_preserves_dirty_when_inner_is_none(self) -> None:
-        # Regression: when _flush_agent runs before compose() has set _inner,
-        # it must leave _dirty=True so on_mount re-schedules the flush.
-        bubble = _make_bubble("agent", "buffered")
-        bubble._dirty = True
-        bubble._flush_scheduled = True
-        bubble._inner = None
-        with patch.object(MessageBubble, "is_mounted", property(lambda _: True)):
-            await bubble._flush_agent()
-        assert bubble._dirty is True
-        # The scheduled-flag is reset so the on_mount safety net can schedule
-        # a fresh call_after_refresh.
-        assert bubble._flush_scheduled is False
-
-    @pytest.mark.asyncio
-    async def test_flush_agent_preserves_dirty_when_not_mounted(self) -> None:
-        # Same regression but for the case where compose() has run (inner is
-        # set) but the bubble's mount has not yet completed.
-        bubble = _make_bubble("agent", "buffered")
-        bubble._dirty = True
-        bubble._flush_scheduled = True
-        bubble._inner = MagicMock(spec=TUIMarkdown)
-        with patch.object(MessageBubble, "is_mounted", property(lambda _: False)):
-            await bubble._flush_agent()
-        assert bubble._dirty is True
-        assert bubble._flush_scheduled is False
-        bubble._inner.update.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_flush_agent_renders_content_when_ready(self) -> None:
-        bubble = _make_bubble("agent", "rendered")
-        bubble._dirty = True
-        bubble._flush_scheduled = True
-        inner = MagicMock(spec=TUIMarkdown)
-
-        async def _async_update(_text):
-            return None
-
-        inner.update = MagicMock(side_effect=_async_update)
-        bubble._inner = inner
-        with patch.object(MessageBubble, "is_mounted", property(lambda _: True)):
-            await bubble._flush_agent()
-        inner.update.assert_called_once_with("rendered")
-        assert bubble._dirty is False
-
-    @pytest.mark.asyncio
-    async def test_flush_agent_swallows_inner_update_exceptions(self) -> None:
-        # The Markdown widget may raise from inside its async DOM operations.
-        # _flush_agent must log and swallow rather than propagate, so the app
-        # stays alive — but it must NOT clear _dirty (otherwise the stale
-        # content is permanently lost).
-        bubble = _make_bubble("agent", "boom")
-        bubble._dirty = True
-        bubble._flush_scheduled = True
-        inner = MagicMock(spec=TUIMarkdown)
-
-        async def _raise(_text):
-            raise RuntimeError("markdown blew up")
-
-        inner.update = MagicMock(side_effect=_raise)
-        bubble._inner = inner
-        with patch.object(MessageBubble, "is_mounted", property(lambda _: True)):
-            await bubble._flush_agent()  # must not raise
-        assert bubble._dirty is True
-
-
-class TestMessageBubbleEndToEndFinishBeforeMount:
-    """End-to-end coverage for the original TUI bug.
-
-    Reproduces the exact sequence that produced empty agent bubbles:
-      1. ui.add_message("agent", "")  → bubble created, mount scheduled.
-      2. bubble.append("Hi")          → _dirty=True, streaming timer started.
-      3. bubble.finish()              → timer stopped, single flush scheduled.
-      4. The single scheduled flush fires BEFORE the bubble has finished
-         mounting (early-return: _inner=None).
-      5. compose() then runs, on_mount() then runs.
-    The fix guarantees that step 5 schedules a fresh flush so the buffered
-    content eventually reaches the Markdown widget.
-    """
-
-    @pytest.mark.asyncio
-    async def test_finish_before_mount_recovers_via_on_mount(self) -> None:
-        bubble = _make_bubble("agent", "")
-        scheduled_callbacks: list = []
-        timer_sentinel = MagicMock(name="flush_timer")
-
-        with (
-            patch.object(bubble, "set_interval", return_value=timer_sentinel),
-            patch.object(bubble, "call_after_refresh", side_effect=scheduled_callbacks.append),
-        ):
-            # 2. tokens stream in
-            bubble.append("Hi")
-            assert bubble._dirty is True
-            assert bubble._flush_timer is timer_sentinel
-
-            # 3. finish() requests one final flush
-            bubble.finish()
-            assert bubble._dirty is True
-            assert bubble._flush_scheduled is True
-            assert scheduled_callbacks == [bubble._flush_agent]
-
-            # 4. The scheduled flush fires WHILE the bubble is still mounting:
-            #    inner has not been created yet and is_mounted is False.
-            with patch.object(MessageBubble, "is_mounted", property(lambda _: False)):
-                await bubble._flush_agent()
-            # Content survived; only the scheduling flag was cleared.
-            assert bubble._dirty is True
-            assert bubble._flush_scheduled is False
-
-            # 5. compose() then runs. It always creates an empty TUIMarkdown;
-            # rendering is handled exclusively by _flush_agent to avoid the
-            # race where two concurrent update() tasks produce duplicate text.
-            inners = list(bubble.compose())
-            assert len(inners) == 1
-            assert isinstance(inners[0], TUIMarkdown)
-            assert inners[0]._markdown == ""
-
-            # 6. on_mount() finally fires (is_mounted has flipped to True).
-            scheduled_callbacks.clear()
-            with patch.object(bubble, "_refresh_content"):
-                bubble.on_mount()
-            # The safety net re-scheduled the flush.
-            assert bubble._flush_scheduled is True
-            assert scheduled_callbacks == [bubble._flush_agent]
-
-            # 7. This time _flush_agent runs against a ready inner and renders.
-            inner_mock = MagicMock(spec=TUIMarkdown)
-
-            async def _async_update(_text):
-                return None
-
-            inner_mock.update = MagicMock(side_effect=_async_update)
-            bubble._inner = inner_mock
-            with patch.object(MessageBubble, "is_mounted", property(lambda _: True)):
-                await bubble._flush_agent()
-            inner_mock.update.assert_called_once_with("Hi")
-            assert bubble._dirty is False
-
-    @pytest.mark.asyncio
-    async def test_construct_with_content_renders_via_flush_on_mount(self) -> None:
-        # Covers the controller's `response`-only branch:
-        #     ui.add_message("agent", "Final answer")
-        # compose() always creates an empty TUIMarkdown; on_mount() detects
-        # that _content is non-empty, marks the bubble dirty, and schedules a
-        # flush so the content reaches the Markdown widget via _flush_agent.
-        bubble = _make_bubble("agent", "Final answer")
-        inners = list(bubble.compose())
-        assert len(inners) == 1
-        inner = inners[0]
-        assert isinstance(inner, TUIMarkdown)
-        assert inner._markdown == ""
-        # on_mount must schedule a flush because _content is non-empty.
-        with (
-            patch.object(bubble, "_schedule_final_flush") as schedule,
-            patch.object(bubble, "set_interval"),
-            patch.object(bubble, "_refresh_content"),
-        ):
-            bubble.on_mount()
-        schedule.assert_called_once()
+    async def test_non_agent_finish_calls_refresh_content(self) -> None:
+        bubble = _make_bubble("user", "hi")
+        with patch.object(bubble, "_refresh_content") as refresh:
+            await bubble.finish()
+        refresh.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -2023,51 +1873,17 @@ class TestScrollIsAtBottom:
 
 
 class TestMessagesContainerAnchor:
-    """The anchor releases on user scroll-up and re-arms at the bottom."""
+    """Bottom-pinning is delegated to Textual's built-in scroll anchor."""
 
-    def _update(self, container: MessagesContainer, old: float, new: float, max_y: int) -> None:
-        with patch.object(
-            MessagesContainer, "max_scroll_y", new_callable=PropertyMock, return_value=max_y
-        ):
-            container._update_anchor(old, new)
-
-    def test_anchored_by_default(self) -> None:
-        assert MessagesContainer._anchored is True
-
-    def test_scrolling_up_releases_anchor(self) -> None:
+    def test_on_mount_arms_the_native_anchor(self) -> None:
         container = MessagesContainer.__new__(MessagesContainer)
-        self._update(container, old=10, new=5, max_y=10)
-        assert container._anchored is False
-
-    def test_reaching_bottom_rearms_anchor(self) -> None:
-        container = MessagesContainer.__new__(MessagesContainer)
-        container._anchored = False
-        self._update(container, old=5, new=10, max_y=10)
-        assert container._anchored is True
-
-    def test_content_shrink_to_empty_keeps_anchor(self) -> None:
-        # clear_messages collapses the scroll range; the view must stay anchored.
-        container = MessagesContainer.__new__(MessagesContainer)
-        self._update(container, old=74, new=0, max_y=0)
-        assert container._anchored is True
-
-    def test_pin_if_anchored_scrolls_when_anchored(self) -> None:
-        container = MessagesContainer.__new__(MessagesContainer)
-        container._anchored = True
-        container.scroll_end = MagicMock()  # type: ignore[method-assign]
-        container.pin_if_anchored()
-        container.scroll_end.assert_called_once_with(animate=False)
-
-    def test_pin_if_anchored_noop_when_released(self) -> None:
-        container = MessagesContainer.__new__(MessagesContainer)
-        container._anchored = False
-        container.scroll_end = MagicMock()  # type: ignore[method-assign]
-        container.pin_if_anchored()
-        container.scroll_end.assert_not_called()
+        container.anchor = MagicMock()  # type: ignore[method-assign]
+        container.on_mount()
+        container.anchor.assert_called_once_with()
 
 
 class TestChatPaneMountAutoScroll:
-    """_mount_in_messages mounts in #messages and pins while anchored."""
+    """_mount_in_messages mounts new content in #messages."""
 
     def _pane(self) -> tuple[ChatPane, MagicMock]:
         pane = _make_chat_pane()
@@ -2080,11 +1896,6 @@ class TestChatPaneMountAutoScroll:
         widget = MagicMock()
         pane._mount_in_messages(widget)
         container.mount.assert_called_once_with(widget)
-
-    def test_pins_to_bottom_via_anchor(self) -> None:
-        pane, container = self._pane()
-        pane._mount_in_messages(MagicMock())
-        container.pin_if_anchored.assert_called_once_with()
 
     def test_add_message_uses_autoscroll_mount(self) -> None:
         pane = _make_chat_pane()

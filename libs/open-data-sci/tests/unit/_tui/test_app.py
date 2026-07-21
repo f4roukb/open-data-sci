@@ -90,7 +90,7 @@ class TestMainArgparse:
         )
 
     def test_region_flag_is_removed(self) -> None:
-        """--region is no longer a valid flag."""
+        """--region is no longer a valid flag; aws_region defaults via OpenDataSciConfig."""
         with pytest.raises(SystemExit):
             self._run_main(["data.csv", "--region", "us-east-2"])
 
@@ -363,7 +363,7 @@ class TestEscDuringTurn:
 
     async def test_esc_cancels_choice_without_stopping_turn(self) -> None:
         app = self._esc_app(agent_running=False, awaiting_choice=True)
-        app._controller.cancel_choice = MagicMock(return_value="cancel")
+        app._controller.cancel_choice = AsyncMock(return_value="cancel")
 
         await app.action_focus_input()
 

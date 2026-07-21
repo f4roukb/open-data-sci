@@ -11,6 +11,7 @@ so widget DEFAULT_CSS that references those variables resolves exactly as in
 production.
 """
 
+import asyncio
 import time
 from pathlib import Path
 
@@ -45,9 +46,21 @@ from opendatasci._tui.widgets import (
 def _plain(widget: Static) -> str:
     """Return the plain text of a Static's current renderable."""
     renderable = widget.render()
-    if isinstance(renderable, Text):
+    if hasattr(renderable, "plain"):
         return renderable.plain
     return Text.from_markup(str(renderable)).plain
+
+
+def _markdown_plain(bubble: "MessageBubble") -> str:
+    """Return the concatenated plain text actually rendered by an agent bubble.
+
+    Black-box equivalent of inspecting ``bubble._content`` (the accumulator):
+    this reads what Textual's ``Markdown`` widget has actually mounted and
+    rendered as child blocks, independent of whatever internal buffering
+    mechanism produced it.
+    """
+    assert isinstance(bubble._inner, TUIMarkdown)
+    return "\n".join(_plain(child) for child in bubble._inner.children if isinstance(child, Static))
 
 
 class _Harness(App[None]):
@@ -145,40 +158,90 @@ class TestMessageBubble:
         assert _plain(bubble._inner) == "closing tag [/] without open"
 
     async def test_agent_message_constructed_with_content_renders(self, harness) -> None:
+        # Reproduces the original TUI bug: content set at construction time,
+        # then finish() called synchronously, before compose()/on_mount() has
+        # had a chance to run (mounting is deferred). The bubble must still
+        # end up fully rendered once it does mount.
         app, pilot, pane = harness
         bubble = pane.add_message("agent", "# Title\n\nBody text")
-        bubble.finish()
+        await bubble.finish()
         await pilot.pause()
         await pilot.pause(0.1)
         assert isinstance(bubble._inner, TUIMarkdown)
-        assert bubble._dirty is False
         assert len(list(bubble._inner.children)) >= 2  # heading + paragraph blocks
+        rendered = _markdown_plain(bubble)
+        assert "Title" in rendered
+        assert "Body text" in rendered
 
-    async def test_agent_streaming_appends_are_flushed_by_timer(self, harness) -> None:
+    async def test_agent_streaming_appends_render_final_text(self, harness) -> None:
         app, pilot, pane = harness
         bubble = pane.add_message("agent")
         await pilot.pause()
-        bubble.append("Hello ")
-        bubble.append("world")
-        assert bubble._flush_timer is not None
-        await pilot.pause(0.4)  # > _BUBBLE_FLUSH_INTERVAL
-        assert bubble._dirty is False
-        bubble.finish()
+        await bubble.append("Hello ")
+        await bubble.append("world")
         await pilot.pause(0.1)
-        assert bubble._flush_timer is None
+        await bubble.finish()
+        await pilot.pause(0.1)
         assert bubble._content == "Hello world"
-        assert len(list(bubble._inner.children)) == 1  # single paragraph block
+        assert _markdown_plain(bubble) == "Hello world"
+
+    async def test_rapid_fire_appends_all_land_in_final_render(self, harness) -> None:
+        # Streams many small chunks faster than any coalescing window, to
+        # guard against dropped or reordered fragments under backpressure.
+        app, pilot, pane = harness
+        bubble = pane.add_message("agent")
+        await pilot.pause()
+        chunks = [f"tok{i} " for i in range(60)]
+        await asyncio.gather(*(bubble.append(chunk) for chunk in chunks))
+        await bubble.finish()
+        await pilot.pause(0.2)
+        expected = "".join(chunks)
+        assert bubble._content == expected
+        assert _markdown_plain(bubble) == expected.strip()
 
     async def test_set_content_replaces_streamed_content(self, harness) -> None:
         app, pilot, pane = harness
         bubble = pane.add_message("agent")
         await pilot.pause()
-        bubble.append("partial")
-        bubble.set_content("final answer")
+        await bubble.append("partial")
+        await bubble.set_content("final answer")
         await pilot.pause(0.1)
         assert bubble._content == "final answer"
-        assert bubble._flush_timer is None  # set_content stops the streaming timer
-        assert bubble._dirty is False
+        rendered = _markdown_plain(bubble)
+        assert rendered == "final answer"
+        assert "partial" not in rendered
+
+    async def test_set_content_before_mount_renders_correctly(self, harness) -> None:
+        # Same finish-before-mount race as above, but via the error path:
+        # add_message("agent", "") then set_content() immediately, both
+        # before the widget has been mounted.
+        app, pilot, pane = harness
+        bubble = pane.add_message("agent", "")
+        await bubble.set_content("boom")
+        await pilot.pause()
+        await pilot.pause(0.1)
+        assert bubble._content == "boom"
+        assert _markdown_plain(bubble) == "boom"
+
+    async def test_set_content_then_finish_with_no_intervening_yield_does_not_raise(
+        self, harness
+    ) -> None:
+        # Regression: set_content() opens a fresh MarkdownStream as its last
+        # step. If finish() calls stream.stop() on it before the stream's
+        # background task has ever run a single step, Textual's own
+        # MarkdownStream.stop() (task.cancel(); await task) re-raises
+        # CancelledError instead of the task's internal try/except absorbing
+        # it — exactly this call sequence (mid-turn exception -> set_content,
+        # then cleanup() -> finish(), back to back) is what presenter.py does
+        # on every error turn.
+        app, pilot, pane = harness
+        bubble = pane.add_message("agent", "")
+        await pilot.pause()
+        await bubble.set_content("❌ boom")
+        await bubble.finish()  # must not raise CancelledError
+        await pilot.pause(0.1)
+        assert bubble._content == "❌ boom"
+        assert _markdown_plain(bubble) == "❌ boom"
 
 
 # ---------------------------------------------------------------------------
@@ -685,7 +748,7 @@ class TestMessagesContainerAnchor:
     async def test_new_content_keeps_view_pinned_to_bottom(self, harness) -> None:
         app, pilot, pane = harness
         for i in range(40):
-            pane.add_message("user", f"message {i}").finish()
+            await pane.add_message("user", f"message {i}").finish()
         await pilot.pause(0.3)  # let the anchor tick re-pin after layout
         container = app.query_one("#messages", MessagesContainer)
         assert container.max_scroll_y > 0
@@ -694,28 +757,31 @@ class TestMessagesContainerAnchor:
     async def test_scrolling_up_releases_anchor(self, harness) -> None:
         app, pilot, pane = harness
         for i in range(40):
-            pane.add_message("user", f"message {i}").finish()
+            await pane.add_message("user", f"message {i}").finish()
         await pilot.pause(0.3)
         container = app.query_one("#messages", MessagesContainer)
         container.scroll_to(y=0, animate=False)
         await pilot.pause()
-        assert container._anchored is False
-        # And the anchor tick must not drag the user back down.
+        assert container.scroll_offset.y == 0
+        # New content must not drag the user back down once they've scrolled up.
+        await pane.add_message("user", "late arrival").finish()
         await pilot.pause(0.3)
         assert container.scroll_offset.y == 0
 
     async def test_scrolling_back_to_bottom_rearms_anchor(self, harness) -> None:
         app, pilot, pane = harness
         for i in range(40):
-            pane.add_message("user", f"message {i}").finish()
+            await pane.add_message("user", f"message {i}").finish()
         await pilot.pause(0.3)
         container = app.query_one("#messages", MessagesContainer)
         container.scroll_to(y=0, animate=False)
         await pilot.pause()
-        assert container._anchored is False
         container.scroll_end(animate=False)
         await pilot.pause()
-        assert container._anchored is True
+        # New content must resume following the bottom once re-armed.
+        await pane.add_message("user", "late arrival").finish()
+        await pilot.pause(0.3)
+        assert _scroll_is_at_bottom(container)
 
 
 class TestChatPaneHousekeeping:

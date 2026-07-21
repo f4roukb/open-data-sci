@@ -209,8 +209,8 @@ class OpenDataSciApp(App[None]):
             self.exit()
 
     @on(CommandApprovalPrompt.Decision)
-    def on_approval_decision(self, event: CommandApprovalPrompt.Decision) -> None:
-        resume_input = self._controller.resolve_approval(event.approved)
+    async def on_approval_decision(self, event: CommandApprovalPrompt.Decision) -> None:
+        resume_input = await self._controller.resolve_approval(event.approved)
         self.query_one("#user-input", Input).focus()
         self._run_agent(resume_input)
 
@@ -287,7 +287,7 @@ class OpenDataSciApp(App[None]):
         self._controller.hide_completion()
         self._controller.clear_paste_attachment()
         if self._controller.awaiting_choice:
-            resume_input = self._controller.cancel_choice()
+            resume_input = await self._controller.cancel_choice()
             if resume_input is not None:
                 self._run_agent(resume_input)
         elif not had_completion and not had_paste and self._controller.agent_running:
@@ -314,18 +314,6 @@ _PROVIDER_KEY_FIELD: dict[Provider, str | None] = {
     Provider.VERTEXAI: None,
     Provider.OLLAMA: None,
 }
-
-
-def _resolve_region(region: str | None, provider: Provider) -> str | None:
-    """Return *region* if applicable to *provider*, else log and ignore it."""
-    if region is None:
-        return None
-    if provider != Provider.BEDROCK:
-        logger.warning(
-            "--region is ignored for provider '%s' (only 'bedrock' uses it)", provider
-        )
-        return None
-    return region
 
 
 def main() -> None:
@@ -379,12 +367,6 @@ Examples:
         dest="api_key",
         default=None,
         help="API key for the primary provider (or set via environment variable)",
-    )
-    parser.add_argument(
-        "--region",
-        dest="region",
-        default=None,
-        help="AWS region, required for the 'bedrock' provider (ignored otherwise)",
     )
     parser.add_argument(
         "--theme",
@@ -442,11 +424,6 @@ Examples:
                     f"--api-key is not supported for provider '{effective_provider}' "
                     f"(uses cloud-native authentication)"
                 )
-        if args.region is not None:
-            effective_provider = Provider(str(args.provider or datasci_config.provider))
-            region = _resolve_region(args.region, effective_provider)
-            if region is not None:
-                overrides["aws_region"] = region
         if overrides:
             datasci_config = datasci_config.model_copy(update=overrides)
     else:
@@ -468,9 +445,6 @@ Examples:
                     f"--api-key is not supported for provider '{provider}' "
                     f"(uses cloud-native authentication)"
                 )
-        region = _resolve_region(args.region, provider)
-        if region is not None:
-            kwargs["aws_region"] = region
         datasci_config = OpenDataSciConfig(**kwargs)  # type: ignore[arg-type]
 
     session_id = uuid.uuid4().hex
