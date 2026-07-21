@@ -68,7 +68,8 @@ class OpenDataSciConfig(BaseSettings):
         google_api_key:    API key for Google Gemini (``GOOGLE_API_KEY``).
         azure_api_key:     API key for Azure OpenAI (``AZURE_OPENAI_API_KEY``).
                            Omit when using service-principal auth instead.
-        aws_region:        AWS region for Bedrock (``REGION``).
+        aws_region:        AWS region for Bedrock (``REGION``).  Defaults to
+                         ``"us-east-1"`` when not set.
         google_cloud_project:  GCP project ID for Vertex AI
                            (``GOOGLE_CLOUD_PROJECT``).
         google_cloud_location: Vertex AI region / location
@@ -153,6 +154,7 @@ class OpenDataSciConfig(BaseSettings):
         populate_by_name=True,
         env_ignore_empty=True,
         env_file=".env",
+        extra="ignore",
     )
 
     # ── Model selection ───────────────────────────────────────────────────────
@@ -170,7 +172,7 @@ class OpenDataSciConfig(BaseSettings):
     azure_api_key: str | None = Field(default=None, alias="AZURE_OPENAI_API_KEY")
 
     # ── Cloud region / location ───────────────────────────────────────────────
-    aws_region: str | None = Field(default=None, alias="REGION")
+    aws_region: str = Field(default="us-east-1", alias="REGION")
     google_cloud_project: str | None = Field(default=None, alias="GOOGLE_CLOUD_PROJECT")
     google_cloud_location: str | None = Field(default=None, alias="GOOGLE_CLOUD_LOCATION")
 
@@ -266,8 +268,7 @@ class OpenDataSciConfig(BaseSettings):
             import yaml  # type: ignore[import-untyped]
         except ImportError as exc:
             raise ImportError(
-                "PyYAML is required to load YAML config files. "
-                "Install it with: pip install pyyaml"
+                "PyYAML is required to load YAML config files. Install it with: pip install pyyaml"
             ) from exc
 
         with open(path) as fh:

@@ -57,7 +57,7 @@ def _make_controller_stub(workspace_path: str) -> MagicMock:
     stub.run_agent = AsyncMock()
     stub.on_submit = AsyncMock(return_value=("", ""))
     stub.cycle_completion = MagicMock(return_value=False)
-    stub.cancel_choice = MagicMock(return_value=None)
+    stub.cancel_choice = AsyncMock(return_value=None)
     return stub
 
 
@@ -180,7 +180,7 @@ class TestAppShell:
 
     async def test_approval_decision_resumes_agent(self, running_app) -> None:
         app, pilot, stub = running_app
-        stub.resolve_approval = MagicMock(return_value="resume-query")
+        stub.resolve_approval = AsyncMock(return_value="resume-query")
         app.query_one(ChatPane).show_approval_prompt("Do it?", "")
         await pilot.pause()
         await pilot.press("enter")
@@ -263,7 +263,7 @@ class TestKeyRouting:
     async def test_escape_cancels_choice_and_resumes(self, running_app) -> None:
         app, pilot, stub = running_app
         stub.awaiting_choice = True
-        stub.cancel_choice = MagicMock(return_value="resume-input")
+        stub.cancel_choice = AsyncMock(return_value="resume-input")
         await pilot.press("escape")
         await pilot.pause()
         stub.cancel_choice.assert_called_once()

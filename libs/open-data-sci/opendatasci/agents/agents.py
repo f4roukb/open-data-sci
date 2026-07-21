@@ -16,7 +16,6 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
 from opendatasci._utils.graph_utils import is_interrupt_state_snapshot
@@ -27,7 +26,7 @@ from opendatasci._utils.message_utils import (
 )
 from opendatasci._utils.streaming_utils import format_stream_error
 from opendatasci.agents.chat_history import ChatHistoryBuilder
-from opendatasci.agents.graphs import AgentGraphFactory, WorkerGraphFactory
+from opendatasci.agents.graphs import AgentCompiledGraph, AgentGraphFactory, WorkerGraphFactory
 from opendatasci.agents.states import AgentState
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.base import BaseContextStore
@@ -208,7 +207,7 @@ class Agent(BaseOpenDataSciAgent):
             session_id=self._session_id,
         )
 
-        self._graph: CompiledStateGraph = self._build_graph(checkpointer)
+        self._graph: AgentCompiledGraph = self._build_graph(checkpointer)
         return self
 
     async def __aexit__(self, *exc_info: Any) -> None:
@@ -220,7 +219,7 @@ class Agent(BaseOpenDataSciAgent):
         return {"configurable": {"thread_id": str(thread_id)}}
 
     @property
-    def graph(self) -> CompiledStateGraph:
+    def graph(self) -> AgentCompiledGraph:
         return self._graph
 
     def _get_active_llm_with_tools(self, state: AgentState) -> _RetryRunnable:
@@ -240,7 +239,7 @@ class Agent(BaseOpenDataSciAgent):
             is_self_review_mode=state.is_self_review_mode,
         )
 
-    def _build_graph(self, checkpointer: BaseCheckpointSaver[Any] | None) -> CompiledStateGraph:
+    def _build_graph(self, checkpointer: BaseCheckpointSaver[Any] | None) -> AgentCompiledGraph:
         return AgentGraphFactory(
             get_llm_with_tools=self._get_active_llm_with_tools,
             tools=self._tools,  # type: ignore[arg-type]

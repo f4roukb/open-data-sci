@@ -2,7 +2,6 @@
 
 
 import ast
-import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -192,19 +191,17 @@ class TestReadDatasetInfoTool:
 
 
 class TestProfileDatasetTool:
-    def test_no_context_returns_error(self) -> None:
+    @pytest.mark.asyncio
+    async def test_no_context_returns_error(self) -> None:
         tool = create_profile_dataset_tools(None, _make_sandbox())[0]
 
-        async def _run():
-            return await tool.ainvoke(
-                {
-                    "path": "/data.csv",
-                    "summary": "Profiling data.csv",
-                    "communication": "Let me profile the dataset.",
-                }
-            )
-
-        result = asyncio.get_event_loop().run_until_complete(_run())
+        result = await tool.ainvoke(
+            {
+                "path": "/data.csv",
+                "summary": "Profiling data.csv",
+                "communication": "Let me profile the dataset.",
+            }
+        )
         assert "Error" in result
         assert "workspace" in result.lower()
 

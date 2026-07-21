@@ -14,6 +14,8 @@ from opendatasci.models.factory import _RetryRunnable
 if TYPE_CHECKING:
     from opendatasci.agents.chat_history import ChatHistoryBuilder
 
+AgentCompiledGraph = CompiledStateGraph[AgentState, Any, AgentState, AgentState]
+
 
 def _route_after_llm_call(state: AgentState) -> str:
     # ``messages`` can be empty when a maintenance ``update_state`` (compact,
@@ -41,7 +43,7 @@ class AgentGraphFactory:
         self._chat_history_builder = chat_history_builder
         self._checkpointer = checkpointer
 
-    def build(self) -> CompiledStateGraph:
+    def build(self) -> AgentCompiledGraph:
         """Compile and return the graph, ready to run."""
         agent_node = AgentNode(
             get_llm_with_tools=self._get_llm_with_tools,
@@ -51,7 +53,7 @@ class AgentGraphFactory:
 
         graph = StateGraph(AgentState)
         graph.add_node("agent", agent_node.to_async_callable())
-        graph.add_node("tools", ToolNode(self._tools))
+        graph.add_node("tools", ToolNode(self._tools, handle_tool_errors=True))
         graph.add_edge(START, "agent")
         graph.add_conditional_edges("agent", _route_after_llm_call, {"tools": "tools", "end": END})
         graph.add_edge("tools", "agent")
@@ -72,7 +74,7 @@ class WorkerGraphFactory:
         self._tools = tools
         self._build_system_context = build_system_context
 
-    def build(self) -> CompiledStateGraph:
+    def build(self) -> AgentCompiledGraph:
         """Compile and return the worker graph, ready to run."""
         agent_node = AgentNode(
             get_llm_with_tools=lambda state: self._llm_with_tools,
@@ -81,7 +83,7 @@ class WorkerGraphFactory:
 
         graph = StateGraph(AgentState)
         graph.add_node("agent", agent_node.to_async_callable())
-        graph.add_node("tools", ToolNode(self._tools))
+        graph.add_node("tools", ToolNode(self._tools, handle_tool_errors=True))
         graph.add_edge(START, "agent")
         graph.add_conditional_edges("agent", _route_after_llm_call, {"tools": "tools", "end": END})
         graph.add_edge("tools", "agent")

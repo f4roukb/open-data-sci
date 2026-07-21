@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "open-data-sci"
-version = "0.2.0"
+version = "0.2.1"
 description = "AI agent for data science and machine learning"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -27,17 +27,17 @@ classifiers = [
 dependencies = [
     # DataFrame libraries
     "polars[calamine]>=1.0.0,<2.0.0",
-    "pandas[excel,parquet,feather]>=2.0.0,<3.0.0",
+    "pandas[excel,parquet,feather]>=3.0.0,<4.0.0",
     "duckdb>=1.0.0,<2.0.0",
     # XML
     "lxml>=6.1.0,<7.0.0",
     # LLM / agent stack (only the sub-packages we actually import)
-    "langchain-core>=0.3.0,<1.0.0",
-    "langchain-openai>=0.2.0,<1.0.0",
-    "langchain-anthropic>=0.2.0,<1.0.0",
-    "langgraph>=0.2.0,<1.0.0",
+    "langchain-core>=1.0.0,<2.0.0",
+    "langchain-openai>=1.0.0,<2.0.0",
+    "langchain-anthropic>=1.0.0,<2.0.0",
+    "langgraph>=1.0.0,<2.0.0",
     # Numerics
-    "numpy>=1.26.0,<2.0.0",
+    "numpy>=2.0.0,<2.5.0",
     # Data science
     "scikit-learn>=1.5.0,<2.0.0",
     "scipy>=1.14.0,<2.0.0",
@@ -45,30 +45,30 @@ dependencies = [
     "shap>=0.46.0,<1.0.0",
     "catboost>=1.2.0,<2.0.0",
     "lightgbm>=4.0.0,<5.0.0",
-    "xgboost>=2.0.0,<3.0.0",
-    "optuna>=3.6.0,<4.0.0",
+    "xgboost>=3.0.0,<4.0.0",
+    "optuna>=4.0.0,<5.0.0",
     "prophet>=1.1.0,<2.0.0",
     "umap-learn>=0.5.0,<1.0.0",
     "imbalanced-learn>=0.12.0,<1.0.0",
     "networkx>=3.0.0,<4.0.0",
-    "pyod>=2.0.0,<3.0.0",
+    "pyod>=3.0.0,<4.0.0",
     "category-encoders>=2.6.0,<3.0.0",
     # Visualisation
     "matplotlib>=3.7.0,<4.0.0",
     "seaborn>=0.12.0,<1.0.0",
-    "plotly>=5.15.0,<6.0.0",
+    "plotly>=6.0.0,<7.0.0",
     # Config / settings
     "python-dotenv>=1.0.0,<2.0.0",
     "pydantic>=2.0.0,<3.0.0",
     "pydantic-settings>=2.0.0,<3.0.0",
     "pyyaml>=6.0,<7.0",
     # TUI / TUI
-    "rich>=13.0.0,<14.0.0",
-    "textual>=0.47.0,<0.48.0",
+    "rich>=15.0.0,<16.0.0",
+    "textual>=8.0.0,<9.0.0",
     # Fast hashing
     "xxhash>=3.5.0,<4.0.0",
     # Web search & fetching
-    "duckduckgo-search>=6.0.0,<7.0.0",
+    "duckduckgo-search>=8.0.0,<9.0.0",
     "httpx>=0.27.0,<1.0.0",
     # Sandbox runtime
     "sandbox-runtime>=0.2.0,<1.0.0",
@@ -77,19 +77,19 @@ dependencies = [
 [project.optional-dependencies]
 aws = [
     "boto3>=1.34.0,<2.0.0",
-    "langchain-aws>=0.2.0,<1.0.0",
+    "langchain-aws>=1.0.0,<2.0.0",
 ]
 gemini = [
-    "langchain-google-genai>=2.0.0,<3.0.0",
+    "langchain-google-genai>=4.0.0,<5.0.0",
 ]
 gcp = [
-    "langchain-google-vertexai>=2.0.0,<3.0.0",
+    "langchain-google-vertexai>=3.0.0,<4.0.0",
 ]
 azure = [
     "azure-identity>=1.15.0,<2.0.0",
 ]
 ollama = [
-    "langchain-ollama>=0.2.0,<1.0.0",
+    "langchain-ollama>=1.0.0,<2.0.0",
 ]
 jax = [
     "jax[cpu]>=0.4.0,<1.0.0",
@@ -97,21 +97,22 @@ jax = [
     "optax>=0.2.0,<1.0.0",
 ]
 dev = [
-    "pytest>=7.0.0,<8.0.0",
+    "pytest>=9.0.0,<10.0.0",
     "pytest-cov>=4.0.0,<5.0.0",
-    "pytest-asyncio>=0.23.0,<1.0.0",
+    "pytest-asyncio>=0.23.0,<2.0.0",
     "pytest-xdist>=3.0.0,<4.0.0",
     "ruff>=0.8.0,<1.0.0",
-    "mypy>=1.13.0,<2.0.0",
-    "pandas-stubs>=2.0.0,<3.0.0",
+    "mypy>=2.0.0,<3.0.0",
+    "pyright>=1.1.390,<2.0.0",
+    "pandas-stubs>=3.0.0,<4.0.0",
     "types-openpyxl>=3.1.0,<4.0.0",
     "vulture>=2.0.0,<3.0.0",
-    "kaggle>=1.6.0,<2.0.0",
+    "kaggle>=2.0.0,<3.0.0",
 ]
 docs = [
     "mkdocs>=1.6.0,<2.0.0",
     "mkdocs-material>=9.5.0,<10.0.0",
-    "mkdocstrings[python]>=0.26.0,<1.0.0",
+    "mkdocstrings[python]>=1.0.0,<2.0.0",
 ]
 
 [project.scripts]
@@ -133,12 +134,12 @@ packages = ["opendatasci"]
 opendatasci_agent_libs = [
     # DataFrame
     "polars[calamine]>=1.0.0,<2.0.0",
-    "pandas[excel,parquet,feather]>=2.0.0,<3.0.0",
+    "pandas[excel,parquet,feather]>=3.0.0,<4.0.0",
     "duckdb>=1.0.0,<2.0.0",
     # XML
     "lxml>=6.1.0,<7.0.0",
     # Numerics
-    "numpy>=1.26.0,<2.0.0",
+    "numpy>=2.0.0,<2.5.0",
     # Data science
     "scikit-learn>=1.5.0,<2.0.0",
     "scipy>=1.14.0,<2.0.0",
@@ -146,18 +147,18 @@ opendatasci_agent_libs = [
     "shap>=0.46.0,<1.0.0",
     "catboost>=1.2.0,<2.0.0",
     "lightgbm>=4.0.0,<5.0.0",
-    "xgboost>=2.0.0,<3.0.0",
-    "optuna>=3.6.0,<4.0.0",
+    "xgboost>=3.0.0,<4.0.0",
+    "optuna>=4.0.0,<5.0.0",
     "prophet>=1.1.0,<2.0.0",
     "umap-learn>=0.5.0,<1.0.0",
     "imbalanced-learn>=0.12.0,<1.0.0",
     "networkx>=3.0.0,<4.0.0",
-    "pyod>=2.0.0,<3.0.0",
+    "pyod>=3.0.0,<4.0.0",
     "category-encoders>=2.6.0,<3.0.0",
     # Visualisation
     "matplotlib>=3.7.0,<4.0.0",
     "seaborn>=0.12.0,<1.0.0",
-    "plotly>=5.15.0,<6.0.0",
+    "plotly>=6.0.0,<7.0.0",
 ]
 
 [tool.ruff]
@@ -193,7 +194,7 @@ pretty = true
 module = [
     "langchain.*", "langchain_core.*",
     "langchain_openai.*", "langchain_anthropic.*", "langchain_aws.*",
-    "langchain_google_genai.*", "langchain_ollama.*",
+    "langchain_google_genai.*", "langchain_google_vertexai.*", "langchain_ollama.*",
     "langgraph.*",
     "openpyxl.*", "fastexcel.*",
     "pyarrow.*", "tables.*", "lxml.*",
@@ -224,6 +225,18 @@ module = [
     "google.cloud.*", "google.oauth2.*",
 ]
 ignore_missing_imports = true
+
+[tool.pyright]
+pythonVersion = "3.12"
+include = ["opendatasci"]
+exclude = ["**/__pycache__", "build", "dist"]
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "standard"
+reportMissingImports = true
+reportMissingTypeStubs = false
+reportUnnecessaryTypeIgnoreComment = true
+reportImplicitOverride = "error"
 
 [dependency-groups]
 dev = [
