@@ -9,9 +9,11 @@ from opendatasci.models.anthropic import supports_adaptive_thinking
 
 _BedrockBase: type[BaseChatModel] | None
 try:
-    from langchain_aws import ChatBedrockConverse as _BedrockBase
+    from langchain_aws import ChatBedrockConverse
 except ImportError:
     _BedrockBase = None
+else:
+    _BedrockBase = ChatBedrockConverse
 
 
 def _strip_list_usage_fields(chunk: ChatGenerationChunk) -> ChatGenerationChunk:

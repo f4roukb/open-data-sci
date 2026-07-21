@@ -1,3 +1,5 @@
+from typing import cast
+
 from langchain_core.language_models import BaseChatModel
 
 from opendatasci.configs import OpenDataSciConfig
@@ -11,10 +13,13 @@ def create_gemini_model(config: OpenDataSciConfig) -> BaseChatModel:
         raise ValueError(
             "langchain-google-genai is not installed. Run: pip install 'open-data-sci[gemini]'"
         ) from exc
-    return ChatGoogleGenerativeAI(
-        model=config.model,
-        google_api_key=config.google_api_key,
-        temperature=config.temperature,
+    return cast(
+        BaseChatModel,
+        ChatGoogleGenerativeAI(
+            model=config.model,
+            google_api_key=config.google_api_key,
+            temperature=config.temperature,
+        ),
     )
 
 
@@ -26,11 +31,14 @@ def create_gemini_secondary_model(config: OpenDataSciConfig) -> BaseChatModel:
         raise ValueError(
             "langchain-google-genai is not installed. Run: pip install 'open-data-sci[gemini]'"
         ) from exc
-    return ChatGoogleGenerativeAI(
-        model=config.secondary_model,
-        google_api_key=config.google_api_key,
-        temperature=0,
-        max_output_tokens=1000,
+    return cast(
+        BaseChatModel,
+        ChatGoogleGenerativeAI(
+            model=config.secondary_model,
+            google_api_key=config.google_api_key,
+            temperature=0,
+            max_output_tokens=1000,
+        ),
     )
 
 
@@ -42,11 +50,14 @@ def create_vertexai_model(config: OpenDataSciConfig) -> BaseChatModel:
         raise ValueError(
             "langchain-google-vertexai is not installed. Run: pip install 'open-data-sci[gcp]'"
         ) from exc
-    return ChatVertexAI(
-        model=config.model,
-        project=config.google_cloud_project,
-        location=config.google_cloud_location,
-        temperature=config.temperature,
+    return cast(
+        BaseChatModel,
+        ChatVertexAI(
+            model=config.model,
+            project=config.google_cloud_project,
+            location=config.google_cloud_location,
+            temperature=config.temperature,
+        ),
     )
 
 
@@ -58,12 +69,15 @@ def create_vertexai_secondary_model(config: OpenDataSciConfig) -> BaseChatModel:
         raise ValueError(
             "langchain-google-vertexai is not installed. Run: pip install 'open-data-sci[gcp]'"
         ) from exc
-    return ChatVertexAI(
-        model=config.secondary_model,
-        project=config.google_cloud_project,
-        location=config.google_cloud_location,
-        temperature=0,
-        max_output_tokens=1000,
+    return cast(
+        BaseChatModel,
+        ChatVertexAI(
+            model=config.secondary_model,
+            project=config.google_cloud_project,
+            location=config.google_cloud_location,
+            temperature=0,
+            max_output_tokens=1000,
+        ),
     )
 
 

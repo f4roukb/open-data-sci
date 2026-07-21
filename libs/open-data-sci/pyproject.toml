@@ -194,7 +194,7 @@ pretty = true
 module = [
     "langchain.*", "langchain_core.*",
     "langchain_openai.*", "langchain_anthropic.*", "langchain_aws.*",
-    "langchain_google_genai.*", "langchain_ollama.*",
+    "langchain_google_genai.*", "langchain_google_vertexai.*", "langchain_ollama.*",
     "langgraph.*",
     "openpyxl.*", "fastexcel.*",
     "pyarrow.*", "tables.*", "lxml.*",
