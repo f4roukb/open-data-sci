@@ -35,18 +35,20 @@ async with Agent(workspace=workspace, config=config) as agent:
 
 ### Handling an interrupt
 
-Some tools pause the agent and ask the user to pick an option (for example, to confirm a destructive operation). When this happens an `AgentStreamEvent` with `type="input_required"` is yielded. Resume the agent by calling `astream()` again with the user's answer:
+Some tools pause the agent and ask the user to pick an option (for example, to confirm a destructive operation). When this happens an `InputRequiredEvent` is yielded. Resume the agent by calling `astream()` again with the user's answer:
 
 ```python
+from opendatasci.streaming import InputRequiredEvent, ResponseEvent, TokenEvent
+
 async for event in agent.astream(query):
-    if event.type == "input_required":
-        choice = input(f"{event.content} [{', '.join(event.metadata['choices'])}]: ")
+    if isinstance(event, InputRequiredEvent):
+        choice = input(f"{event.content} [{', '.join(event.choices)}]: ")
         async for follow_up in agent.astream(choice):
             # process follow_up events as usual
             ...
-    elif event.type == "token":
+    elif isinstance(event, TokenEvent):
         print(event.content, end="", flush=True)
-    elif event.type == "response":
+    elif isinstance(event, ResponseEvent):
         print()
 ```
 

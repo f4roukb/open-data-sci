@@ -72,7 +72,7 @@ config = OpenDataSciConfig.from_yaml("opendatasci_config.yaml")
 
 | Field | Env var | Default | Description |
 |-------|---------|---------|-------------|
-| `temperature` | `TEMPERATURE` | `0.0` | LLM sampling temperature (not sent to Claude 4.6+ / Sonnet 5 models) |
+| `temperature` | `TEMPERATURE` | `0.0` | LLM sampling temperature. Not sent to Anthropic / Bedrock models using adaptive thinking (Claude 4.6+), which reject explicit sampling parameters |
 
 ### Agent behaviour
 
@@ -86,7 +86,7 @@ config = OpenDataSciConfig.from_yaml("opendatasci_config.yaml")
 
 | Field | Env var | Default | Description |
 |-------|---------|---------|-------------|
-| `extra_web_domains` | `EXTRA_FETCH_DOMAINS` | `[]` | Additional hostnames the `fetch_url` tool may access |
+| `extra_web_domains` | `EXTRA_FETCH_DOMAINS` | `[]` | Additional hostnames the `fetch_url` tool may access (set via env var as a JSON array) |
 | `override_web_domains` | | `None` | Replaces the built-in domain allowlist entirely when set |
 
 ### Skills
@@ -95,6 +95,8 @@ config = OpenDataSciConfig.from_yaml("opendatasci_config.yaml")
 |-------|---------|---------|-------------|
 | `skills_directory` | `SKILLS_DIRECTORY` | `None` | Path to a user-defined skills directory |
 | `builtin_skills_directory` | `BUILTIN_SKILLS_DIRECTORY` | *(bundled)* | Path to the built-in skills directory |
+| `skill_domains_directory` | `SKILL_DOMAINS_DIRECTORY` | `None` | Path to a user-defined skill domains directory |
+| `builtin_skill_domains_directory` | `BUILTIN_SKILL_DOMAINS_DIRECTORY` | *(bundled)* | Path to the built-in skill domains directory |
 
 ### Sandbox
 
@@ -106,7 +108,7 @@ config = OpenDataSciConfig.from_yaml("opendatasci_config.yaml")
 
 | Field | Env var | Default | Description |
 |-------|---------|---------|-------------|
-| `mcp_servers` | `MCP_SERVERS` | `[]` | MCP tool server URLs |
+| `mcp_servers` | `MCP_SERVERS` | `[]` | MCP tool server URLs (set via env var as a JSON array, e.g. `["http://localhost:3000/mcp"]`) |
 
 ---
 

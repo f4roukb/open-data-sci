@@ -173,10 +173,27 @@ opendatasci data.csv --config opendatasci_config.yaml
 | `--secondary-model` | *(provider default)* | Secondary model for lightweight tasks |
 | `--api-key` | *(env var)* | API key for the primary provider |
 | `--theme` | `default` | Colour theme: `default`, `accessible`, `light`, `solarized`, `dracula` |
-| `--debug` | `false` | Enable debug output — writes a detailed `opendatasci_debug.log` |
 | `--config` | | Path to a YAML config file |
 | `--list-providers` | | Print all providers and default models, then exit |
 | `--version` | | Print the installed version, then exit |
+
+### Slash commands
+
+Inside a running session, type `/` for autocomplete or `@` to attach a file. Available commands:
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show all commands |
+| `/models` | Show the primary and secondary model in use |
+| `/themes` | List available colour themes (selected at launch with `--theme`) |
+| `/ls-workspace` | List files in the workspace |
+| `/compact` | Summarize and compress the conversation history |
+| `/clear` | Clear all conversation context, including the plan (preserves session variables) |
+| `/reset` | Reset the agent session and reload data from disk |
+| `/stop` | Stop the running agent (future messages pick up where it left off) |
+| `/cancel-message` | Cancel the most recently queued message |
+| `/cancel-all-messages` | Cancel all messages queued while the agent was busy |
+| `/exit` | Exit OpenDataSci |
 
 ---
 
@@ -220,35 +237,37 @@ async with create_agent("data.parquet", config=config) as agent:
 
 ### Consuming stream events
 
-`agent.astream()` yields [`AgentStreamEvent`](api/types.md) objects. Each event has a `type` and `content` string, plus optional `metadata`.
+`agent.astream()` yields typed dataclass events — `TokenEvent`, `ToolCallEvent`,
+`WorkerDoneEvent`, `InputRequiredEvent`, `ApprovalRequiredEvent`, `ResponseEvent`,
+and more. Each has a `type` class variable (so `event.type == "token"` still
+works) plus its own strongly-typed fields — no generic `metadata` dict to dig
+through. See [Events & Types](api/types.md) for the complete reference.
 
 ```python
+from opendatasci.streaming import (
+    InputRequiredEvent, ResponseEvent, TokenEvent, ToolCallEvent, WorkerDoneEvent,
+)
+
 async for event in agent.astream(query):
-    match event.type:
-        case "token":
-            # Incremental response text
-            print(event.content, end="", flush=True)
-        case "reasoning":
-            # Thinking token (Anthropic / Bedrock only)
-            pass
-        case "tool_call":
-            print(f"\n[tool] {event.content}")
-        case "tool_result":
-            pass
-        case "worker_done":
-            idx = event.metadata["worker_idx"]
-            ok = event.metadata["success"]
-            print(f"\n[worker {idx}] {'ok' if ok else 'failed'}")
-        case "input_required":
-            # Agent needs a choice from the user — resume by calling astream() again
-            choice = input(event.content + " ")
-            async for follow_up in agent.astream(choice):
-                pass  # handle follow_up events as usual
-        case "response":
-            # Final assembled answer — end of turn
-            print()
-        case "error":
-            print(f"\nError: {event.content}")
+    if isinstance(event, TokenEvent):
+        # Incremental response text
+        print(event.content, end="", flush=True)
+
+    elif isinstance(event, ToolCallEvent):
+        print(f"\n[tool] {event.tool}")
+
+    elif isinstance(event, WorkerDoneEvent):
+        print(f"\n[worker {event.worker_idx}] {'ok' if event.success else 'failed'}")
+
+    elif isinstance(event, InputRequiredEvent):
+        # Agent needs a choice from the user — resume by calling astream() again
+        choice = input(event.content + " ")
+        async for follow_up in agent.astream(choice):
+            pass  # handle follow_up events as usual
+
+    elif isinstance(event, ResponseEvent):
+        # Final assembled answer — end of turn
+        print()
 ```
 
 ---
@@ -291,10 +310,19 @@ OpenDataSci reads from and writes to a **workspace** — a local directory conta
 my-project/
 ├── data.csv
 ├── data2.parquet
-└── .opendatasci/          # managed by OpenDataSci
-    ├── mcp.json           # MCP tool server URLs (optional)
-    └── plans/             # persisted agent plans (auto-managed)
+└── .opendatasci/           # managed by OpenDataSci
+    ├── mcp.json            # MCP tool server URLs (optional)
+    ├── skills/             # custom skill files (optional, see below)
+    ├── plans/              # persisted agent plans (auto-managed)
+    ├── dataset_notes/      # per-dataset notes carried across sessions
+    ├── dataset_profiling/  # per-dataset profile cards carried across sessions
+    ├── artifacts/          # tables, plots, and models the agent writes during a run
+    └── session.json        # session state (auto-managed)
 ```
+
+`dataset_notes/` and `dataset_profiling/` are what make project memory persistent:
+the agent writes what it learns about a dataset here, keyed by dataset path, and
+reads it back at the start of future sessions in the same workspace.
 
 ### MCP tool servers
 
@@ -318,19 +346,38 @@ Create `.opendatasci/skills/` in your workspace and add Markdown files describin
 
 ## Environment variables
 
+Read directly by `OpenDataSciConfig` (see [OpenDataSciConfig](api/config.md) for the full field list):
+
 | Variable | Description |
 |----------|-------------|
 | `ANTHROPIC_API_KEY` | Anthropic API key |
 | `OPENAI_API_KEY` | OpenAI / OpenAI-compatible server API key |
-| `GOOGLE_API_KEY` | Google Gemini API key |
+| `GOOGLE_API_KEY` | Google Gemini (AI Studio) API key |
 | `AZURE_OPENAI_API_KEY` | Azure OpenAI API key |
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI resource URL |
-| `REGION` | Cloud region (Bedrock) |
+| `AZURE_OPENAI_API_VERSION` | Azure OpenAI API version (default: `2025-01-01-preview`) |
+| `REGION` | AWS region for Bedrock (default: `us-east-1`) |
 | `GOOGLE_CLOUD_PROJECT` | GCP project ID (Vertex AI) |
 | `GOOGLE_CLOUD_LOCATION` | Vertex AI region |
 | `LLM_SERVER_BASE_URL` | Custom endpoint (Ollama / OpenAI-compatible server) |
+| `NAME` | Display name of the agent (default: `Sai`) |
+| `MCP_SERVERS` | JSON array of MCP server URLs, alternative to `.opendatasci/mcp.json` (e.g. `["http://localhost:3000/mcp"]`) |
+| `EXTRA_FETCH_DOMAINS` | JSON array of additional hostnames the agent's `fetch_url` tool may retrieve |
 | `SKILLS_DIRECTORY` | Path to a user-defined skills directory |
 | `BUILTIN_SKILLS_DIRECTORY` | Override the bundled built-in skills directory |
+| `SKILL_DOMAINS_DIRECTORY` | Path to a user-defined skill domains directory |
+| `BUILTIN_SKILL_DOMAINS_DIRECTORY` | Override the bundled built-in skill domains directory |
+| `WORKER_TIMEOUT_SECONDS` | Max seconds to wait for spawned workers to finish (default: `300`) |
+| `MIDTURN_COMPACTION_THRESHOLD` | Token count that triggers mid-turn context compaction (default: `96000`) |
 | `CODE_EXEC_TIMEOUT` | Max seconds for one sandbox execution (default: `1800`) |
+
+Read by the underlying cloud SDKs, not by OpenDataSci itself — set whichever match your provider and auth method:
+
+| Variable | Description |
+|----------|-------------|
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Long-lived IAM key for Bedrock |
+| `AWS_SESSION_TOKEN` | Add alongside the above for temporary STS credentials |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Path to a service-account JSON key for Vertex AI |
+| `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` | Service-principal auth for Azure OpenAI (requires `pip install 'open-data-sci[azure]'`) |
 
 A `.env` file in the current working directory is loaded automatically on startup.
