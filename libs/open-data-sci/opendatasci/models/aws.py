@@ -7,6 +7,7 @@ from langchain_core.outputs import ChatGenerationChunk
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.models.anthropic import supports_adaptive_thinking
 
+_BedrockBase: type[BaseChatModel] | None
 try:
     from langchain_aws import ChatBedrockConverse as _BedrockBase
 except ImportError:
@@ -36,7 +37,7 @@ def _strip_list_usage_fields(chunk: ChatGenerationChunk) -> ChatGenerationChunk:
 
 if _BedrockBase is not None:
 
-    class _CustomBedrockConverse(_BedrockBase):  # type: ignore[misc]
+    class _CustomBedrockConverse(_BedrockBase):  # type: ignore[valid-type,misc]
         def _stream(
             self, messages: Any, stop: Any = None, run_manager: Any = None, **kwargs: Any
         ) -> Any:
@@ -76,12 +77,12 @@ def create_bedrock_secondary_model(config: OpenDataSciConfig) -> BaseChatModel:
         raise ValueError("langchain-aws is not installed.")
     if supports_adaptive_thinking(config.secondary_model):
         # Explicit temperature is rejected on Opus 4.7+ and Sonnet 5.
-        return _BedrockBase(  # type: ignore[no-any-return]
+        return _BedrockBase(
             model=config.secondary_model,
             region_name=config.aws_region,
             max_tokens=1000,
         )
-    return _BedrockBase(  # type: ignore[no-any-return]
+    return _BedrockBase(
         model=config.secondary_model,
         region_name=config.aws_region,
         temperature=0,

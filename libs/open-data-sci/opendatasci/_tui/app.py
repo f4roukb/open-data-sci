@@ -33,7 +33,6 @@ from .widgets import (
     TurnStatusBar,
 )
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -50,9 +49,7 @@ def _get_version() -> str:
     try:
         return importlib.metadata.version("open-data-sci")
     except importlib.metadata.PackageNotFoundError:
-        logger.warning(
-            "open-data-sci package not found; falling back to hardcoded version '0.2.0'"
-        )
+        logger.warning("open-data-sci package not found; falling back to hardcoded version '0.2.0'")
         return "0.2.0"
 
 

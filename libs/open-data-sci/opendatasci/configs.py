@@ -268,8 +268,7 @@ class OpenDataSciConfig(BaseSettings):
             import yaml  # type: ignore[import-untyped]
         except ImportError as exc:
             raise ImportError(
-                "PyYAML is required to load YAML config files. "
-                "Install it with: pip install pyyaml"
+                "PyYAML is required to load YAML config files. Install it with: pip install pyyaml"
             ) from exc
 
         with open(path) as fh:

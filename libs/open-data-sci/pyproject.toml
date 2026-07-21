@@ -103,6 +103,7 @@ dev = [
     "pytest-xdist>=3.0.0,<4.0.0",
     "ruff>=0.8.0,<1.0.0",
     "mypy>=2.0.0,<3.0.0",
+    "pyright>=1.1.390,<2.0.0",
     "pandas-stubs>=3.0.0,<4.0.0",
     "types-openpyxl>=3.1.0,<4.0.0",
     "vulture>=2.0.0,<3.0.0",
@@ -224,6 +225,18 @@ module = [
     "google.cloud.*", "google.oauth2.*",
 ]
 ignore_missing_imports = true
+
+[tool.pyright]
+pythonVersion = "3.12"
+include = ["opendatasci"]
+exclude = ["**/__pycache__", "build", "dist"]
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "standard"
+reportMissingImports = true
+reportMissingTypeStubs = false
+reportUnnecessaryTypeIgnoreComment = true
+reportImplicitOverride = "error"
 
 [dependency-groups]
 dev = [

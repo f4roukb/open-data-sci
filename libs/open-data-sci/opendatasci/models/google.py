@@ -11,7 +11,7 @@ def create_gemini_model(config: OpenDataSciConfig) -> BaseChatModel:
         raise ValueError(
             "langchain-google-genai is not installed. Run: pip install 'open-data-sci[gemini]'"
         ) from exc
-    return ChatGoogleGenerativeAI(  # type: ignore[no-any-return]
+    return ChatGoogleGenerativeAI(
         model=config.model,
         google_api_key=config.google_api_key,
         temperature=config.temperature,
@@ -26,7 +26,7 @@ def create_gemini_secondary_model(config: OpenDataSciConfig) -> BaseChatModel:
         raise ValueError(
             "langchain-google-genai is not installed. Run: pip install 'open-data-sci[gemini]'"
         ) from exc
-    return ChatGoogleGenerativeAI(  # type: ignore[no-any-return]
+    return ChatGoogleGenerativeAI(
         model=config.secondary_model,
         google_api_key=config.google_api_key,
         temperature=0,
@@ -37,12 +37,12 @@ def create_gemini_secondary_model(config: OpenDataSciConfig) -> BaseChatModel:
 def create_vertexai_model(config: OpenDataSciConfig) -> BaseChatModel:
     """Instantiate a ``ChatVertexAI`` model via Google Cloud Vertex AI."""
     try:
-        from langchain_google_vertexai import ChatVertexAI  # type: ignore[import-not-found]
+        from langchain_google_vertexai import ChatVertexAI
     except ImportError as exc:
         raise ValueError(
             "langchain-google-vertexai is not installed. Run: pip install 'open-data-sci[gcp]'"
         ) from exc
-    return ChatVertexAI(  # type: ignore[no-any-return]
+    return ChatVertexAI(
         model=config.model,
         project=config.google_cloud_project,
         location=config.google_cloud_location,
@@ -58,7 +58,7 @@ def create_vertexai_secondary_model(config: OpenDataSciConfig) -> BaseChatModel:
         raise ValueError(
             "langchain-google-vertexai is not installed. Run: pip install 'open-data-sci[gcp]'"
         ) from exc
-    return ChatVertexAI(  # type: ignore[no-any-return]
+    return ChatVertexAI(
         model=config.secondary_model,
         project=config.google_cloud_project,
         location=config.google_cloud_location,

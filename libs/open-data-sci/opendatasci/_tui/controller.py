@@ -712,9 +712,7 @@ class CLIController:
         self._ui.stop_agent()
         if self._service is not None:
             await self._service.rewind_turn()
-        await self._ui.add_message(
-            "agent", "⏹ Agent stopped. You can continue from here."
-        ).finish()
+        await self._ui.add_message("agent", "⏹ Agent stopped. You can continue from here.").finish()
 
     async def cancel_pending_messages(self) -> None:
         """Discard every message currently queued behind a running agent turn."""
