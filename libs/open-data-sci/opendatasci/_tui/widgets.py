@@ -14,6 +14,7 @@ from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer, Vertical
+from textual.css.query import NoMatches
 from textual.message import Message
 from textual.timer import Timer
 from textual.widget import Widget
@@ -187,7 +188,7 @@ class TurnStatusBar(Static):
     @staticmethod
     def _fmt_tokens(n: int) -> str:
         """Format token count as truncated-to-one-decimal thousands, e.g. 3250 → '3.2k'."""
-        k = math.floor(n / 100) / 10
+        k = (n // 100) / 10
         return f"{k:.1f}k"
 
     def _context_suffix(self) -> str:
@@ -655,8 +656,8 @@ class WorkspacePanel(Widget):
         self._files = []
         try:
             self.app.query_one("#user-input", Input).focus()
-        except Exception:
-            pass
+        except NoMatches:
+            logger.debug("action_close_panel: #user-input not found, skipping focus")
 
 
 class CommandApprovalPrompt(Widget):

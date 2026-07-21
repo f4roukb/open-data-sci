@@ -40,6 +40,24 @@ class CompletionState:
         """True when the completion popup currently has items to navigate."""
         return bool(self._matches)
 
+    @property
+    def is_suppressing_input_change(self) -> bool:
+        """True when the next ``on_input_changed`` call will be swallowed."""
+        return self._completing
+
+    def suppress_next_input_change(self) -> None:
+        """Mark the next input-change as programmatic, so it gets ignored.
+
+        Call this immediately before code sets the input value directly
+        (tab-completion, history navigation), so the resulting change event
+        isn't misread as the user typing a new completion trigger.
+        """
+        self._completing = True
+
+    def cancel_input_change_suppression(self) -> None:
+        """Undo ``suppress_next_input_change`` when the anticipated value update didn't happen."""
+        self._completing = False
+
     def on_input_changed(self, value: str, ui: UIAdapter) -> bool:
         """Handle an input-text change.
 

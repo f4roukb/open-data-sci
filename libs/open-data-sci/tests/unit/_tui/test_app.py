@@ -174,7 +174,6 @@ def _make_app() -> tuple[OpenDataSciApp, MagicMock]:
     mock_input = MagicMock()
     app.query_one = MagicMock(return_value=mock_input)
     app._controller = MagicMock()
-    app._controller._completing = False
     return app, mock_input
 
 
@@ -222,6 +221,8 @@ class TestOnInputKeyHistory:
         mock_input.navigate_history.assert_called_once_with(-1)
         event.stop.assert_called_once()
         event.prevent_default.assert_called_once()
+        app._controller.suppress_next_input_change.assert_called_once()
+        app._controller.cancel_input_change_suppression.assert_not_called()
 
     def test_down_navigates_history_when_no_completions(self) -> None:
         app, mock_input = self._app()
@@ -260,7 +261,8 @@ class TestOnInputKeyHistory:
             app.on_input_key(event)
 
         event.stop.assert_not_called()
-        assert app._controller._completing is False
+        app._controller.suppress_next_input_change.assert_called_once()
+        app._controller.cancel_input_change_suppression.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

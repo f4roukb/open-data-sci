@@ -224,12 +224,12 @@ class OpenDataSciApp(App[None]):
                 event.stop()
                 event.prevent_default()
         else:
-            self._controller._completing = True  # suppress Input.Changed fired by value update
+            self._controller.suppress_next_input_change()  # value update fires Input.Changed
             if self.query_one("#user-input", SmartInput).navigate_history(direction):
                 event.stop()
                 event.prevent_default()
             else:
-                self._controller._completing = False
+                self._controller.cancel_input_change_suppression()
 
     # ── @work wrappers ────────────────────────────────────────────────────────
 

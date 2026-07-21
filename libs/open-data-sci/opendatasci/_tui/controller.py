@@ -121,59 +121,19 @@ class CLIController:
         """True when a multi-line paste is pending in the attachment bar."""
         return self._paste_attachment is not None
 
-    # ── Completion state delegation ───────────────────────────────────────────
-    # These properties expose CompletionState internals under the names that
-    # existed on CLIController before the extraction, so that existing tests
-    # and any external callers that relied on the old attribute names keep
-    # working without modification.
+    # ── Completion state suppression ──────────────────────────────────────────
+    # Used by app.py around programmatic input-value updates (e.g. history
+    # navigation) that must not be misread as a new completion trigger.
 
     @property
-    def _completing(self) -> bool:
-        return self._completion._completing
+    def is_suppressing_input_change(self) -> bool:
+        return self._completion.is_suppressing_input_change
 
-    @_completing.setter
-    def _completing(self, value: bool) -> None:
-        self._completion._completing = value
+    def suppress_next_input_change(self) -> None:
+        self._completion.suppress_next_input_change()
 
-    @property
-    def _comp_matches(self) -> list[str]:
-        return self._completion._matches
-
-    @_comp_matches.setter
-    def _comp_matches(self, value: list[str]) -> None:
-        self._completion._matches = value
-
-    @property
-    def _comp_displays(self) -> list[str]:
-        return self._completion._displays
-
-    @_comp_displays.setter
-    def _comp_displays(self, value: list[str]) -> None:
-        self._completion._displays = value
-
-    @property
-    def _comp_idx(self) -> int:
-        return self._completion._idx
-
-    @_comp_idx.setter
-    def _comp_idx(self, value: int) -> None:
-        self._completion._idx = value
-
-    @property
-    def _comp_at_pos(self) -> int:
-        return self._completion._at_pos
-
-    @_comp_at_pos.setter
-    def _comp_at_pos(self, value: int) -> None:
-        self._completion._at_pos = value
-
-    @property
-    def _comp_mode(self) -> str:
-        return self._completion._mode
-
-    @_comp_mode.setter
-    def _comp_mode(self, value: str) -> None:
-        self._completion._mode = value
+    def cancel_input_change_suppression(self) -> None:
+        self._completion.cancel_input_change_suppression()
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -209,30 +169,26 @@ class CLIController:
             info = CLISessionInfo.from_path(self._workspace_path, workspace_path, cfg)
             ui.set_file_count(self._describe_data(info))
         except FileNotFoundError:
-            self._boot_failed = True
             hint = self._did_you_mean(self._workspace_path)
-            msg_text = (
+            self._fail_boot(
+                ui,
                 f"❌ File not found: `{escape_markup(self._workspace_path)}`\n\n"
-                f"Check the path and try again.{hint}"
+                f"Check the path and try again.{hint}",
             )
-            msg = ui.add_message("agent", "")
-            msg.set_content(msg_text)
-            msg.finish()
         except PermissionError:
-            self._boot_failed = True
-            msg = ui.add_message("agent", "")
-            msg.set_content(f"❌ Permission denied: `{escape_markup(self._workspace_path)}`")
-            msg.finish()
+            self._fail_boot(
+                ui, f"❌ Permission denied: `{escape_markup(self._workspace_path)}`"
+            )
         except ValueError as exc:
-            self._boot_failed = True
-            msg = ui.add_message("agent", "")
-            msg.set_content(f"❌ Provider error: {exc}")
-            msg.finish()
+            self._fail_boot(ui, f"❌ Provider error: {exc}")
         except Exception as exc:
-            self._boot_failed = True
-            msg = ui.add_message("agent", "")
-            msg.set_content(f"❌ Failed to load: {exc}")
-            msg.finish()
+            self._fail_boot(ui, f"❌ Failed to load: {exc}")
+
+    def _fail_boot(self, ui: UIAdapter, msg_text: str) -> None:
+        self._boot_failed = True
+        msg = ui.add_message("agent", "")
+        msg.set_content(msg_text)
+        msg.finish()
 
     @staticmethod
     def _did_you_mean(workspace_path: str) -> str:
@@ -646,8 +602,10 @@ class CLIController:
         if self._service is not None:
             try:
                 await self._service.clear_context()
-            except Exception:
+            except Exception as exc:
                 logger.exception("Failed to clear service context")
+                self._ui.add_message("agent", f"❌ Clear failed: {exc}").finish()
+                return
         self._ui.add_message("agent", "✓ Context cleared.").finish()
 
     async def compact(self) -> None:
