@@ -18,6 +18,7 @@ def _snapshot(*task_interrupts: tuple[Interrupt, ...]) -> StateSnapshot:
         created_at=None,
         parent_config=None,
         tasks=tasks,
+        interrupts=(),
     )
 
 

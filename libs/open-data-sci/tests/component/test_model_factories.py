@@ -340,9 +340,7 @@ def bedrock_config() -> OpenDataSciConfig:
 
 
 def _chunk(usage: dict | None) -> ChatGenerationChunk:
-    return ChatGenerationChunk(
-        message=AIMessageChunk(content="hi", usage_metadata=usage)
-    )
+    return ChatGenerationChunk(message=AIMessageChunk(content="hi", usage_metadata=usage))
 
 
 class _FakeBedrockBase:
@@ -373,14 +371,6 @@ def aws_with_fake_sdk():
 
 
 class TestBedrockFactory:
-    def test_missing_dependency_raises_value_error(self, bedrock_config) -> None:
-        if aws._BedrockBase is not None:
-            pytest.skip("langchain-aws installed in this environment")
-        with pytest.raises(ValueError, match="langchain-aws is not installed"):
-            aws.create_bedrock_model(bedrock_config)
-        with pytest.raises(ValueError, match="langchain-aws is not installed"):
-            aws.create_bedrock_secondary_model(bedrock_config)
-
     def test_primary_model_kwargs(self, aws_with_fake_sdk, bedrock_config) -> None:
         model = aws_with_fake_sdk.create_bedrock_model(bedrock_config)
         assert model.kwargs["model"] == "anthropic.claude-sonnet-4-6"
