@@ -1,7 +1,8 @@
-"""ConcurrentWorkerAgent spawning tool: spawn_workers."""
+"""ConcurrentWorkerAgent spawning tool: task."""
 
 import asyncio
 import logging
+import uuid
 from pathlib import Path
 from typing import Annotated, Any, Callable, Coroutine, Literal, override
 
@@ -9,7 +10,7 @@ from annotated_types import MaxLen, MinLen
 from langchain_core.callbacks.manager import adispatch_custom_event
 from langchain_core.runnables.config import RunnableConfig, ensure_config
 from langchain_core.tools import BaseTool
-from pydantic import BaseModel
+from pydantic import BaseModel, PrivateAttr
 
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.base import BaseContextStore
@@ -30,7 +31,7 @@ logger = logging.getLogger(__name__)
 class SpawnWorkersTool(OpenDataSciBaseTool):
     """Spawn parallel worker agents to execute independent subtasks."""
 
-    class WorkerRunConfig(BaseModel):
+    class TaskDetails(BaseModel):
         """Everything a worker needs to run a single subtask to completion."""
 
         subtask: str
@@ -45,13 +46,14 @@ class SpawnWorkersTool(OpenDataSciBaseTool):
         to look up documentation, papers, or API references."""
 
     class CallArgs(BaseModel):
-        subtasks: Annotated[list["SpawnWorkersTool.WorkerRunConfig"], MinLen(1), MaxLen(3)]
+        subtasks: Annotated[list["SpawnWorkersTool.TaskDetails"], MinLen(1), MaxLen(3)]
         summary: str
         communication: str
+        synch_mode: Literal["sync", "async"] = "sync"
 
-    name: str = "spawn_workers"
+    name: str = "task"
     description: str = """
-Spawn 1-3 independent workers to execute narrow, concrete subtasks in parallel.
+Spawn 1-3 independent workers to execute narrow, concrete subtasks.
 
 Workers are fully isolated: no shared state, no conversation history, no context from
 other subtasks. Each subtask runs to completion independently before results are collected.
@@ -70,11 +72,19 @@ other subtasks. Each subtask runs to completion independently before results are
 - Write every subtask description as fully self-contained: include dataset names,
   variable names, target columns, and any context the worker needs from the conversation.
 - Assign a ``skill`` when the subtask benefits from domain-specific guidance.
+- Set ``synch_mode``: use ``"sync"`` (default) to wait for the result and get it back
+  immediately. Prefer ``"async"`` for long-running subtasks (e.g. heavy training runs,
+  large-scale data processing, anything that would otherwise stall the conversation) —
+  the tool schedules the work in the background and returns immediately with a task ID,
+  so you can keep helping the user instead of blocking on completion.
 
 Args:
-    subtasks:      1-3 subtask descriptors (see WorkerRunConfig fields).
+    subtasks:      1-3 subtask descriptors (see TaskDetails fields).
     communication: Brief message to the user about what you're doing
                    (e.g. "Running three checks in parallel.").
+    synch_mode:    "sync" to wait for and return the result; "async" to schedule the
+                   subtasks in the background and return a task ID immediately. Prefer
+                   "async" for long-running work.
 """.strip()
 
     args_schema: type[BaseModel] = CallArgs
@@ -85,10 +95,12 @@ Args:
     store: BaseSkillStore
     run_mode: Literal["parallel", "concurrent"] = "concurrent"
 
+    _background_tasks: set[asyncio.Task[Any]] = PrivateAttr(default_factory=set)
+
     async def _arun_one(
         self,
         idx: int,
-        subtask: WorkerRunConfig,
+        subtask: TaskDetails,
         outer_config: RunnableConfig,
         schedule: "Callable[[Coroutine[Any, Any, None]], Any] | None" = None,
     ) -> str:
@@ -182,21 +194,17 @@ Args:
                     emit("worker_finished", subtask.summary, {"success": success})
                     emit("worker_done", subtask.summary, {"success": success})
 
-    @override
-    async def _arun(
+    def _make_worker(self) -> BaseWorker:
+        return ParallelWorker() if self.run_mode == "parallel" else ConcurrentWorker()
+
+    async def _run_to_completion(
         self,
-        subtasks: Annotated[list[WorkerRunConfig], MinLen(1), MaxLen(3)],
-        summary: str,
-        communication: str,
-        **kwargs: Any,
+        subtasks: list[TaskDetails],
+        outer_config: RunnableConfig,
     ) -> str:
-        outer_config = ensure_config()
         timeout = (self.datasci_config or OpenDataSciConfig()).worker_timeout_seconds
-        worker: BaseWorker = (
-            ParallelWorker() if self.run_mode == "parallel" else ConcurrentWorker()
-        )
         results = await asyncio.wait_for(
-            worker.run(subtasks, outer_config, self._arun_one),
+            self._make_worker().run(subtasks, outer_config, self._arun_one),
             timeout=timeout,
         )
 
@@ -216,6 +224,50 @@ Args:
             sections.append(f"### ConcurrentWorkerAgent {i}: {subtask.subtask}\n\n{output}")
         return "\n\n---\n\n".join(sections)
 
+    def _schedule_in_background(
+        self,
+        subtasks: list[TaskDetails],
+        outer_config: RunnableConfig,
+    ) -> str:
+        """Fire off *subtasks* without waiting for them and return a task ID.
+
+        The task is kept in ``_background_tasks`` so it isn't garbage-collected
+        mid-flight; the ID is purely informational for now — nothing tracks or
+        looks up its completion.
+        """
+        task_id = uuid.uuid4().hex
+
+        async def _run() -> None:
+            try:
+                await self._run_to_completion(subtasks, outer_config)
+            except Exception:
+                logger.exception("Background task %s failed", task_id)
+
+        task = asyncio.create_task(_run())
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+        return task_id
+
+    @override
+    async def _arun(
+        self,
+        subtasks: Annotated[list[TaskDetails], MinLen(1), MaxLen(3)],
+        summary: str,
+        communication: str,
+        synch_mode: Literal["sync", "async"] = "sync",
+        **kwargs: Any,
+    ) -> str:
+        outer_config = ensure_config()
+
+        if synch_mode == "async":
+            task_id = self._schedule_in_background(subtasks, outer_config)
+            return (
+                f"Task scheduled successfully in the background (task_id={task_id}). "
+                "It is running asynchronously; no result is returned here."
+            )
+
+        return await self._run_to_completion(subtasks, outer_config)
+
 
 def create_worker_tools(
     workspace: BaseWorkspace,
@@ -225,7 +277,7 @@ def create_worker_tools(
     store: BaseSkillStore | None = None,
     run_mode: Literal["parallel", "concurrent"] = "concurrent",
 ) -> list[BaseTool]:
-    """Return the spawn_workers tool.
+    """Return the task tool.
 
     Each spawned worker receives its own isolated sandbox created through
     *sandbox_factory* so that teardown is guaranteed on completion or error.

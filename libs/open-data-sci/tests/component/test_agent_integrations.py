@@ -3,7 +3,7 @@
 Each test mocks at the LLM/sandbox boundary and exercises an end-to-end flow
 that involves several real subsystems wired together:
 
-* ``spawn_workers`` → ``ConcurrentWorkerAgent`` lifecycle (queues, sub-agent events, redactor)
+* ``task`` → ``ConcurrentWorkerAgent`` lifecycle (queues, sub-agent events, redactor)
 * Plan-mode round-trip (``enter_plan_mode`` → ``exit_plan_mode``, ``LocalContextStore``)
 * Self-review-mode round-trip (``enter_self_review_mode`` → ``exit_self_review_mode``)
 * Turn summarization (``TurnSummarizer`` writing to ``ChatMemory``)
@@ -29,7 +29,7 @@ def _ai_with_tool_call(name: str, args: dict, call_id: str = "call_1") -> AIMess
 
 
 class TestSpawnWorkersFlow:
-    """End-to-end spawn_workers exercising tools/workers.py + agent/worker.py.
+    """End-to-end task exercising tools/workers.py + agent/worker.py.
 
     Patches ``opendatasci.agents.workers.create_model`` so the spawned
     :class:`ConcurrentWorkerAgent` uses a scripted LLM rather than calling a real provider.
@@ -37,7 +37,7 @@ class TestSpawnWorkersFlow:
     final text on its first LLM call.
     """
 
-    async def test_spawn_workers_runs_real_worker_agent(self, loaded_scripted_service):
+    async def test_task_runs_real_worker_agent(self, loaded_scripted_service):
         from tests.component.conftest import _ScriptedChatModel  # local import to avoid cycle
 
         # The worker LLM yields a single message: a final text response with no tool_calls,
@@ -61,7 +61,7 @@ class TestSpawnWorkersFlow:
             svc = await loaded_scripted_service(
                 [
                     _ai_with_tool_call(
-                        "spawn_workers",
+                        "task",
                         {
                             "subtasks": [
                                 {
@@ -90,7 +90,7 @@ class TestSpawnWorkersFlow:
             await asyncio.sleep(0)
 
         types = [e.type for e in events]
-        # spawn_workers produced a tool_call AgentStreamEvent.
+        # task produced a tool_call AgentStreamEvent.
         assert "tool_call" in types
         # Both workers emitted at least one worker_done signal (consumed by orchestrator).
         worker_done = [e for e in events if e.type == "worker_done"]
@@ -98,7 +98,7 @@ class TestSpawnWorkersFlow:
         # Sub-agent events (worker_started, worker_finished) propagate as subagent_event.
         subagent_events = [e for e in events if e.type == "subagent_event"]
         assert subagent_events  # at least one (worker_started or worker_finished)
-        # Final tool_result for spawn_workers contains both workers' outputs.
+        # Final tool_result for task contains both workers' outputs.
         tool_result = next(e for e in events if e.type == "tool_result")
         assert "found 2 columns" in tool_result.content
         assert "rev=300" in tool_result.content

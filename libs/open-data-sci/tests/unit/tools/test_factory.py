@@ -39,7 +39,7 @@ class TestToolName:
             "exit_plan_mode",
             "enter_self_review_mode",
             "exit_self_review_mode",
-            "spawn_workers",
+            "task",
             "read_dataset_info",
             "update_dataset_info",
             "profile_dataset",
@@ -54,8 +54,8 @@ class TestToolName:
         assert expected == actual
 
     def test_equality_with_plain_string(self) -> None:
-        assert ToolName.SPAWN_WORKERS == "spawn_workers"
-        assert "spawn_workers" == ToolName.SPAWN_WORKERS
+        assert ToolName.TASK == "task"
+        assert "task" == ToolName.TASK
 
 
 # ---------------------------------------------------------------------------
@@ -116,10 +116,10 @@ class TestCreateWorkerAgentTools:
         names = {t.name for t in tools}
         assert "update_dataset_info" not in names
 
-    def test_excludes_spawn_workers(self) -> None:
+    def test_excludes_task(self) -> None:
         tools = create_worker_agent_tools(_make_workspace(), None, sandbox=_make_sandbox())
         names = {t.name for t in tools}
-        assert "spawn_workers" not in names
+        assert "task" not in names
 
     def test_excludes_web_tools(self) -> None:
         tools = create_worker_agent_tools(_make_workspace(), None, sandbox=_make_sandbox())
@@ -170,9 +170,9 @@ class TestWorkerToolSetExact:
         names = {t.name for t in create_worker_agent_tools(_make_workspace(), None, sandbox=_make_sandbox())}
         assert "update_dataset_info" not in names
 
-    def test_excludes_spawn_workers(self) -> None:
+    def test_excludes_task(self) -> None:
         names = {t.name for t in create_worker_agent_tools(_make_workspace(), None, sandbox=_make_sandbox())}
-        assert "spawn_workers" not in names
+        assert "task" not in names
 
     def test_excludes_web_tools(self) -> None:
         names = {t.name for t in create_worker_agent_tools(_make_workspace(), None, sandbox=_make_sandbox())}
@@ -220,10 +220,10 @@ class TestCreateMainAgentTools:
         names = {t.name for t in tools}
         assert "execute_cli_command" in names
 
-    def test_includes_spawn_workers(self) -> None:
+    def test_includes_task(self) -> None:
         tools = create_agent_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())
         names = {t.name for t in tools}
-        assert "spawn_workers" in names
+        assert "task" in names
 
     def test_includes_web_tools(self) -> None:
         tools = create_agent_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())

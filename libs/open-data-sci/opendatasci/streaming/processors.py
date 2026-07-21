@@ -280,8 +280,8 @@ class AgentTurnStreamProcessor:
                 )
             )
 
-        # spawn_workers carries worker_summaries instead of a plain summary.
-        if name == ToolName.SPAWN_WORKERS:
+        # task carries worker_summaries instead of a plain summary.
+        if name == ToolName.TASK:
             tasks_arg = args.get("subtasks", [])
             worker_summaries = [
                 t.get("summary", f"ConcurrentWorkerAgent {i + 1}")
@@ -293,11 +293,10 @@ class AgentTurnStreamProcessor:
                 ToolCallEvent(
                     content=str(tc["args"]),
                     # ``ToolName`` is a (str, Enum), and ``str(member)`` returns
-                    # ``"ToolName.SPAWN_WORKERS"`` rather than ``"spawn_workers"``.
-                    # Storing ``name`` here keeps this branch consistent with the
-                    # generic branch below — the presenter does
-                    # ``str(event.tool)`` before comparing, so storing the enum
-                    # here breaks its spawn_workers detection.
+                    # ``"ToolName.TASK"`` rather than ``"task"``. Storing ``name``
+                    # here keeps this branch consistent with the generic branch
+                    # below — the presenter does ``str(event.tool)`` before
+                    # comparing, so storing the enum here breaks its task detection.
                     tool=name,
                     tool_call_id=tc.get("id"),
                     worker_summaries=worker_summaries,

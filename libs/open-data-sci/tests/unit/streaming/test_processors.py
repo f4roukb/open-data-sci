@@ -1026,7 +1026,7 @@ class TestWorkerEventHandling:
 
 
 # ---------------------------------------------------------------------------
-# AgentTurnStreamProcessor — spawn_workers tool_call handling
+# AgentTurnStreamProcessor — task tool_call handling
 # ---------------------------------------------------------------------------
 
 
@@ -1040,42 +1040,42 @@ class TestSpawnWorkersToolCall:
     def _proc(self) -> AgentTurnStreamProcessor:
         return AgentTurnStreamProcessor()
 
-    def test_spawn_workers_emits_tool_call_with_spawn_workers_metadata(self) -> None:
+    def test_task_emits_tool_call_with_task_metadata(self) -> None:
         from opendatasci.tools import ToolName
 
         tc = {
-            "name": ToolName.SPAWN_WORKERS,
+            "name": ToolName.TASK,
             "args": {"subtasks": [{"summary": "Analyse"}, {"summary": "Plot"}]},
             "id": "sw1",
         }
         results = self._proc().process_event(_chain_end_with_tool_calls([tc]))
         tool_calls = [e for e in results if e.type == "tool_call"]
         assert len(tool_calls) == 1
-        assert tool_calls[0].tool == ToolName.SPAWN_WORKERS
+        assert tool_calls[0].tool == ToolName.TASK
 
-    def test_spawn_workers_tool_metadata_survives_str_roundtrip(self) -> None:
+    def test_task_tool_metadata_survives_str_roundtrip(self) -> None:
         """Regression: ``ToolName`` is a (str, Enum), so ``str(member)`` yields
-        ``'ToolName.SPAWN_WORKERS'`` rather than ``'spawn_workers'``. The
+        ``'ToolName.TASK'`` rather than ``'task'``. The
         presenter does ``str(event.tool)`` before comparing against
-        ``ToolName.SPAWN_WORKERS`` — storing the enum here would cause that
+        ``ToolName.TASK`` — storing the enum here would cause that
         comparison to silently fail and the worker rows would never render."""
         from opendatasci.tools import ToolName
 
         tc = {
-            "name": ToolName.SPAWN_WORKERS,
+            "name": ToolName.TASK,
             "args": {"subtasks": [{"summary": "Analyse"}]},
             "id": "sw1",
         }
         results = self._proc().process_event(_chain_end_with_tool_calls([tc]))
         tool_call = next(e for e in results if e.type == "tool_call")
         # This is the exact comparison the presenter performs.
-        assert str(tool_call.tool) == ToolName.SPAWN_WORKERS
+        assert str(tool_call.tool) == ToolName.TASK
 
-    def test_spawn_workers_extracts_summaries_from_subtasks(self) -> None:
+    def test_task_extracts_summaries_from_subtasks(self) -> None:
         from opendatasci.tools import ToolName
 
         tc = {
-            "name": ToolName.SPAWN_WORKERS,
+            "name": ToolName.TASK,
             "args": {"subtasks": [{"summary": "Train"}, {"summary": "Evaluate"}]},
             "id": "sw1",
         }
@@ -1083,12 +1083,12 @@ class TestSpawnWorkersToolCall:
         tool_call = next(e for e in results if e.type == "tool_call")
         assert tool_call.worker_summaries == ["Train", "Evaluate"]
 
-    def test_spawn_workers_fills_default_summary_when_missing(self) -> None:
+    def test_task_fills_default_summary_when_missing(self) -> None:
         """A subtask dict without ``summary`` must fall back to ``ConcurrentWorkerAgent {i+1}``."""
         from opendatasci.tools import ToolName
 
         tc = {
-            "name": ToolName.SPAWN_WORKERS,
+            "name": ToolName.TASK,
             "args": {"subtasks": [{"summary": "Train"}, {}]},  # second subtask has no summary
             "id": "sw1",
         }
@@ -1096,12 +1096,12 @@ class TestSpawnWorkersToolCall:
         tool_call = next(e for e in results if e.type == "tool_call")
         assert tool_call.worker_summaries == ["Train", "ConcurrentWorkerAgent 2"]
 
-    def test_spawn_workers_non_dict_subtask_falls_back_to_default(self) -> None:
+    def test_task_non_dict_subtask_falls_back_to_default(self) -> None:
         """If ``subtasks`` contains non-dict entries the placeholder name is used."""
         from opendatasci.tools import ToolName
 
         tc = {
-            "name": ToolName.SPAWN_WORKERS,
+            "name": ToolName.TASK,
             "args": {"subtasks": ["not a dict"]},
             "id": "sw1",
         }
@@ -1109,11 +1109,11 @@ class TestSpawnWorkersToolCall:
         tool_call = next(e for e in results if e.type == "tool_call")
         assert tool_call.worker_summaries == ["ConcurrentWorkerAgent 1"]
 
-    def test_spawn_workers_empty_subtasks_yields_empty_summaries(self) -> None:
+    def test_task_empty_subtasks_yields_empty_summaries(self) -> None:
         from opendatasci.tools import ToolName
 
         tc = {
-            "name": ToolName.SPAWN_WORKERS,
+            "name": ToolName.TASK,
             "args": {"subtasks": []},
             "id": "sw1",
         }
@@ -1121,11 +1121,11 @@ class TestSpawnWorkersToolCall:
         tool_call = next(e for e in results if e.type == "tool_call")
         assert tool_call.worker_summaries == []
 
-    def test_spawn_workers_metadata_carries_tool_call_id(self) -> None:
+    def test_task_metadata_carries_tool_call_id(self) -> None:
         from opendatasci.tools import ToolName
 
         tc = {
-            "name": ToolName.SPAWN_WORKERS,
+            "name": ToolName.TASK,
             "args": {"subtasks": []},
             "id": "sw-abc",
         }
@@ -1133,19 +1133,19 @@ class TestSpawnWorkersToolCall:
         tool_call = next(e for e in results if e.type == "tool_call")
         assert tool_call.tool_call_id == "sw-abc"
 
-    def test_spawn_workers_no_summary_key_in_metadata(self) -> None:
-        """The spawn_workers branch returns early before the generic ``summary``
+    def test_task_no_summary_key_in_metadata(self) -> None:
+        """The task branch returns early before the generic ``summary``
         is computed — only ``worker_summaries`` should be present."""
         from opendatasci.tools import ToolName
 
         tc = {
-            "name": ToolName.SPAWN_WORKERS,
+            "name": ToolName.TASK,
             "args": {"subtasks": [{"summary": "A"}]},
             "id": "sw1",
         }
         results = self._proc().process_event(_chain_end_with_tool_calls([tc]))
         tool_call = next(e for e in results if e.type == "tool_call")
-        # spawn_workers uses worker_summaries, not summary
+        # task uses worker_summaries, not summary
         assert tool_call.summary == "" and tool_call.worker_summaries == ["A"]
 
 

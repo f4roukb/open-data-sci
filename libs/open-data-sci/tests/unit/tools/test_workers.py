@@ -1,6 +1,5 @@
 """Unit tests for opendatasci.tools.workers."""
 
-
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -9,7 +8,7 @@ import pytest
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory
 from opendatasci.skills.base import BaseSkillStore
-from opendatasci.tools.workers import SpawnWorkersTool, WorkerTask, create_worker_tools
+from opendatasci.tools.workers import SpawnWorkersTool, create_worker_tools
 from opendatasci.workspace.base import BaseWorkspace
 
 
@@ -50,32 +49,34 @@ def _make_store() -> MagicMock:
 
 
 # ---------------------------------------------------------------------------
-# WorkerTask model
+# TaskDetails model
 # ---------------------------------------------------------------------------
 
 
-class TestWorkerTask:
+class TestTaskDetails:
     def test_basic_construction(self) -> None:
-        task = WorkerTask(subtask="Do something.", summary="Doing thing")
+        task = SpawnWorkersTool.TaskDetails(subtask="Do something.", summary="Doing thing")
         assert task.subtask == "Do something."
         assert task.summary == "Doing thing"
         assert task.skill is None
 
     def test_skill_field_set(self) -> None:
-        task = WorkerTask(subtask="Analyse data.", summary="Analyse", skill="data_science")
+        task = SpawnWorkersTool.TaskDetails(
+            subtask="Analyse data.", summary="Analyse", skill="data_science"
+        )
         assert task.skill == "data_science"
 
     def test_skill_defaults_to_none(self) -> None:
-        task = WorkerTask(subtask="x", summary="y")
+        task = SpawnWorkersTool.TaskDetails(subtask="x", summary="y")
         assert task.skill is None
 
     def test_missing_subtask_raises(self) -> None:
         with pytest.raises(Exception):
-            WorkerTask(summary="only summary")  # type: ignore[call-arg]
+            SpawnWorkersTool.TaskDetails(summary="only summary")  # type: ignore[call-arg]
 
     def test_missing_summary_raises(self) -> None:
         with pytest.raises(Exception):
-            WorkerTask(subtask="only subtask")  # type: ignore[call-arg]
+            SpawnWorkersTool.TaskDetails(subtask="only subtask")  # type: ignore[call-arg]
 
 
 # ---------------------------------------------------------------------------
@@ -90,11 +91,11 @@ class TestGetWorkerToolsStructure:
         )
         assert len(tools) == 1
 
-    def test_tool_name_is_spawn_workers(self) -> None:
+    def test_tool_name_is_task(self) -> None:
         tools = create_worker_tools(
             _make_workspace(), None, datasci_config=None, sandbox_factory=_make_sandbox_factory()
         )
-        assert tools[0].name == "spawn_workers"
+        assert tools[0].name == "task"
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +127,7 @@ class TestRunOne:
             MockAgent.return_value.ainvoke = AsyncMock(return_value="direct output")
             result = await tool._arun_one(
                 0,
-                WorkerTask(subtask="Do X.", summary="X"),
+                SpawnWorkersTool.TaskDetails(subtask="Do X.", summary="X"),
                 MagicMock(),
             )
         assert result == "direct output"
@@ -138,7 +139,7 @@ class TestRunOne:
             MockAgent.return_value.ainvoke = AsyncMock(side_effect=RuntimeError("boom"))
             result = await tool._arun_one(
                 0,
-                WorkerTask(subtask="Fail.", summary="F"),
+                SpawnWorkersTool.TaskDetails(subtask="Fail.", summary="F"),
                 MagicMock(),
             )
         assert "boom" in result
@@ -152,14 +153,14 @@ class TestRunOne:
             MockAgent.return_value.ainvoke = AsyncMock(return_value="ok")
             await tool._arun_one(
                 0,
-                WorkerTask(subtask="T.", summary="s", skill="data_science"),
+                SpawnWorkersTool.TaskDetails(subtask="T.", summary="s", skill="data_science"),
                 MagicMock(),
             )
         store.load.assert_called_once_with("data_science")
 
 
 # ---------------------------------------------------------------------------
-# create_worker_tools – spawn_workers behaviour
+# create_worker_tools – task behaviour
 # ---------------------------------------------------------------------------
 
 
@@ -185,7 +186,7 @@ class TestSpawnWorkersTool:
             MockAgent.return_value.ainvoke = AsyncMock(return_value="worker output")
             result = await tool.ainvoke(
                 {
-                    "subtasks": [WorkerTask(subtask="Do X.", summary="Do X")],
+                    "subtasks": [SpawnWorkersTool.TaskDetails(subtask="Do X.", summary="Do X")],
                     "summary": "s",
                     "communication": "spawning",
                 }
@@ -208,8 +209,8 @@ class TestSpawnWorkersTool:
             result = await tool.ainvoke(
                 {
                     "subtasks": [
-                        WorkerTask(subtask="Task A.", summary="A"),
-                        WorkerTask(subtask="Task B.", summary="B"),
+                        SpawnWorkersTool.TaskDetails(subtask="Task A.", summary="A"),
+                        SpawnWorkersTool.TaskDetails(subtask="Task B.", summary="B"),
                     ],
                     "summary": "s",
                     "communication": "spawning",
@@ -222,13 +223,15 @@ class TestSpawnWorkersTool:
     async def test_worker_exception_reported_in_output(self) -> None:
         # RuntimeError from agent.ainvoke is caught inside _run_one and returned as
         # its string message; other exceptions propagate and get the "Error: worker
-        # failed" prefix from spawn_workers.  Both paths include the message text.
+        # failed" prefix from task.  Both paths include the message text.
         tool = self._get_tool()
         with patch(_AGENT_PATCH) as MockAgent:
             MockAgent.return_value.ainvoke = AsyncMock(side_effect=RuntimeError("boom"))
             result = await tool.ainvoke(
                 {
-                    "subtasks": [WorkerTask(subtask="Fail task.", summary="Fail")],
+                    "subtasks": [
+                        SpawnWorkersTool.TaskDetails(subtask="Fail task.", summary="Fail")
+                    ],
                     "summary": "s",
                     "communication": "spawning",
                 }
@@ -253,7 +256,7 @@ class TestSpawnWorkersTool:
             MockAgent.return_value.ainvoke = AsyncMock(return_value="ok")
             await tool.ainvoke(
                 {
-                    "subtasks": [WorkerTask(subtask="Succeed.", summary="ok")],
+                    "subtasks": [SpawnWorkersTool.TaskDetails(subtask="Succeed.", summary="ok")],
                     "summary": "s",
                     "communication": "go",
                 }
@@ -280,7 +283,7 @@ class TestSpawnWorkersTool:
             MockAgent.return_value.ainvoke = AsyncMock(return_value="done")
             await tool.ainvoke(
                 {
-                    "subtasks": [WorkerTask(subtask="Task.", summary="my task")],
+                    "subtasks": [SpawnWorkersTool.TaskDetails(subtask="Task.", summary="my task")],
                     "summary": "s",
                     "communication": "go",
                 }
@@ -305,7 +308,11 @@ class TestSpawnWorkersTool:
             MockAgent.return_value.ainvoke = AsyncMock(return_value="done")
             await tool.ainvoke(
                 {
-                    "subtasks": [WorkerTask(subtask="T.", summary="s", skill="data_science")],
+                    "subtasks": [
+                        SpawnWorkersTool.TaskDetails(
+                            subtask="T.", summary="s", skill="data_science"
+                        )
+                    ],
                     "summary": "s",
                     "communication": "go",
                 }
@@ -317,6 +324,7 @@ class TestSpawnWorkersTool:
         config = OpenDataSciConfig(worker_timeout_seconds=0.01)
         tool = self._get_tool(datasci_config=config)
         with patch(_AGENT_PATCH) as MockAgent:
+
             async def _slow_run(*args, **kwargs):
                 await asyncio.sleep(10)
                 return "never"
@@ -325,8 +333,204 @@ class TestSpawnWorkersTool:
             with pytest.raises(asyncio.TimeoutError):
                 await tool.ainvoke(
                     {
-                        "subtasks": [WorkerTask(subtask="Slow.", summary="slow")],
+                        "subtasks": [SpawnWorkersTool.TaskDetails(subtask="Slow.", summary="slow")],
                         "summary": "s",
                         "communication": "go",
                     }
                 )
+
+
+# ---------------------------------------------------------------------------
+# run_mode – parallel vs. concurrent worker execution
+# ---------------------------------------------------------------------------
+
+
+class TestRunMode:
+    def test_default_run_mode_is_concurrent(self) -> None:
+        tool = _make_tool()
+        assert tool.run_mode == "concurrent"
+
+    def test_run_mode_forwarded_by_create_worker_tools(self) -> None:
+        tools = create_worker_tools(
+            _make_workspace(),
+            None,
+            datasci_config=None,
+            sandbox_factory=_make_sandbox_factory(),
+            run_mode="parallel",
+        )
+        assert tools[0].run_mode == "parallel"
+
+    @pytest.mark.asyncio
+    async def test_parallel_mode_runs_all_subtasks_and_collects_results(self) -> None:
+        tool = _make_tool(run_mode="parallel")
+
+        async def _run(*args, **kwargs):
+            return "output"
+
+        with patch(_AGENT_PATCH) as MockAgent:
+            MockAgent.return_value.ainvoke = _run
+            result = await tool.ainvoke(
+                {
+                    "subtasks": [
+                        SpawnWorkersTool.TaskDetails(subtask="Task A.", summary="A"),
+                        SpawnWorkersTool.TaskDetails(subtask="Task B.", summary="B"),
+                    ],
+                    "summary": "s",
+                    "communication": "spawning",
+                }
+            )
+        assert "Task A." in result
+        assert "Task B." in result
+        assert result.count("output") == 2
+
+    @pytest.mark.asyncio
+    async def test_parallel_mode_uses_parallel_worker(self) -> None:
+        tool = _make_tool(run_mode="parallel")
+        with (
+            patch(_AGENT_PATCH) as MockAgent,
+            patch("opendatasci.tools.workers.ParallelWorker") as MockParallelWorker,
+            patch("opendatasci.tools.workers.ConcurrentWorker") as MockConcurrentWorker,
+        ):
+            MockAgent.return_value.ainvoke = AsyncMock(return_value="ok")
+            MockParallelWorker.return_value.run = AsyncMock(return_value=["ok"])
+            await tool.ainvoke(
+                {
+                    "subtasks": [SpawnWorkersTool.TaskDetails(subtask="T.", summary="s")],
+                    "summary": "s",
+                    "communication": "go",
+                }
+            )
+        MockParallelWorker.assert_called_once()
+        MockConcurrentWorker.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_worker_exception_reported_in_parallel_mode(self) -> None:
+        tool = _make_tool(run_mode="parallel")
+        with patch(_AGENT_PATCH) as MockAgent:
+            MockAgent.return_value.ainvoke = AsyncMock(side_effect=RuntimeError("boom"))
+            result = await tool.ainvoke(
+                {
+                    "subtasks": [
+                        SpawnWorkersTool.TaskDetails(subtask="Fail task.", summary="Fail")
+                    ],
+                    "summary": "s",
+                    "communication": "spawning",
+                }
+            )
+        assert "boom" in result
+
+    @pytest.mark.asyncio
+    async def test_worker_events_dispatched_in_parallel_mode(self) -> None:
+        recorded: list[dict] = []
+
+        async def _record(name: str, payload: dict, **_: object) -> None:
+            recorded.append(payload)
+
+        tool = _make_tool(run_mode="parallel")
+        with (
+            patch(_AGENT_PATCH) as MockAgent,
+            patch("opendatasci.tools.workers.adispatch_custom_event", _record),
+        ):
+            MockAgent.return_value.ainvoke = AsyncMock(return_value="ok")
+            await tool.ainvoke(
+                {
+                    "subtasks": [
+                        SpawnWorkersTool.TaskDetails(subtask="Succeed A.", summary="A"),
+                        SpawnWorkersTool.TaskDetails(subtask="Succeed B.", summary="B"),
+                    ],
+                    "summary": "s",
+                    "communication": "go",
+                }
+            )
+            await _drain_emit_tasks()
+
+        done = [p for p in recorded if p.get("event_type") == "worker_done"]
+        assert {d["worker_idx"] for d in done} == {0, 1}
+        assert all(d["success"] for d in done)
+
+
+# ---------------------------------------------------------------------------
+# synch_mode – sync (blocking) vs. async (background-scheduled) execution
+# ---------------------------------------------------------------------------
+
+
+class TestSynchMode:
+    @pytest.mark.asyncio
+    async def test_default_synch_mode_returns_result_synchronously(self) -> None:
+        tool = _make_tool()
+        with patch(_AGENT_PATCH) as MockAgent:
+            MockAgent.return_value.ainvoke = AsyncMock(return_value="worker output")
+            result = await tool.ainvoke(
+                {
+                    "subtasks": [SpawnWorkersTool.TaskDetails(subtask="Do X.", summary="X")],
+                    "summary": "s",
+                    "communication": "go",
+                }
+            )
+        assert "worker output" in result
+
+    @pytest.mark.asyncio
+    async def test_async_mode_returns_immediately_with_task_id(self) -> None:
+        tool = _make_tool()
+
+        async def _slow_run(*args, **kwargs):
+            await asyncio.sleep(10)
+            return "never"
+
+        with patch(_AGENT_PATCH) as MockAgent:
+            MockAgent.return_value.ainvoke = _slow_run
+            result = await asyncio.wait_for(
+                tool.ainvoke(
+                    {
+                        "subtasks": [SpawnWorkersTool.TaskDetails(subtask="Slow.", summary="slow")],
+                        "summary": "s",
+                        "communication": "go",
+                        "synch_mode": "async",
+                    }
+                ),
+                timeout=1,
+            )
+
+        assert "scheduled" in result.lower()
+        assert len(tool._background_tasks) == 1
+        pending = list(tool._background_tasks)
+        for background_task in pending:
+            background_task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+
+    @pytest.mark.asyncio
+    async def test_async_mode_runs_worker_in_background(self) -> None:
+        tool = _make_tool()
+        ran = asyncio.Event()
+
+        async def _run(*args, **kwargs):
+            ran.set()
+            return "done"
+
+        with patch(_AGENT_PATCH) as MockAgent:
+            MockAgent.return_value.ainvoke = _run
+            await tool.ainvoke(
+                {
+                    "subtasks": [SpawnWorkersTool.TaskDetails(subtask="T.", summary="s")],
+                    "summary": "s",
+                    "communication": "go",
+                    "synch_mode": "async",
+                }
+            )
+            await asyncio.wait_for(ran.wait(), timeout=1)
+
+    @pytest.mark.asyncio
+    async def test_async_mode_background_task_failure_is_logged_not_raised(self) -> None:
+        tool = _make_tool()
+        with patch(_AGENT_PATCH) as MockAgent:
+            MockAgent.return_value.ainvoke = AsyncMock(side_effect=RuntimeError("boom"))
+            result = await tool.ainvoke(
+                {
+                    "subtasks": [SpawnWorkersTool.TaskDetails(subtask="Fail.", summary="s")],
+                    "summary": "s",
+                    "communication": "go",
+                    "synch_mode": "async",
+                }
+            )
+            assert "scheduled" in result.lower()
+            await _drain_emit_tasks()

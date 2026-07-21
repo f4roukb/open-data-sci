@@ -44,7 +44,7 @@ class ToolName(str, Enum):
     EXIT_PLAN_MODE = "exit_plan_mode"
     ENTER_SELF_REVIEW_MODE = "enter_self_review_mode"
     EXIT_SELF_REVIEW_MODE = "exit_self_review_mode"
-    SPAWN_WORKERS = "spawn_workers"
+    TASK = "task"
     READ_DATASET_INFO = "read_dataset_info"
     UPDATE_DATASET_INFO = "update_dataset_info"
     PROFILE_DATASET = "profile_dataset"

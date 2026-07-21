@@ -187,7 +187,7 @@ class Agent(BaseOpenDataSciAgent):
                 datasci_config=self._config,
             )
 
-        tools_restricted = [t for t in self._tools if t.name != ToolName.SPAWN_WORKERS]
+        tools_restricted = [t for t in self._tools if t.name != ToolName.TASK]
         self._tools_in_plan_mode: list[BaseTool] = tools_restricted
         self._tools_in_self_review_mode: list[BaseTool] = tools_restricted
 

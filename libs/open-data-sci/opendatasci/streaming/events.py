@@ -34,7 +34,7 @@ class TokenEvent(BaseAgentStreamEvent):
 class ToolCallEvent(BaseAgentStreamEvent):
     """The agent is invoking a tool.
 
-    ``worker_summaries`` is populated only for ``spawn_workers`` tool calls;
+    ``worker_summaries`` is populated only for ``task`` tool calls;
     ``summary`` carries the agent-provided summary argument for all other calls.
     """
 
