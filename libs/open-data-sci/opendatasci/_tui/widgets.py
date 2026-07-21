@@ -298,15 +298,18 @@ class MessageBubble(Widget):
         A task cancelled before it has ever run doesn't reach the
         try/except around ``MarkdownStream._run``'s loop, so
         ``MarkdownStream.stop()`` re-raises ``CancelledError`` instead of
-        absorbing it. That happens whenever a stream is opened and then
-        immediately stopped with nothing written in between (e.g.
-        set_content() followed by finish() with no further tokens) — the
-        ``sleep(0)`` yield lets the task start so a later stop() is clean.
-        Caller holds ``_write_lock``.
+        absorbing it. The ``sleep(0)`` yield lets the task start so a later
+        stop() (e.g. from ``finish()`` right after ``_bootstrap_stream``, with
+        nothing ever written) is clean. Caller holds ``_write_lock``.
         """
         assert isinstance(self._inner, TUIMarkdown)
         self._stream = TUIMarkdown.get_stream(self._inner)
         await asyncio.sleep(0)
+
+    async def _ensure_stream_locked(self) -> None:
+        """Open a stream if one isn't already open. Caller holds ``_write_lock``."""
+        if self._stream is None:
+            await self._open_stream_locked()
 
     async def _write_pending_locked(self) -> None:
         """Send whatever of self._content hasn't reached the stream yet. Caller holds the lock."""
@@ -341,6 +344,7 @@ class MessageBubble(Widget):
             return
         await self._ready.wait()
         async with self._write_lock:
+            await self._ensure_stream_locked()
             self._content += chunk
             await self._write_pending_locked()
 
@@ -353,14 +357,18 @@ class MessageBubble(Widget):
         async with self._write_lock:
             assert isinstance(self._inner, TUIMarkdown)
             # MarkdownStream only appends; a wholesale replace stops the
-            # current stream, rewrites the widget directly, then opens a
-            # fresh stream for any writes that follow.
+            # current stream and rewrites the widget directly. No fresh
+            # stream is opened here — every current caller follows
+            # set_content() with finish() and nothing else, so eagerly
+            # reopening one would just be cancelled unused. append()
+            # reopens lazily via _ensure_stream_locked() if it's ever
+            # called after a set_content().
             if self._stream is not None:
                 await self._stream.stop()
+                self._stream = None
             self._content = text
             await self._inner.update(text)
             self._written_len = len(text)
-            await self._open_stream_locked()
 
     async def finish(self) -> None:
         if self._role != "agent":

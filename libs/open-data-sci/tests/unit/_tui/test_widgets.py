@@ -930,7 +930,11 @@ class TestMessageBubbleAppend:
 
 class TestMessageBubbleSetContent:
     @pytest.mark.asyncio
-    async def test_agent_set_content_stops_stream_replaces_and_reopens(self) -> None:
+    async def test_agent_set_content_stops_stream_and_replaces_without_reopening(self) -> None:
+        # No fresh stream is opened here: every current caller follows
+        # set_content() with finish() and nothing else, so eagerly reopening
+        # would just create a stream that's cancelled unused (append()
+        # reopens lazily via _ensure_stream_locked() if ever called after).
         bubble = _make_bubble("agent", "partial")
         bubble._written_len = 7
         old_stream = MagicMock()
@@ -939,15 +943,23 @@ class TestMessageBubbleSetContent:
         bubble._inner = MagicMock(spec=TUIMarkdown)
         bubble._inner.update = AsyncMock()
         bubble._ready.set()
-        new_stream = MagicMock()
-        with patch.object(TUIMarkdown, "get_stream", return_value=new_stream) as get_stream:
+        with patch.object(TUIMarkdown, "get_stream") as get_stream:
             await bubble.set_content("final")
         old_stream.stop.assert_awaited_once()
         bubble._inner.update.assert_awaited_once_with("final")
         assert bubble._content == "final"
         assert bubble._written_len == len("final")
-        get_stream.assert_called_once_with(bubble._inner)
-        assert bubble._stream is new_stream
+        get_stream.assert_not_called()
+        assert bubble._stream is None
+
+    @pytest.mark.asyncio
+    async def test_agent_set_content_noop_stop_when_no_stream_open(self) -> None:
+        bubble = _make_bubble("agent", "")
+        bubble._inner = MagicMock(spec=TUIMarkdown)
+        bubble._inner.update = AsyncMock()
+        bubble._ready.set()
+        await bubble.set_content("final")  # must not raise despite _stream being None
+        assert bubble._content == "final"
 
     @pytest.mark.asyncio
     async def test_non_agent_set_content_calls_refresh_content(self) -> None:
