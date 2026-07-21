@@ -15,6 +15,7 @@ from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer, Vertical
+from textual.css.query import NoMatches
 from textual.message import Message
 from textual.timer import Timer
 from textual.widget import Widget
@@ -27,13 +28,6 @@ try:
 except ImportError:
     _TUIImage = None
 
-from .adapter import (
-    EphemeralHandle,
-    MessageHandle,
-    PendingMessageHandle,
-    ThinkingHandle,
-    TurnStatusHandle,
-)
 from .commands import SLASH_COMMANDS, _fmt_model
 from .models import SPINNER, SPINNER_INTERVAL
 from .theme import active as theme
@@ -182,7 +176,7 @@ class TurnStatusBar(Static):
     @staticmethod
     def _fmt_tokens(n: int) -> str:
         """Format token count as truncated-to-one-decimal thousands, e.g. 3250 → '3.2k'."""
-        k = math.floor(n / 100) / 10
+        k = (n // 100) / 10
         return f"{k:.1f}k"
 
     def _context_suffix(self) -> str:
@@ -646,8 +640,8 @@ class WorkspacePanel(Widget):
         self._files = []
         try:
             self.app.query_one("#user-input", Input).focus()
-        except Exception:
-            pass
+        except NoMatches:
+            logger.debug("action_close_panel: #user-input not found, skipping focus")
 
 
 class CommandApprovalPrompt(Widget):
@@ -961,7 +955,7 @@ class ToolCallBlock(Static):
 
     Shows blue while the tool is running; call ``set_done()`` to turn green.
     Call ``dismiss()`` to remove from the DOM entirely.
-    For ``spawn_workers``, pass ``worker_summaries`` to get one status line per worker.
+    For ``task``, pass ``worker_summaries`` to get one status line per worker.
     Worker rows can be individually marked done (green ✓) or error (red ✗).
 
     When both ``label`` and ``summary`` are empty the block is
@@ -1135,13 +1129,3 @@ class ToolCallBlock(Static):
 
     def dismiss(self) -> None:
         self.remove()
-
-
-# Register Textual widget implementations as virtual subclasses of their ABCs.
-# Direct inheritance is not possible due to a metaclass conflict between
-# Textual's _MessagePumpMeta and ABCMeta.
-MessageHandle.register(MessageBubble)
-EphemeralHandle.register(ToolCallBlock)
-TurnStatusHandle.register(TurnStatusBar)
-ThinkingHandle.register(ThinkingBlock)
-PendingMessageHandle.register(PendingMessageBubble)

@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 
+from opendatasci._tui.adapter import SubmitAction
 from opendatasci._tui.app import OpenDataSciApp, _get_version, main
 from opendatasci.configs import OpenDataSciConfig
 
@@ -174,14 +175,13 @@ def _make_app() -> tuple[OpenDataSciApp, MagicMock]:
     mock_input = MagicMock()
     app.query_one = MagicMock(return_value=mock_input)
     app._controller = MagicMock()
-    app._controller._completing = False
     return app, mock_input
 
 
 class TestOnSubmitHistory:
     async def test_push_history_called_for_non_empty_submission(self) -> None:
         app, mock_input = _make_app()
-        app._controller.on_submit = AsyncMock(return_value=("", ""))
+        app._controller.on_submit = AsyncMock(return_value=(SubmitAction.NONE, ""))
         event = MagicMock()
         event.value = "  analyse the data  "
 
@@ -191,7 +191,7 @@ class TestOnSubmitHistory:
 
     async def test_push_history_not_called_for_whitespace_only(self) -> None:
         app, mock_input = _make_app()
-        app._controller.on_submit = AsyncMock(return_value=("", ""))
+        app._controller.on_submit = AsyncMock(return_value=(SubmitAction.NONE, ""))
         event = MagicMock()
         event.value = "   "
 
@@ -222,6 +222,8 @@ class TestOnInputKeyHistory:
         mock_input.navigate_history.assert_called_once_with(-1)
         event.stop.assert_called_once()
         event.prevent_default.assert_called_once()
+        app._controller.suppress_next_input_change.assert_called_once()
+        app._controller.cancel_input_change_suppression.assert_not_called()
 
     def test_down_navigates_history_when_no_completions(self) -> None:
         app, mock_input = self._app()
@@ -260,7 +262,8 @@ class TestOnInputKeyHistory:
             app.on_input_key(event)
 
         event.stop.assert_not_called()
-        assert app._controller._completing is False
+        app._controller.suppress_next_input_change.assert_called_once()
+        app._controller.cancel_input_change_suppression.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

@@ -74,5 +74,6 @@ class OpenDataSciTuiService:
         try:
             entries = sorted(path.iterdir(), key=lambda f: (f.is_dir(), f.name.lower()))
             return [e.name + ("/" if e.is_dir() else "") for e in entries]
-        except Exception:
+        except OSError:
+            logger.exception("Failed to list workspace files at %s", path)
             return []

@@ -433,7 +433,7 @@ class TestToolResultErrorHandling:
 
 
 # ---------------------------------------------------------------------------
-# spawn_workers — worker block lifecycle
+# task — worker block lifecycle
 # ---------------------------------------------------------------------------
 
 
@@ -531,12 +531,12 @@ class TestSpawnWorkers:
         wb.set_error.assert_called_once()
         wb.set_done.assert_not_called()
 
-    def test_worker_done_is_no_op_before_spawn_workers(self) -> None:
+    def test_worker_done_is_no_op_before_task(self) -> None:
         p, _, wb = self._setup()
         p.handle_worker_done(_worker_done(0))
         wb.mark_worker_done.assert_not_called()
 
-    def test_subagent_event_is_no_op_before_spawn_workers(self) -> None:
+    def test_subagent_event_is_no_op_before_task(self) -> None:
         p, _, wb = self._setup()
         p.handle_subagent_event(_subagent_event(0))
         wb.update_worker_activity.assert_not_called()

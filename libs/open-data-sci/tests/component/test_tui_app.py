@@ -17,6 +17,7 @@ import pytest
 from textual.widgets import Input
 
 import opendatasci._tui.app as app_module
+from opendatasci._tui.adapter import SubmitAction
 from opendatasci.configs import DEFAULT_MODEL, OpenDataSciConfig
 from opendatasci.models.providers import Provider
 from opendatasci._tui.app import OpenDataSciApp, _get_version, main
@@ -55,7 +56,7 @@ def _make_controller_stub(workspace_path: str) -> MagicMock:
     stub.clear_conv = AsyncMock()
     stub.compact = AsyncMock()
     stub.run_agent = AsyncMock()
-    stub.on_submit = AsyncMock(return_value=("", ""))
+    stub.on_submit = AsyncMock(return_value=(SubmitAction.NONE, ""))
     stub.cycle_completion = MagicMock(return_value=False)
     stub.cancel_choice = AsyncMock(return_value=None)
     return stub
@@ -135,7 +136,7 @@ class TestAppShell:
 
     async def test_submit_runs_agent_and_records_history(self, running_app) -> None:
         app, pilot, stub = running_app
-        stub.on_submit.return_value = ("run", "the query")
+        stub.on_submit.return_value = (SubmitAction.RUN, "the query")
         inp = app.query_one("#user-input", SmartInput)
         inp.value = "analyse this"
         await pilot.press("enter")
@@ -148,7 +149,7 @@ class TestAppShell:
 
     async def test_submit_quit_action_exits_app(self, running_app) -> None:
         app, pilot, stub = running_app
-        stub.on_submit.return_value = ("quit", "")
+        stub.on_submit.return_value = (SubmitAction.QUIT, "")
         app.exit = MagicMock()
         inp = app.query_one("#user-input", SmartInput)
         inp.value = "/exit"
@@ -258,7 +259,8 @@ class TestKeyRouting:
     async def test_up_with_no_history_resets_completing_flag(self, running_app) -> None:
         app, pilot, stub = running_app
         await pilot.press("up")
-        assert stub._completing is False
+        stub.suppress_next_input_change.assert_called_once()
+        stub.cancel_input_change_suppression.assert_called_once()
 
     async def test_escape_cancels_choice_and_resumes(self, running_app) -> None:
         app, pilot, stub = running_app
