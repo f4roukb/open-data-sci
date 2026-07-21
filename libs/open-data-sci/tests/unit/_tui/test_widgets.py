@@ -927,6 +927,23 @@ class TestMessageBubbleAppend:
         assert bubble._content == "Hello world"
         assert bubble._ready.is_set() is False  # non-agent roles never touch the gate
 
+    @pytest.mark.asyncio
+    async def test_agent_append_reopens_a_stream_closed_by_set_content(self) -> None:
+        # set_content() closes the stream without reopening it (see
+        # TestMessageBubbleSetContent); a later append() must lazily reopen
+        # one rather than silently dropping the chunk.
+        bubble = _make_bubble("agent", "")
+        bubble._inner = MagicMock(spec=TUIMarkdown)
+        bubble._stream = None
+        bubble._ready.set()
+        new_stream = MagicMock()
+        new_stream.write = AsyncMock()
+        with patch.object(TUIMarkdown, "get_stream", return_value=new_stream) as get_stream:
+            await bubble.append("more")
+        get_stream.assert_called_once_with(bubble._inner)
+        new_stream.write.assert_awaited_once_with("more")
+        assert bubble._stream is new_stream
+
 
 class TestMessageBubbleSetContent:
     @pytest.mark.asyncio

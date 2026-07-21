@@ -226,14 +226,13 @@ class TestMessageBubble:
     async def test_set_content_then_finish_with_no_intervening_yield_does_not_raise(
         self, harness
     ) -> None:
-        # Regression: set_content() opens a fresh MarkdownStream as its last
-        # step. If finish() calls stream.stop() on it before the stream's
-        # background task has ever run a single step, Textual's own
-        # MarkdownStream.stop() (task.cancel(); await task) re-raises
-        # CancelledError instead of the task's internal try/except absorbing
-        # it — exactly this call sequence (mid-turn exception -> set_content,
-        # then cleanup() -> finish(), back to back) is what presenter.py does
-        # on every error turn.
+        # This is the exact sequence presenter.py runs on every error turn
+        # (handle_exception -> set_content, then cleanup -> finish, back to
+        # back with no yield in between). set_content() closes the stream
+        # without reopening it, so finish() has nothing to stop here — but
+        # this is still worth pinning down as a regression test since it's
+        # the call pattern that originally surfaced the CancelledError bug
+        # described on test_bootstrap_immediately_finished_does_not_raise.
         app, pilot, pane = harness
         bubble = pane.add_message("agent", "")
         await pilot.pause()
@@ -242,6 +241,21 @@ class TestMessageBubble:
         await pilot.pause(0.1)
         assert bubble._content == "❌ boom"
         assert _markdown_plain(bubble) == "❌ boom"
+
+    async def test_bootstrap_immediately_finished_does_not_raise(self, harness) -> None:
+        # Regression: on_mount() opens a MarkdownStream (_bootstrap_stream)
+        # regardless of whether there's any content yet. If finish() is
+        # awaited before that background task has ever run a single step,
+        # Textual's own MarkdownStream.stop() (task.cancel(); await task)
+        # re-raises CancelledError instead of the task's internal
+        # try/except absorbing it, unless _open_stream_locked's sleep(0)
+        # lets the task start first.
+        app, pilot, pane = harness
+        bubble = pane.add_message("agent", "")
+        await pilot.pause()  # let on_mount / _bootstrap_stream run
+        await bubble.finish()  # must not raise CancelledError, even with nothing appended
+        await pilot.pause(0.1)
+        assert bubble._content == ""
 
 
 # ---------------------------------------------------------------------------
