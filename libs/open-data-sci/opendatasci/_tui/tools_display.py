@@ -58,7 +58,7 @@ def register(tool_name: str, display: ToolDisplay) -> None:
 # from opendatasci.tools.factory (which creates a circular dependency).
 
 register("execute_python_code", ToolDisplay(label="Code", icon="🐍", summary_arg="summary"))
-register("execute_cli_command", ToolDisplay(label="Command", icon="⌨️", summary_arg="summary"))
+register("execute_cli_command", ToolDisplay(label="Command", icon="💻", summary_arg="summary"))
 register(
     "list_python_libs",
     ToolDisplay(label="Checking available libraries", icon="📦", summary_arg="summary"),
@@ -67,13 +67,13 @@ register(
     "enter_plan_mode",
     ToolDisplay(label="Planning the next steps", icon="🎯", summary_arg="summary"),
 )
-register("exit_plan_mode", ToolDisplay(label="Planning complete", icon="✅", summary_arg="summary"))
+register("exit_plan_mode", ToolDisplay(label="Planning complete", icon="🏁", summary_arg="summary"))
 register("load_skill", ToolDisplay(label="Loading skill", icon="🧠", summary_arg="summary"))
 register(
     "list_skills",
     ToolDisplay(label="Checking available skills", icon="🧭", summary_arg="summary"),
 )
-register("task", ToolDisplay(label="Running task", icon="⚙️", summary_arg="summary"))
+register("spawn_workers", ToolDisplay(label="Spawning workers", icon="👥", summary_arg="summary"))
 register(
     "read_dataset_info",
     ToolDisplay(
@@ -116,5 +116,5 @@ register(
 )
 register(
     "verify_python_code",
-    ToolDisplay(label="Reviewing code", icon="🔎", summary_arg="summary"),
+    ToolDisplay(label="Reviewing code", icon="🧪", summary_arg="summary"),
 )

@@ -54,13 +54,13 @@ class _RecordingMessageHandle(MessageHandle):
         self.contents: list[str] = [content] if content else []
         self.finished = False
 
-    def append(self, chunk: str) -> None:
+    async def append(self, chunk: str) -> None:
         self.contents.append(chunk)
 
-    def set_content(self, text: str) -> None:
+    async def set_content(self, text: str) -> None:
         self.contents = [text]
 
-    def finish(self) -> None:
+    async def finish(self) -> None:
         self.finished = True
 
     @property
@@ -404,16 +404,16 @@ class TestSlashCommands:
 class TestChoicePrompt:
     """The input_required state machine: prompt, letter answer, free text, cancel."""
 
-    def test_show_choice_prompt_sets_awaiting(self):
+    async def test_show_choice_prompt_sets_awaiting(self):
         ctrl, ui = _make_controller(service=_make_service_stub())
-        ctrl._show_choice_prompt("Pick one", ["red", "blue"])
+        await ctrl._show_choice_prompt("Pick one", ["red", "blue"])
         assert ctrl.awaiting_choice is True
         assert "awaiting-choice" in ui.input_classes
 
     async def test_letter_answer_returns_run_action(self):
         svc = _make_service_stub()
         ctrl, _ = _make_controller(service=svc)
-        ctrl._show_choice_prompt("Pick one", ["red", "blue"])
+        await ctrl._show_choice_prompt("Pick one", ["red", "blue"])
         action, payload = await ctrl.on_submit("B")
         assert action == "run"
         assert payload == "blue"
@@ -422,7 +422,7 @@ class TestChoicePrompt:
     async def test_other_choice_enters_custom_input_mode(self):
         svc = _make_service_stub()
         ctrl, _ = _make_controller(service=svc)
-        ctrl._show_choice_prompt("Pick one", ["red", "blue"])
+        await ctrl._show_choice_prompt("Pick one", ["red", "blue"])
         # Two options -> labels A, B; "Other" label is C.
         action, _ = await ctrl.on_submit("C")
         # Still in awaiting-choice mode — waiting for free-form answer.
@@ -432,11 +432,11 @@ class TestChoicePrompt:
         assert action == "run"
         assert payload == "custom answer"
 
-    def test_cancel_choice_returns_cancel_string(self):
+    async def test_cancel_choice_returns_cancel_string(self):
         svc = _make_service_stub()
         ctrl, _ = _make_controller(service=svc)
-        ctrl._show_choice_prompt("Pick one", ["red", "blue"])
-        result = ctrl.cancel_choice()
+        await ctrl._show_choice_prompt("Pick one", ["red", "blue"])
+        result = await ctrl.cancel_choice()
         assert result == "cancel"
         assert ctrl.awaiting_choice is False
 
@@ -555,7 +555,7 @@ class TestStreamingAllEventTypes:
             ToolResultEvent(content="files: a.csv", tool_call_id="tc1", is_error=False),
             ToolCallEvent(
                 content="{}",
-                tool="task",
+                tool="spawn_workers",
                 tool_call_id="tc2",
                 worker_summaries=["w1", "w2"],
             ),

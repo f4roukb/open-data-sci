@@ -175,25 +175,25 @@ class CLIController:
             ui.set_file_count(self._describe_data(info))
         except FileNotFoundError:
             hint = self._did_you_mean(self._workspace_path)
-            self._fail_boot(
+            await self._fail_boot(
                 ui,
                 f"❌ File not found: `{escape_markup(self._workspace_path)}`\n\n"
                 f"Check the path and try again.{hint}",
             )
         except PermissionError:
-            self._fail_boot(
+            await self._fail_boot(
                 ui, f"❌ Permission denied: `{escape_markup(self._workspace_path)}`"
             )
         except ValueError as exc:
-            self._fail_boot(ui, f"❌ Provider error: {exc}")
+            await self._fail_boot(ui, f"❌ Provider error: {exc}")
         except Exception as exc:
-            self._fail_boot(ui, f"❌ Failed to load: {exc}")
+            await self._fail_boot(ui, f"❌ Failed to load: {exc}")
 
-    def _fail_boot(self, ui: UIAdapter, msg_text: str) -> None:
+    async def _fail_boot(self, ui: UIAdapter, msg_text: str) -> None:
         self._boot_failed = True
         msg = ui.add_message("agent", "")
-        msg.set_content(msg_text)
-        msg.finish()
+        await msg.set_content(msg_text)
+        await msg.finish()
 
     @staticmethod
     def _did_you_mean(workspace_path: str) -> str:
@@ -278,7 +278,7 @@ class CLIController:
                 self._exit_choice_mode()
                 should_quit = await self._handle_slash(raw)
                 return (SubmitAction.QUIT if should_quit else SubmitAction.NONE), ""
-            answer = self._handle_user_choice(raw)
+            answer = await self._handle_user_choice(raw)
             if answer is not None:
                 return SubmitAction.RUN, answer
             return SubmitAction.NONE, ""
@@ -300,7 +300,9 @@ class CLIController:
         clean_text, refs = _parse_file_refs(raw)
         valid_refs, missing_refs = _split_existing_file_refs(refs)
         for ref in missing_refs:
-            self._ui.add_message("agent", f"⚠️ File not found: {escape_markup(ref._path)}").finish()
+            await self._ui.add_message(
+                "agent", f"⚠️ File not found: {escape_markup(ref._path)}"
+            ).finish()
 
         if refs and not clean_text and not valid_refs and attachment is None:
             return SubmitAction.NONE, ""
@@ -336,14 +338,14 @@ class CLIController:
         """
         if self._service is None:
             if self._boot_failed:
-                self._ui.add_message(
+                await self._ui.add_message(
                     "agent",
                     "❌ Startup failed, so queries can't run in this session. "
                     "Fix the problem shown above and restart the app "
                     "(type `/exit` to quit).",
                 ).finish()
             else:
-                self._ui.add_message(
+                await self._ui.add_message(
                     "agent", "⚠️ Still loading — please wait a moment and try again."
                 ).finish()
             return
@@ -374,14 +376,14 @@ class CLIController:
                 if not isinstance(event, BaseAgentStreamEvent):
                     logger.warning("astream() yielded unexpected type %r; skipping", type(event))
                     continue
-                self._dispatch_stream_event(event, presenter)
+                await self._dispatch_stream_event(event, presenter)
                 if isinstance(event, (ResponseEvent, ErrorEvent)):
                     break
         except Exception as exc:
-            presenter.handle_exception(exc)
+            await presenter.handle_exception(exc)
         finally:
             self._agent_running = False
-            presenter.cleanup()
+            await presenter.cleanup()
             if self._active_turn_status is not None:
                 self._active_turn_status.stop()
                 self._active_turn_status = None
@@ -389,18 +391,18 @@ class CLIController:
                 self._ui.set_input_placeholder("Ask a question about your data…")
             self._ui.add_divider()
 
-    def _dispatch_stream_event(
+    async def _dispatch_stream_event(
         self, event: BaseAgentStreamEvent, presenter: _TurnPresenter
     ) -> None:
         """Route a single stream event to the appropriate presenter handler."""
         if isinstance(event, ReasoningEvent):
             presenter.handle_reasoning(event)
         elif isinstance(event, TokenEvent):
-            presenter.handle_token(event)
+            await presenter.handle_token(event)
         elif isinstance(event, ToolCommunicationEvent):
             presenter.handle_tool_communication(event)
         elif isinstance(event, ToolCallEvent):
-            presenter.handle_tool_call(event)
+            await presenter.handle_tool_call(event)
         elif isinstance(event, WorkerDoneEvent):
             presenter.handle_worker_done(event)
         elif isinstance(event, SubagentEvent):
@@ -410,17 +412,17 @@ class CLIController:
         elif isinstance(event, UsageEvent):
             apply_usage_event(event, self._active_turn_status)
         elif isinstance(event, InputRequiredEvent):
-            self._show_choice_prompt(event.content, list(event.choices))
+            await self._show_choice_prompt(event.content, list(event.choices))
         elif isinstance(event, ApprovalRequiredEvent):
             self._show_approval_prompt(event)
         elif isinstance(event, ResponseEvent):
             presenter.handle_response(event)
         elif isinstance(event, ErrorEvent):
-            presenter.handle_error(event)
+            await presenter.handle_error(event)
 
     # ── Choice handling ───────────────────────────────────────────────────────
 
-    def _show_choice_prompt(self, question: str, choices: list[str]) -> None:
+    async def _show_choice_prompt(self, question: str, choices: list[str]) -> None:
         labels = string.ascii_uppercase[: len(choices)]
         other_label = (
             string.ascii_uppercase[len(choices)]
@@ -445,7 +447,7 @@ class CLIController:
         lines.append(
             f"  [dim {theme['text_secondary']}]Press Esc to cancel[/dim {theme['text_secondary']}]"
         )
-        self._ui.add_message("question", "\n".join(lines)).finish()
+        await self._ui.add_message("question", "\n".join(lines)).finish()
         self._pending_choices = list(choices)
         self._other_choice_label = other_label
         self._awaiting_custom_choice_input = False
@@ -473,7 +475,7 @@ class CLIController:
         self._ui.set_input_placeholder("Ask a question about your data…")
         self._ui.remove_input_class("awaiting-choice")
 
-    def cancel_choice(self) -> str | None:
+    async def cancel_choice(self) -> str | None:
         """Exit choice mode and return the resume input to send to the agent.
 
         Returns ``_CHOICE_CANCELLED_QUERY`` when a choice was active (caller
@@ -483,10 +485,10 @@ class CLIController:
         if not self._awaiting_choice:
             return None
         self._exit_choice_mode()
-        self._ui.add_message("agent", "Choice cancelled.").finish()
+        await self._ui.add_message("agent", "Choice cancelled.").finish()
         return _CHOICE_CANCELLED_QUERY
 
-    def _handle_user_choice(self, raw: str) -> str | None:
+    async def _handle_user_choice(self, raw: str) -> str | None:
         raw_stripped = raw.strip()
         upper = raw_stripped.upper()
         if (
@@ -496,7 +498,7 @@ class CLIController:
         ):
             self._awaiting_custom_choice_input = True
             self._other_choice_label = None
-            self._ui.add_message("agent", "Type your answer and press Enter.").finish()
+            await self._ui.add_message("agent", "Type your answer and press Enter.").finish()
             self._ui.set_input_placeholder("Type your answer and press Enter…")
             return None
 
@@ -512,7 +514,7 @@ class CLIController:
             else raw_stripped
         )
 
-        self._ui.add_message("user", escape_markup(raw)).finish()
+        await self._ui.add_message("user", escape_markup(raw)).finish()
         return answer
 
     # ── Approval handling ─────────────────────────────────────────────────────
@@ -526,7 +528,7 @@ class CLIController:
         self._awaiting_approval = True
         self._ui.set_input_placeholder("↑/↓ to select Yes or No, Enter to confirm, Esc to decline…")
 
-    def resolve_approval(self, approved: bool) -> str:
+    async def resolve_approval(self, approved: bool) -> str:
         """Record the user's approval decision and return the resume input.
 
         The caller must pass the returned value to ``run_agent`` so the paused
@@ -534,7 +536,7 @@ class CLIController:
         """
         self._awaiting_approval = False
         self._ui.set_input_placeholder("Ask a question about your data…")
-        self._ui.add_message("user", "Yes" if approved else "No").finish()
+        await self._ui.add_message("user", "Yes" if approved else "No").finish()
         return "yes" if approved else "no"
 
     # ── Slash command dispatch ────────────────────────────────────────────────
@@ -555,26 +557,26 @@ class CLIController:
         elif cmd == "/compact":
             await self.compact()
         elif cmd == "/ls-workspace":
-            self.ls_workspace()
+            await self.ls_workspace()
         elif cmd == "/models":
-            self.show_models()
+            await self.show_models()
         elif cmd == "/stop":
             await self.stop_agent()
         elif cmd == "/cancel-all-messages":
-            self.cancel_pending_messages()
+            await self.cancel_pending_messages()
         elif cmd == "/cancel-message":
-            self.cancel_last_pending_message()
+            await self.cancel_last_pending_message()
         elif cmd == "/help":
-            self.show_help()
+            await self.show_help()
         elif cmd == "/themes":
-            self.show_themes()
+            await self.show_themes()
         elif cmd == "/vars":
-            self._ui.add_message(
+            await self._ui.add_message(
                 "agent",
                 "⚠️ `/vars` has been removed. Use `/help` to see available commands.",
             ).finish()
         else:
-            self._ui.add_message(
+            await self._ui.add_message(
                 "agent",
                 f"⚠️ Unknown command: `{cmd}`\n\nType `/help` to see all available commands.",
             ).finish()
@@ -590,11 +592,11 @@ class CLIController:
         if self._service is not None:
             try:
                 await self._service.reset_session()
-                self._ui.add_message("agent", "✓ Session reset.").finish()
+                await self._ui.add_message("agent", "✓ Session reset.").finish()
             except Exception as exc:
-                self._ui.add_message("agent", f"❌ Reset failed: {exc}").finish()
+                await self._ui.add_message("agent", f"❌ Reset failed: {exc}").finish()
         else:
-            self._ui.add_message("agent", "Not loaded yet.").finish()
+            await self._ui.add_message("agent", "Not loaded yet.").finish()
 
     async def clear_conv(self) -> None:
         """Clear all conversation context (preserves session variables)."""
@@ -610,42 +612,42 @@ class CLIController:
                 await self._service.clear_context()
             except Exception as exc:
                 logger.exception("Failed to clear service context")
-                self._ui.add_message("agent", f"❌ Clear failed: {exc}").finish()
+                await self._ui.add_message("agent", f"❌ Clear failed: {exc}").finish()
                 return
-        self._ui.add_message("agent", "✓ Context cleared.").finish()
+        await self._ui.add_message("agent", "✓ Context cleared.").finish()
 
     async def compact(self) -> None:
         """Summarize the conversation and replace it with a compact context preamble."""
         if self._service is None:
-            self._ui.add_message("agent", "Not loaded yet.").finish()
+            await self._ui.add_message("agent", "Not loaded yet.").finish()
             return
         status = self._ui.add_message("agent", "Compacting conversation…")
-        status.set_content("Compacting conversation…")
+        await status.set_content("Compacting conversation…")
         compact_timer: TurnStatusHandle | None = self._ui.add_turn_status_bar()
         try:
             await self._service.compact_chat_history()
         except Exception as exc:
-            status.set_content(f"❌ Compact failed: {exc}")
+            await status.set_content(f"❌ Compact failed: {exc}")
             if compact_timer is not None:
                 compact_timer.stop()
-            status.finish()
+            await status.finish()
             return
         try:
             self._ui.clear_messages()
             compact_timer = None  # removed from DOM by clear_messages()
-            self._ui.add_message(
+            await self._ui.add_message(
                 "agent",
                 "**✓ Compaction done.** You may continue the conversation.",
             ).finish()
         finally:
-            status.finish()
+            await status.finish()
             if compact_timer is not None:
                 compact_timer.stop()
 
-    def show_models(self) -> None:
+    async def show_models(self) -> None:
         """Display the primary and secondary model in use."""
         cfg = self._cfg or self._base_config
-        self._ui.add_message(
+        await self._ui.add_message(
             "agent",
             format_models_message(
                 cfg.provider,
@@ -655,13 +657,13 @@ class CLIController:
             ),
         ).finish()
 
-    def show_help(self) -> None:
+    async def show_help(self) -> None:
         """Display all available slash commands with descriptions."""
-        self._ui.add_message("agent", format_help_message()).finish()
+        await self._ui.add_message("agent", format_help_message()).finish()
 
-    def show_themes(self) -> None:
+    async def show_themes(self) -> None:
         """Display the list of available colour themes and mark the active one."""
-        self._ui.add_message(
+        await self._ui.add_message(
             "agent",
             format_themes_message(_theme.active_name, _theme.THEME_DESCRIPTIONS),
         ).finish()
@@ -669,34 +671,34 @@ class CLIController:
     async def stop_agent(self) -> None:
         """Stop the currently running agent turn."""
         if not self._agent_running:
-            self._ui.add_message("agent", "No agent is currently running.").finish()
+            await self._ui.add_message("agent", "No agent is currently running.").finish()
             return
         self._ui.stop_agent()
         if self._service is not None:
             await self._service.rewind_turn()
-        self._ui.add_message("agent", "⏹ Agent stopped. You can continue from here.").finish()
+        await self._ui.add_message("agent", "⏹ Agent stopped. You can continue from here.").finish()
 
-    def cancel_pending_messages(self) -> None:
+    async def cancel_pending_messages(self) -> None:
         """Discard every message currently queued behind a running agent turn."""
         removed = self._pending_queue.cancel_all()
         for message in removed:
             self._discard_pending_handle(message.id)
         if removed:
             count = len(removed)
-            self._ui.add_message(
+            await self._ui.add_message(
                 "agent", f"✓ Cancelled {count} pending message{'s' if count != 1 else ''}."
             ).finish()
         else:
-            self._ui.add_message("agent", "No pending messages to cancel.").finish()
+            await self._ui.add_message("agent", "No pending messages to cancel.").finish()
 
-    def cancel_last_pending_message(self) -> None:
+    async def cancel_last_pending_message(self) -> None:
         """Discard only the most recently queued message."""
         message = self._pending_queue.cancel_last()
         if message is None:
-            self._ui.add_message("agent", "No pending messages to cancel.").finish()
+            await self._ui.add_message("agent", "No pending messages to cancel.").finish()
             return
         self._discard_pending_handle(message.id)
-        self._ui.add_message("agent", "✓ Cancelled last pending message.").finish()
+        await self._ui.add_message("agent", "✓ Cancelled last pending message.").finish()
 
     def _discard_pending_handle(self, message_id: int) -> None:
         handle = self._pending_handles.pop(message_id, None)
@@ -708,13 +710,13 @@ class CLIController:
         for message in self._pending_queue.cancel_all():
             self._discard_pending_handle(message.id)
 
-    def ls_workspace(self) -> None:
+    async def ls_workspace(self) -> None:
         if self._service is None:
-            self._ui.add_message("agent", "_Not loaded yet._").finish()
+            await self._ui.add_message("agent", "_Not loaded yet._").finish()
             return
         try:
             files = self._service.get_workspace_files()
         except Exception as exc:
-            self._ui.add_message("agent", f"❌ {exc}").finish()
+            await self._ui.add_message("agent", f"❌ {exc}").finish()
             return
         self._ui.show_workspace_panel(files)

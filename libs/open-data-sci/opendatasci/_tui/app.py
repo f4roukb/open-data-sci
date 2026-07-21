@@ -33,6 +33,8 @@ from .widgets import (
     TurnStatusBar,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def _print_providers() -> None:
     table = Table(title=None, show_header=True, header_style="bold")
@@ -47,9 +49,7 @@ def _get_version() -> str:
     try:
         return importlib.metadata.version("open-data-sci")
     except importlib.metadata.PackageNotFoundError:
-        logging.getLogger(__name__).warning(
-            "open-data-sci package not found; falling back to hardcoded version '0.2.0'"
-        )
+        logger.warning("open-data-sci package not found; falling back to hardcoded version '0.2.0'")
         return "0.2.0"
 
 
@@ -206,8 +206,8 @@ class OpenDataSciApp(App[None]):
             self.exit()
 
     @on(CommandApprovalPrompt.Decision)
-    def on_approval_decision(self, event: CommandApprovalPrompt.Decision) -> None:
-        resume_input = self._controller.resolve_approval(event.approved)
+    async def on_approval_decision(self, event: CommandApprovalPrompt.Decision) -> None:
+        resume_input = await self._controller.resolve_approval(event.approved)
         self.query_one("#user-input", Input).focus()
         self._run_agent(resume_input)
 
@@ -284,7 +284,7 @@ class OpenDataSciApp(App[None]):
         self._controller.hide_completion()
         self._controller.clear_paste_attachment()
         if self._controller.awaiting_choice:
-            resume_input = self._controller.cancel_choice()
+            resume_input = await self._controller.cancel_choice()
             if resume_input is not None:
                 self._run_agent(resume_input)
         elif not had_completion and not had_paste and self._controller.agent_running:

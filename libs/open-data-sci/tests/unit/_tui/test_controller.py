@@ -600,34 +600,34 @@ class TestOnSubmit:
 
 
 class TestApprovalFlow:
-    def _dispatch(self, controller: CLIController, heads_up: str = "") -> None:
+    async def _dispatch(self, controller: CLIController, heads_up: str = "") -> None:
         event = ApprovalRequiredEvent(
             command="rm tmp.txt", description="Deletes tmp.txt.", heads_up=heads_up
         )
-        controller._dispatch_stream_event(event, MagicMock())
+        await controller._dispatch_stream_event(event, MagicMock())
 
-    def test_approval_event_shows_prompt_and_sets_flag(
+    async def test_approval_event_shows_prompt_and_sets_flag(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        self._dispatch(controller, heads_up="File is gone for good.")
+        await self._dispatch(controller, heads_up="File is gone for good.")
         mock_ui.show_approval_prompt.assert_called_once_with(
             "Deletes tmp.txt.", "File is gone for good."
         )
         assert controller.awaiting_approval is True
 
-    def test_resolve_approval_yes_returns_yes(
+    async def test_resolve_approval_yes_returns_yes(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        self._dispatch(controller)
-        assert controller.resolve_approval(True) == "yes"
+        await self._dispatch(controller)
+        assert await controller.resolve_approval(True) == "yes"
         assert controller.awaiting_approval is False
         mock_ui.add_message.assert_called_with("user", "Yes")
 
-    def test_resolve_approval_no_returns_no(
+    async def test_resolve_approval_no_returns_no(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        self._dispatch(controller)
-        assert controller.resolve_approval(False) == "no"
+        await self._dispatch(controller)
+        assert await controller.resolve_approval(False) == "no"
         assert controller.awaiting_approval is False
         mock_ui.add_message.assert_called_with("user", "No")
 
@@ -751,10 +751,10 @@ class TestCompact:
 
 
 class TestShowHelp:
-    def test_show_help_includes_all_commands(
+    async def test_show_help_includes_all_commands(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        controller.show_help()
+        await controller.show_help()
         content = mock_ui.add_message.call_args[0][1]
         for cmd in [
             "/help",
@@ -771,14 +771,14 @@ class TestShowHelp:
 
 
 class TestShowThemes:
-    def test_show_themes_lists_all_palettes_and_marks_active(
+    async def test_show_themes_lists_all_palettes_and_marks_active(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         from opendatasci._tui import theme as _theme
 
         _theme.active_name = "dracula"
         try:
-            controller.show_themes()
+            await controller.show_themes()
         finally:
             _theme.active_name = "default"
         content = mock_ui.add_message.call_args[0][1]
@@ -791,15 +791,15 @@ class TestShowThemes:
 
 
 class TestShowModels:
-    def test_show_models_shows_model_info(
+    async def test_show_models_shows_model_info(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        controller.show_models()
+        await controller.show_models()
         content = mock_ui.add_message.call_args[0][1]
         assert "Model" in content
         assert "Secondary Model" in content
 
-    def test_show_models_uses_stored_cfg(
+    async def test_show_models_uses_stored_cfg(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         cfg = MagicMock(spec=OpenDataSciConfig)
@@ -808,28 +808,30 @@ class TestShowModels:
         cfg.secondary_provider = "anthropic"
         cfg.secondary_model = "claude-haiku-4-5"
         controller._cfg = cfg
-        controller.show_models()
+        await controller.show_models()
         content = mock_ui.add_message.call_args[0][1]
         assert "Claude" in content
 
 
 class TestLsWorkspace:
-    def test_ls_workspace_no_service(self, controller: CLIController, mock_ui: MagicMock) -> None:
-        controller.ls_workspace()
+    async def test_ls_workspace_no_service(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await controller.ls_workspace()
         mock_ui.add_message.assert_called_with("agent", "_Not loaded yet._")
 
-    def test_ls_workspace_shows_panel(
+    async def test_ls_workspace_shows_panel(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
         mock_service.get_workspace_files.return_value = ["a.csv", "b.csv"]
-        loaded_controller.ls_workspace()
+        await loaded_controller.ls_workspace()
         mock_ui.show_workspace_panel.assert_called_once_with(["a.csv", "b.csv"])
 
-    def test_ls_workspace_error_shows_message(
+    async def test_ls_workspace_error_shows_message(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
         mock_service.get_workspace_files.side_effect = RuntimeError("permission denied")
-        loaded_controller.ls_workspace()
+        await loaded_controller.ls_workspace()
         content = mock_ui.add_message.call_args[0][1]
         assert "permission denied" in content
 
@@ -840,56 +842,56 @@ class TestLsWorkspace:
 
 
 class TestChoiceHandling:
-    def test_show_choice_prompt_enters_awaiting_state(
+    async def test_show_choice_prompt_enters_awaiting_state(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        controller._show_choice_prompt("Pick one?", ["Alpha", "Beta"])
+        await controller._show_choice_prompt("Pick one?", ["Alpha", "Beta"])
         assert controller._awaiting_choice is True
         assert controller._pending_choices == ["Alpha", "Beta"]
         mock_ui.add_input_class.assert_called_with("awaiting-choice")
 
-    def test_handle_user_choice_by_letter_resolves_to_text(
+    async def test_handle_user_choice_by_letter_resolves_to_text(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         controller._pending_choices = ["yes", "no"]
         controller._awaiting_choice = True
         controller._other_choice_label = None
-        result = controller._handle_user_choice("A")
+        result = await controller._handle_user_choice("A")
         assert result == "yes"
 
-    def test_handle_user_choice_freeform_text_sent_as_is(
+    async def test_handle_user_choice_freeform_text_sent_as_is(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         controller._pending_choices = ["yes", "no"]
         controller._awaiting_choice = True
         controller._other_choice_label = None
-        result = controller._handle_user_choice("maybe later")
+        result = await controller._handle_user_choice("maybe later")
         assert result == "maybe later"
 
-    def test_handle_user_choice_other_label_prompts_custom_input(
+    async def test_handle_user_choice_other_label_prompts_custom_input(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         controller._pending_choices = ["yes", "no"]
         controller._awaiting_choice = True
         controller._other_choice_label = "C"
         controller._awaiting_custom_choice_input = False
-        controller._handle_user_choice("C")
+        await controller._handle_user_choice("C")
         assert controller._awaiting_custom_choice_input is True
 
-    def test_cancel_choice_exits_mode_and_returns_cancel(
+    async def test_cancel_choice_exits_mode_and_returns_cancel(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         controller._awaiting_choice = True
         controller._pending_choices = ["yes"]
-        result = controller.cancel_choice()
+        result = await controller.cancel_choice()
         assert controller._awaiting_choice is False
         assert result == "cancel"
 
-    def test_cancel_choice_no_op_when_not_awaiting(
+    async def test_cancel_choice_no_op_when_not_awaiting(
         self, controller: CLIController
     ) -> None:
         controller._awaiting_choice = False
-        result = controller.cancel_choice()
+        result = await controller.cancel_choice()
         assert result is None
 
 
@@ -1018,7 +1020,7 @@ class TestRunAgent:
         """Worker block turns green (set_done) when task tool_result arrives."""
         wb = mock_ui.add_worker_block.return_value
         events = [
-            ToolCallEvent(tool="task", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
+            ToolCallEvent(tool="spawn_workers", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
             WorkerDoneEvent(worker_idx=0, success=True),
             WorkerDoneEvent(worker_idx=1, success=True),
             ToolResultEvent(content="done", tool_call_id="sw1"),
@@ -1033,7 +1035,7 @@ class TestRunAgent:
         """Each worker_done event calls mark_worker_done on the worker block."""
         wb = mock_ui.add_worker_block.return_value
         events = [
-            ToolCallEvent(tool="task", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
+            ToolCallEvent(tool="spawn_workers", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
             WorkerDoneEvent(worker_idx=0, success=True),
             WorkerDoneEvent(worker_idx=1, success=True),
             ToolResultEvent(content="done", tool_call_id="sw1"),
@@ -1057,7 +1059,7 @@ class TestRunAgent:
         # Tool A's tool_result arrives BEFORE the worker_done events (Tool A was faster).
         events = [
             ToolCallEvent(tool="execute_python_code", tool_call_id="tc_a"),
-            ToolCallEvent(tool="task", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
+            ToolCallEvent(tool="spawn_workers", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
             # Tool A finishes first — its tool_result arrives before worker_done
             ToolResultEvent(content="result", tool_call_id="tc_a"),
             # Workers complete after Tool A's result
@@ -1554,7 +1556,7 @@ class TestSlashCommandArguments:
     async def test_awaiting_choice_exit_with_trailing_text_quits(
         self, controller: CLIController
     ) -> None:
-        controller._show_choice_prompt("Pick one", ["a", "b"])
+        await controller._show_choice_prompt("Pick one", ["a", "b"])
         action, _ = await controller.on_submit("/exit now")
         assert action == "quit"
 
