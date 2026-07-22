@@ -12,6 +12,7 @@ _BUILTIN_NAMES = [
     "deep_learning",
     "quantitative_analysis",
     "data_science_education",
+    "web",
 ]
 
 SKILL_LABELS: dict[str, str] = {
@@ -21,6 +22,7 @@ SKILL_LABELS: dict[str, str] = {
     "quantitative_analysis": "Quantitative Analyst",
     "data_science_education": "Data Science Educator",
     "deep_learning": "Deep Learning Eng.",
+    "web": "Web Research",
 }
 
 

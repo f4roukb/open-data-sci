@@ -137,9 +137,7 @@ def create_agent_tools(
             sandbox_factory=sandbox_factory,
         )
     )
-    tools.extend(
-        create_web_tools(datasci_config.extra_web_domains, datasci_config.override_web_domains)
-    )
+    tools.extend(create_web_tools())
     tools.extend(create_user_interaction_tools())
     if datasci_config.mcp_servers:
         tools.extend(create_mcp_tools(datasci_config.mcp_servers))

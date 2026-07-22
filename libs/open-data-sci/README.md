@@ -302,8 +302,6 @@ async with create_agent("data.parquet", config=config) as agent:
 | `temperature` | Sampling temperature — not sent to Claude 4.6+ / Sonnet 5 models, which use adaptive thinking (env: `TEMPERATURE`) |
 | `name` | Display name for the agent — defaults to `"Sai"` (env: `NAME`) |
 | `mcp_servers` | List of MCP server URLs the agent may connect to (env: `MCP_SERVERS`) |
-| `extra_web_domains` | Additional hostnames the `fetch_url` tool may retrieve, on top of the built-in allowlist (env: `EXTRA_FETCH_DOMAINS`) |
-| `override_web_domains` | When set, replaces the built-in domain allowlist entirely — `extra_web_domains` is still applied on top |
 | `skills_directory` | Path to a directory of custom skill files loaded in addition to built-ins (env: `SKILLS_DIRECTORY`) |
 | `builtin_skills_directory` | Path to the built-in skills directory — override only to replace defaults entirely (env: `BUILTIN_SKILLS_DIRECTORY`) |
 | `worker_timeout_seconds` | Max seconds to wait for spawned workers to finish — `null` disables the timeout, default `300` (env: `WORKER_TIMEOUT_SECONDS`) |

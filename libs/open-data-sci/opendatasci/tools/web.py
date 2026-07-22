@@ -1,10 +1,9 @@
 """Web tools: web_search and fetch_url."""
 
 import re
-from collections.abc import Coroutine, Iterable
+from collections.abc import Coroutine
 from functools import lru_cache
 from typing import Annotated, Any, Callable, override
-from urllib.parse import urlparse
 
 from annotated_types import Ge
 from langchain_core.tools import BaseTool
@@ -12,59 +11,8 @@ from pydantic import BaseModel, PrivateAttr, model_validator
 
 from opendatasci.tools.base import OpenDataSciBaseTool
 
-# Domains permitted for fetch_url.  A URL is allowed when its hostname equals
-# one of these entries *or* is a subdomain of one (e.g. "en.wikipedia.org"
-# matches "wikipedia.org").
 _SEARCH_limit: int = 10
 _SEARCH_SNIPPET_MAX_CHARS: int = 300
-
-_FETCH_ALLOWED_DOMAINS: frozenset[str] = frozenset(
-    {
-        # Code & documentation
-        "raw.githubusercontent.com",
-        "github.com",
-        "docs.python.org",
-        "pandas.pydata.org",
-        "numpy.org",
-        "scikit-learn.org",
-        "matplotlib.org",
-        "scipy.org",
-        # ONNX ecosystem
-        "onnx.ai",
-        "onnxruntime.ai",
-        # Research
-        "arxiv.org",
-        # Finance & open APIs
-        "finance.yahoo.com",
-        # Competitive data science
-        "kaggle.com",
-    }
-)
-
-
-_EMPTY_DOMAINS: frozenset[str] = frozenset()
-
-
-def _is_domain_allowed(
-    url: str,
-    extra: frozenset[str] = _EMPTY_DOMAINS,
-    override: frozenset[str] | None = None,
-) -> bool:
-    """Return True when *url*'s hostname is in or is a subdomain of the allowed set.
-
-    Args:
-        url:      The URL to check.
-        extra:    Additional domains unioned with the base set.
-        override: When provided, replaces ``_FETCH_ALLOWED_DOMAINS`` entirely
-                  before ``extra`` is applied.
-    """
-    try:
-        host = (urlparse(url).hostname or "").lower()
-    except Exception:
-        return False
-    base = override if override is not None else _FETCH_ALLOWED_DOMAINS
-    allowed = base | extra
-    return any(host == d or host.endswith("." + d) for d in allowed)
 
 
 def _clean_html(content: str) -> str:
@@ -124,10 +72,8 @@ async def _web_search_impl(query: str, limit: int) -> str:
     return "\n".join(lines)
 
 
-def _build_fetch_url_impl(
-    extra: frozenset[str], override: frozenset[str] | None
-) -> Callable[[str], Coroutine[Any, Any, str]]:
-    """Return a URL-fetching coroutine function bound to and cached per *extra*/*override*.
+def _build_fetch_url_impl() -> Callable[[str], Coroutine[Any, Any, str]]:
+    """Return a URL-fetching coroutine function with its own cache.
 
     The cache is scoped to this closure (fresh per tool instance) rather than
     a shared module-level cache, so repeated fetches of the same URL across
@@ -142,12 +88,8 @@ def _build_fetch_url_impl(
         except ImportError:
             return "Error: httpx is not installed. Run: pip install httpx"
 
-        if not _is_domain_allowed(url, extra, override):
-            host = urlparse(url).hostname or url
-            return (
-                f"Error: Domain '{host}' is not in the fetch allowlist. "
-                "Use web_search to find content from an allowed domain, then fetch that URL."
-            )
+        if not (url.startswith("http://") or url.startswith("https://")):
+            return f"Error: '{url}' is not a valid http(s) URL."
 
         try:
             async with httpx.AsyncClient(
@@ -212,7 +154,7 @@ Args:
 
 
 class FetchUrlTool(OpenDataSciBaseTool):
-    """Fetch the full plain-text content of a URL from an allowed domain."""
+    """Fetch the full plain-text content of a URL."""
 
     class CallArgs(BaseModel):
         url: str
@@ -220,37 +162,26 @@ class FetchUrlTool(OpenDataSciBaseTool):
         communication: str
 
     name: str = "fetch_url"
-    description: str = ""
+    description: str = """\
+Fetch the full plain-text content of a URL.
+
+# When to use this tool
+- When you have a specific URL to retrieve.
+- To read documentation, papers, or data from a page found via ``web_search``.
+
+Args:
+    url:           Full URL to fetch.
+    summary:       3-4 word status label (e.g. "Fetching BLS report").
+    communication: Brief message to the user about what you're doing
+                   (e.g. "Let me fetch this research paper.").\
+"""
     args_schema: type[BaseModel] = CallArgs
 
-    extra_domains: frozenset[str] = frozenset()
-    override_domains: frozenset[str] | None = None
     _fetch_impl: Callable[[str], Coroutine[Any, Any, str]] = PrivateAttr()
 
     @model_validator(mode="after")
     def _setup(self) -> "FetchUrlTool":
-        allowed_domains = (
-            self.override_domains
-            if self.override_domains is not None
-            else _FETCH_ALLOWED_DOMAINS | self.extra_domains
-        )
-        sorted_domains = ", ".join(sorted(allowed_domains))
-        self.description = (
-            f"Fetch the full plain-text content of a URL from an allowed domain.\n\n"
-            f"Allowed domains: {sorted_domains}\n\n"
-            f"# When to use this tool\n"
-            f"- When you have a specific URL from an allowed domain to retrieve.\n"
-            f"- To read documentation, papers, or data from a page found via ``web_search``.\n\n"
-            f"# When NOT to use this tool\n"
-            f"- When the target domain is not in the allowlist — use ``web_search`` instead\n"
-            f"  to find useful links that resolve to an allowed domain.\n\n"
-            f"Args:\n"
-            f"    url:           Full URL to fetch (must be from an allowed domain).\n"
-            f'    summary:       3-4 word status label (e.g. "Fetching BLS report").\n'
-            f"    communication: Brief message to the user about what you're doing\n"
-            f'                   (e.g. "Let me fetch this research paper.").\n'
-        )
-        self._fetch_impl = _build_fetch_url_impl(self.extra_domains, self.override_domains)
+        self._fetch_impl = _build_fetch_url_impl()
         return self
 
     @override
@@ -258,22 +189,6 @@ class FetchUrlTool(OpenDataSciBaseTool):
         return await self._fetch_impl(url)
 
 
-def create_web_tools(
-    extra_web_domains: Iterable[str] = (),
-    override_web_domains: Iterable[str] | None = None,
-) -> list[BaseTool]:
-    """Return the web_search and fetch_url tools (main agent only).
-
-    Args:
-        extra_web_domains:   Additional hostnames (or apex domains) to permit
-            in ``fetch_url``, beyond the base allowlist.
-        override_web_domains: When provided, replaces the built-in allowlist
-            entirely.  ``extra_web_domains`` is still applied on top.
-    """
-    extra = frozenset(d.lower().strip() for d in extra_web_domains)
-    override = (
-        frozenset(d.lower().strip() for d in override_web_domains)
-        if override_web_domains is not None
-        else None
-    )
-    return [WebSearchTool(), FetchUrlTool(extra_domains=extra, override_domains=override)]
+def create_web_tools() -> list[BaseTool]:
+    """Return the web_search and fetch_url tools (main agent only)."""
+    return [WebSearchTool(), FetchUrlTool()]

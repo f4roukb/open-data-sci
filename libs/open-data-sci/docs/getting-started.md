@@ -267,10 +267,6 @@ secondary_model: gpt-5.6-luna
 
 temperature: 0.1
 
-extra_web_domains:
-  - arxiv.org
-  - huggingface.co
-
 worker_timeout_seconds: 600
 midturn_compaction_threshold: 80000
 ```

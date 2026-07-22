@@ -32,20 +32,6 @@ temperature: 0.1
 # ── Agent identity ────────────────────────────────────────────────────────────
 name: Sai
 
-# ── Web access ────────────────────────────────────────────────────────────────
-# Domains the fetch_url tool may access, on top of the built-in allowlist.
-extra_web_domains:
-  - arxiv.org
-  - huggingface.co
-  - paperswithcode.com
-  - kaggle.com
-
-# Uncomment override_web_domains to REPLACE the built-in allowlist entirely.
-# This conflicts with extra_web_domains in intent: use one approach or the other.
-# override_web_domains:
-#   - arxiv.org
-#   - huggingface.co
-
 # ── Parallelism ───────────────────────────────────────────────────────────────
 # Maximum wall-clock seconds for all spawned worker agents to finish.
 # Set to null to disable the timeout entirely (workers may hang indefinitely).
