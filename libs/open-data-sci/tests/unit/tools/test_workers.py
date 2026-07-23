@@ -8,9 +8,9 @@ import pytest
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory
 from opendatasci.skills.base import BaseSkillStore
+from opendatasci.tasks.local import LocalTaskManager
 from opendatasci.tools.workers import SpawnWorkersTool, create_worker_tools
 from opendatasci.workspace.base import BaseWorkspace
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -87,13 +87,21 @@ class TestTaskDetails:
 class TestGetWorkerToolsStructure:
     def test_returns_list_with_one_tool(self) -> None:
         tools = create_worker_tools(
-            _make_workspace(), None, datasci_config=None, sandbox_factory=_make_sandbox_factory()
+            _make_workspace(),
+            None,
+            datasci_config=None,
+            sandbox_factory=_make_sandbox_factory(),
+            task_manager=LocalTaskManager(),
         )
         assert len(tools) == 1
 
     def test_tool_name_is_task(self) -> None:
         tools = create_worker_tools(
-            _make_workspace(), None, datasci_config=None, sandbox_factory=_make_sandbox_factory()
+            _make_workspace(),
+            None,
+            datasci_config=None,
+            sandbox_factory=_make_sandbox_factory(),
+            task_manager=LocalTaskManager(),
         )
         assert tools[0].name == "task"
 
@@ -114,6 +122,7 @@ def _make_tool(**overrides) -> SpawnWorkersTool:
         "datasci_config": None,
         "sandbox_factory": _make_sandbox_factory(),
         "store": _make_store(),
+        "task_manager": LocalTaskManager(),
         **overrides,
     }
     return SpawnWorkersTool(**kwargs)
@@ -176,6 +185,7 @@ class TestSpawnWorkersTool:
             datasci_config=datasci_config or OpenDataSciConfig(),
             sandbox_factory=_make_sandbox_factory(),
             store=store,
+            task_manager=LocalTaskManager(),
         )
         return tools[0]
 
@@ -302,6 +312,7 @@ class TestSpawnWorkersTool:
             datasci_config=OpenDataSciConfig(),
             sandbox_factory=_make_sandbox_factory(),
             store=mock_store,
+            task_manager=LocalTaskManager(),
         )
         tool = tools[0]
         with patch(_AGENT_PATCH) as MockAgent:
@@ -356,6 +367,7 @@ class TestRunMode:
             None,
             datasci_config=None,
             sandbox_factory=_make_sandbox_factory(),
+            task_manager=LocalTaskManager(),
             run_mode="parallel",
         )
         assert tools[0].run_mode == "parallel"
@@ -492,11 +504,13 @@ class TestSynchMode:
             )
 
         assert "scheduled" in result.lower()
-        assert len(tool._background_tasks) == 1
-        pending = list(tool._background_tasks)
-        for background_task in pending:
-            background_task.cancel()
-        await asyncio.gather(*pending, return_exceptions=True)
+        records = await tool.task_manager.list()
+        assert len(records) == 1
+        for record in records:
+            await tool.task_manager.cancel(record.task_id)
+        await asyncio.gather(
+            *(t for t in tool.task_manager._asyncio_tasks.values()), return_exceptions=True
+        )
 
     @pytest.mark.asyncio
     async def test_async_mode_runs_worker_in_background(self) -> None:

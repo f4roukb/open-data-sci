@@ -40,6 +40,8 @@ class TestToolName:
             "enter_self_review_mode",
             "exit_self_review_mode",
             "task",
+            "get_task_status",
+            "cancel_task",
             "read_dataset_info",
             "update_dataset_info",
             "profile_dataset",
@@ -224,6 +226,12 @@ class TestCreateMainAgentTools:
         tools = create_agent_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())
         names = {t.name for t in tools}
         assert "task" in names
+
+    def test_includes_task_management_tools(self) -> None:
+        tools = create_agent_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())
+        names = {t.name for t in tools}
+        assert "get_task_status" in names
+        assert "cancel_task" in names
 
     def test_includes_web_tools(self) -> None:
         tools = create_agent_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())

@@ -14,6 +14,7 @@ from opendatasci.human_inputs.human_approval import (
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory
 from opendatasci.skills import BaseSkillStore
 from opendatasci.skills.local import LocalSkillStore
+from opendatasci.tasks.local import LocalTaskManager
 from opendatasci.tools.coding import (
     create_cli_tools,
     create_code_verification_tools,
@@ -24,6 +25,7 @@ from opendatasci.tools.dataset_info import create_data_context_tools
 from opendatasci.tools.mcp import create_mcp_tools
 from opendatasci.tools.planning import create_planning_tools
 from opendatasci.tools.skills import create_skill_tools
+from opendatasci.tools.task_management import create_task_management_tools
 from opendatasci.tools.user_interaction import create_user_interaction_tools
 from opendatasci.tools.web import create_web_tools
 from opendatasci.tools.workers import create_worker_tools
@@ -45,6 +47,8 @@ class ToolName(str, Enum):
     ENTER_SELF_REVIEW_MODE = "enter_self_review_mode"
     EXIT_SELF_REVIEW_MODE = "exit_self_review_mode"
     TASK = "task"
+    GET_TASK_STATUS = "get_task_status"
+    CANCEL_TASK = "cancel_task"
     READ_DATASET_INFO = "read_dataset_info"
     UPDATE_DATASET_INFO = "update_dataset_info"
     PROFILE_DATASET = "profile_dataset"
@@ -110,8 +114,8 @@ def create_agent_tools(
 ) -> list[BaseTool]:
     """Return the tool list for the main agent.
 
-    Extends the worker tool set with planning, worker spawning, web access,
-    and user interaction.
+    Extends the worker tool set with planning, worker spawning, background task
+    management, web access, and user interaction.
     """
     datasci_config = datasci_config or OpenDataSciConfig()
     if store is None:
@@ -128,6 +132,7 @@ def create_agent_tools(
     if context is not None and session_id is not None:
         tools.extend(create_planning_tools(context, session_id))
     tools.extend(create_critic_tools(store))
+    task_manager = LocalTaskManager()
     tools.extend(
         create_worker_tools(
             workspace,
@@ -135,8 +140,10 @@ def create_agent_tools(
             datasci_config,
             store=store,
             sandbox_factory=sandbox_factory,
+            task_manager=task_manager,
         )
     )
+    tools.extend(create_task_management_tools(task_manager))
     tools.extend(
         create_web_tools(datasci_config.extra_web_domains, datasci_config.override_web_domains)
     )

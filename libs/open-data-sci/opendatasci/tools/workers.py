@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import uuid
 from pathlib import Path
 from typing import Annotated, Any, Callable, Coroutine, Literal, override
 
@@ -10,7 +9,7 @@ from annotated_types import MaxLen, MinLen
 from langchain_core.callbacks.manager import adispatch_custom_event
 from langchain_core.runnables.config import RunnableConfig, ensure_config
 from langchain_core.tools import BaseTool
-from pydantic import BaseModel, PrivateAttr
+from pydantic import BaseModel
 
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.base import BaseContextStore
@@ -18,6 +17,7 @@ from opendatasci.prompts.prompt_templates import WORKER_SYSTEM_PROMPT
 from opendatasci.sandbox.base import BaseSandboxFactory
 from opendatasci.skills import BaseSkillStore
 from opendatasci.skills.local import LocalSkillStore
+from opendatasci.tasks.base import BaseTaskManager
 from opendatasci.tools.base import OpenDataSciBaseTool
 from opendatasci.tools.coding import create_cli_tools, create_coding_tools
 from opendatasci.tools.skills import create_skill_tools
@@ -93,9 +93,8 @@ Args:
     datasci_config: OpenDataSciConfig | None
     sandbox_factory: BaseSandboxFactory
     store: BaseSkillStore
+    task_manager: BaseTaskManager
     run_mode: Literal["parallel", "concurrent"] = "concurrent"
-
-    _background_tasks: set[asyncio.Task[Any]] = PrivateAttr(default_factory=set)
 
     async def _arun_one(
         self,
@@ -224,30 +223,6 @@ Args:
             sections.append(f"### ConcurrentWorkerAgent {i}: {subtask.subtask}\n\n{output}")
         return "\n\n---\n\n".join(sections)
 
-    def _schedule_in_background(
-        self,
-        subtasks: list[TaskDetails],
-        outer_config: RunnableConfig,
-    ) -> str:
-        """Fire off *subtasks* without waiting for them and return a task ID.
-
-        The task is kept in ``_background_tasks`` so it isn't garbage-collected
-        mid-flight; the ID is purely informational for now — nothing tracks or
-        looks up its completion.
-        """
-        task_id = uuid.uuid4().hex
-
-        async def _run() -> None:
-            try:
-                await self._run_to_completion(subtasks, outer_config)
-            except Exception:
-                logger.exception("Background task %s failed", task_id)
-
-        task = asyncio.create_task(_run())
-        self._background_tasks.add(task)
-        task.add_done_callback(self._background_tasks.discard)
-        return task_id
-
     @override
     async def _arun(
         self,
@@ -260,10 +235,15 @@ Args:
         outer_config = ensure_config()
 
         if synch_mode == "async":
-            task_id = self._schedule_in_background(subtasks, outer_config)
+            task_id = await self.task_manager.submit(
+                lambda: self._run_to_completion(subtasks, outer_config),
+                summary=summary,
+            )
             return (
                 f"Task scheduled successfully in the background (task_id={task_id}). "
-                "It is running asynchronously; no result is returned here."
+                "It is running asynchronously; no result is returned here. Use the "
+                "get_task_status tool with this task_id to check on it, or cancel_task "
+                "to stop it."
             )
 
         return await self._run_to_completion(subtasks, outer_config)
@@ -274,6 +254,7 @@ def create_worker_tools(
     context: BaseContextStore | None,
     datasci_config: OpenDataSciConfig | None,
     sandbox_factory: BaseSandboxFactory,
+    task_manager: BaseTaskManager,
     store: BaseSkillStore | None = None,
     run_mode: Literal["parallel", "concurrent"] = "concurrent",
 ) -> list[BaseTool]:
@@ -291,6 +272,10 @@ def create_worker_tools(
                          skills directory.
         datasci_config:  LLM configuration forwarded to each worker.
         sandbox_factory: Factory used to create an isolated sandbox for each worker.
+        task_manager:    Shared task manager used to submit and track background
+                         (``synch_mode="async"``) task runs. Callers should share
+                         the same instance with :func:`create_task_management_tools`
+                         so ``get_task_status``/``cancel_task`` can see these tasks.
         store:           Skill store shared across all spawned workers.  Defaults
                          to a :class:`~opendatasci.skills.local.LocalSkillStore`
                          rooted at ``<context.root>/skills``.
@@ -313,6 +298,7 @@ def create_worker_tools(
             datasci_config=datasci_config,
             sandbox_factory=sandbox_factory,
             store=store,
+            task_manager=task_manager,
             run_mode=run_mode,
         )
     ]
