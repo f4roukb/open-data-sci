@@ -107,12 +107,6 @@ class OpenDataSciConfig(BaseSettings):
                          domains bundled with the package
                          (``BUILTIN_SKILL_DOMAINS_DIRECTORY``).  Override
                          only if you need to replace the defaults entirely.
-        extra_web_domains: Additional hostnames the ``fetch_url`` tool may
-                         retrieve, on top of the built-in allowlist.
-                         Example: ``["internal.corp"]``.
-        override_web_domains: When set, *replaces* the built-in domain
-                         allowlist entirely.  ``extra_web_domains`` is still
-                         applied on top.  Use ``[]`` to block all domains.
         worker_timeout_seconds: Maximum seconds to wait for all spawned
                          workers to finish.  ``None`` disables the timeout.
                          Defaults to ``300.0`` (5 minutes).
@@ -191,10 +185,6 @@ class OpenDataSciConfig(BaseSettings):
 
     # ── MCP ───────────────────────────────────────────────────────────
     mcp_servers: List[str] = Field(default_factory=list, alias="MCP_SERVERS")
-
-    # ── Web access ───────────────────────────────────────────────────────────────
-    extra_web_domains: List[str] = Field(default_factory=list, alias="EXTRA_FETCH_DOMAINS")
-    override_web_domains: List[str] | None = None
 
     # ── Context management ───────────────────────────────────────────────────────
     midturn_compaction_threshold: int = Field(

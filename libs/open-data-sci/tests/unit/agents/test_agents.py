@@ -118,7 +118,7 @@ async def _make_agent_ctx(
 
     with (
         patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x),
-        patch("opendatasci.agents.agents.create_agent_tools", return_value=[]),
+        patch("opendatasci.agents.agents.create_execution_mode_tools", return_value=[]),
         patch("opendatasci.agents.agents.create_model", return_value=mock_llm),
         patch("opendatasci.agents.agents.create_secondary_model", return_value=mock_llm),
     ):
@@ -146,7 +146,7 @@ async def _agent_with_overrides_ctx(**kwargs: object) -> AsyncIterator[Agent]:
 
     with (
         patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x),
-        patch("opendatasci.agents.agents.create_agent_tools", return_value=[]),
+        patch("opendatasci.agents.agents.create_execution_mode_tools", return_value=[]),
         patch("opendatasci.agents.agents.create_model", return_value=mock_llm),
         patch("opendatasci.agents.agents.create_secondary_model", return_value=mock_llm),
     ):

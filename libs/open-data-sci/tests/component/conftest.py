@@ -65,7 +65,7 @@ from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.local import LocalContextStore
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory, SandboxExecResult
 from opendatasci.skills.local import LocalSkillStore
-from opendatasci.tools import create_agent_tools
+from opendatasci.tools import create_execution_mode_tools
 from opendatasci.workspace.local import LocalWorkspace
 from opendatasci._tui.service import OpenDataSciTuiService
 
@@ -249,7 +249,7 @@ async def _build_entered_service(
         patch("opendatasci.tools.coding.create_model", return_value=coding_llm),
         patch("opendatasci.human_inputs.human_approval.create_secondary_model", return_value=coding_llm),
     ):
-        tools = create_agent_tools(
+        tools = create_execution_mode_tools(
             workspace,
             sandbox,
             context_store,

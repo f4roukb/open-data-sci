@@ -67,6 +67,13 @@ ALLOWED_CLI_COMMANDS: frozenset[str] = frozenset(
         "unzip",
         "tar",
         "zip",
+        # GitHub CLI — network scoped to GitHub's hosts only (see
+        # SRTSandbox._make_cli_config); intended for read-oriented subcommands
+        # (view/list/diff/search/api GET). Only the binary name is checked
+        # here, so this trusts callers to stick to that contract rather than
+        # write subcommands (create/merge/delete), same as the existing trust
+        # placed in e.g. `tar`/`zip` being used for inspection only.
+        "gh",
     }
 )
 
