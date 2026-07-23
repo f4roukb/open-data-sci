@@ -143,9 +143,7 @@ Args:
             }
         )
 
-    def _enter_self_review_mode(
-        self, skill: str | None, tool_call_id: str
-    ) -> Command[AgentState]:
+    def _enter_self_review_mode(self, skill: str | None, tool_call_id: str) -> Command[AgentState]:
         state_update: dict[str, Any] = {"is_self_review_mode": True}
         if skill is not None:
             loaded = self.store.load(skill)

@@ -154,7 +154,11 @@ def create_plan_mode_tools(execution_tools: list[BaseTool]) -> list[BaseTool]:
     ``switch_agentic_mode``/``exit_self_review_mode`` (only ``exit_plan_mode``
     is a legal way out of this mode).
     """
-    excluded = {ToolName.SPAWN_WORKERS, ToolName.SWITCH_AGENTIC_MODE, ToolName.EXIT_SELF_REVIEW_MODE}
+    excluded = {
+        ToolName.SPAWN_WORKERS,
+        ToolName.SWITCH_AGENTIC_MODE,
+        ToolName.EXIT_SELF_REVIEW_MODE,
+    }
     return [tool for tool in execution_tools if tool.name not in excluded]
 
 
