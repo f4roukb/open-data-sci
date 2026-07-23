@@ -1,6 +1,7 @@
 import argparse
 import importlib.metadata
 import logging
+import os
 import uuid
 from pathlib import Path
 
@@ -14,12 +15,20 @@ from textual.containers import Horizontal
 from textual.timer import Timer
 from textual.widgets import Footer, Input
 
-from opendatasci.configs import DEFAULT_MODEL, DEFAULT_SECONDARY_MODEL, OpenDataSciConfig
+from opendatasci.configs import (
+    DEFAULT_MODEL,
+    DEFAULT_SECONDARY_MODEL,
+    PROVIDER_KEY_FIELD,
+    OpenDataSciConfig,
+)
+from opendatasci.global_config import load_global_config
 from opendatasci.models.providers import Provider
+from opendatasci.onboarding import RequiredField, compute_missing_fields
 
 from . import theme as _theme
 from .adapter import SubmitAction
 from .controller import CLIController
+from .onboarding_screen import OnboardingScreen
 from .widgets import (
     AppHeader,
     ChatPane,
@@ -43,6 +52,23 @@ def _print_providers() -> None:
     for provider, model in DEFAULT_MODEL.items():
         table.add_row(provider, model)
     Console().print(table)
+
+
+def _apply_global_config_fallback(kwargs: dict[str, object], global_cfg: dict[str, object]) -> None:
+    """Fill *kwargs* in place from *global_cfg* for fields not set via CLI or env.
+
+    A real environment variable for the field always wins over the persisted
+    global config value.
+    """
+    for field_name, value in global_cfg.items():
+        if field_name in kwargs:
+            continue
+        model_field = OpenDataSciConfig.model_fields.get(field_name)
+        if model_field is None:
+            continue
+        if model_field.alias and os.environ.get(model_field.alias):
+            continue
+        kwargs[field_name] = value
 
 
 def _get_version() -> str:
@@ -71,6 +97,7 @@ class OpenDataSciApp(App[None]):
         session_id: str,
         datasci_config: OpenDataSciConfig,
         theme: str = "default",
+        missing_fields: list[RequiredField] | None = None,
     ) -> None:
         palette = _theme.THEMES.get(theme, _theme.DARK)
         _theme.active.update(palette)
@@ -82,6 +109,7 @@ class OpenDataSciApp(App[None]):
             datasci_config=datasci_config,
             session_id=session_id,
         )
+        self._missing_fields = missing_fields or []
 
     def get_css_variables(self) -> dict[str, str]:
         """Expose the active theme palette as $ods-* CSS variables.
@@ -98,8 +126,6 @@ class OpenDataSciApp(App[None]):
     def compose(self) -> ComposeResult:
         yield AppHeader(
             version=_get_version(),
-            provider=self._controller.provider,
-            model=self._controller.model,
             workspace=str(Path(self._controller._workspace_path).resolve()),
         )
         with Horizontal(id="main"):
@@ -109,6 +135,14 @@ class OpenDataSciApp(App[None]):
     def on_mount(self) -> None:
         self._quit_requested = False
         self._quit_timer: Timer | None = None
+        self.query_one("#user-input", Input).focus()
+        if self._missing_fields:
+            self.push_screen(OnboardingScreen(self._missing_fields, self._on_onboarding_complete))
+        else:
+            self._boot()
+
+    def _on_onboarding_complete(self, values: dict[str, str]) -> None:
+        self._controller.apply_config_updates(values)
         self.query_one("#user-input", Input).focus()
         self._boot()
 
@@ -158,6 +192,10 @@ class OpenDataSciApp(App[None]):
 
     def hide_attachment(self) -> None:
         self.query_one(ChatPane).hide_attachment()
+
+    def refresh_theme(self) -> None:
+        """Recompute $ods-* CSS variables from the (just-switched) active palette."""
+        self.refresh_css()
 
     def stop_agent(self) -> None:
         self.workers.cancel_group(self, "agent")
@@ -299,20 +337,6 @@ class OpenDataSciApp(App[None]):
             self.action_focus_next()
 
 
-# Maps a provider name to the OpenDataSciConfig field that holds its API key.
-# Providers that use cloud-native auth (bedrock, vertexai, ollama) have no key field.
-_PROVIDER_KEY_FIELD: dict[Provider, str | None] = {
-    Provider.ANTHROPIC: "anthropic_api_key",
-    Provider.OPENAI: "openai_api_key",
-    Provider.GEMINI: "google_api_key",
-    Provider.AZURE: "azure_api_key",
-    Provider.OPENAI_COMPATIBLE_SERVER: "openai_api_key",
-    Provider.BEDROCK: None,
-    Provider.VERTEXAI: None,
-    Provider.OLLAMA: None,
-}
-
-
 def main() -> None:
     load_dotenv()
 
@@ -396,8 +420,8 @@ Examples:
         _print_providers()
         return
 
-    if args.workspace_or_file is None:
-        parser.error("the following arguments are required: path")
+    workspace_or_file = args.workspace_or_file or str(Path.cwd())
+    global_cfg = load_global_config()
 
     # Build OpenDataSciConfig: YAML file provides the base; explicit TUI flags override.
     if args.config:
@@ -413,7 +437,7 @@ Examples:
             overrides["secondary_model"] = args.secondary_model
         if args.api_key is not None:
             effective_provider = str(args.provider or datasci_config.provider)
-            key_field = _PROVIDER_KEY_FIELD.get(Provider(effective_provider))
+            key_field = PROVIDER_KEY_FIELD.get(Provider(effective_provider))
             if key_field:
                 overrides[key_field] = args.api_key
             else:
@@ -421,11 +445,17 @@ Examples:
                     f"--api-key is not supported for provider '{effective_provider}' "
                     f"(uses cloud-native authentication)"
                 )
+        provider = args.provider or datasci_config.provider
+        resolved_secondary_provider = args.secondary_provider or datasci_config.secondary_provider
+        _apply_global_config_fallback(overrides, global_cfg)
         if overrides:
             datasci_config = datasci_config.model_copy(update=overrides)
+        missing_fields = compute_missing_fields(
+            [provider, resolved_secondary_provider], overrides, global_cfg
+        )
     else:
-        provider: Provider = args.provider or Provider.ANTHROPIC
-        resolved_secondary_provider: Provider = args.secondary_provider or provider
+        provider = args.provider or Provider.ANTHROPIC
+        resolved_secondary_provider = args.secondary_provider or provider
         kwargs: dict[str, object] = {
             "provider": provider,
             "model": args.model or DEFAULT_MODEL[provider],
@@ -434,7 +464,7 @@ Examples:
             or DEFAULT_SECONDARY_MODEL[resolved_secondary_provider],
         }
         if args.api_key is not None:
-            key_field = _PROVIDER_KEY_FIELD.get(provider)
+            key_field = PROVIDER_KEY_FIELD.get(provider)
             if key_field:
                 kwargs[key_field] = args.api_key
             else:
@@ -442,15 +472,20 @@ Examples:
                     f"--api-key is not supported for provider '{provider}' "
                     f"(uses cloud-native authentication)"
                 )
+        _apply_global_config_fallback(kwargs, global_cfg)
         datasci_config = OpenDataSciConfig(**kwargs)  # type: ignore[arg-type]
+        missing_fields = compute_missing_fields(
+            [provider, resolved_secondary_provider], kwargs, global_cfg
+        )
 
     session_id = uuid.uuid4().hex
 
     OpenDataSciApp(
-        workspace_path=args.workspace_or_file,
+        workspace_path=workspace_or_file,
         session_id=session_id,
         datasci_config=datasci_config,
         theme=args.theme,
+        missing_fields=missing_fields,
     ).run()
 
 

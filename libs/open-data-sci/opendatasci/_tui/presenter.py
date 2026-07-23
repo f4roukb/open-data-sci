@@ -103,16 +103,13 @@ class _TurnPresenter:
 
     @staticmethod
     def _make_label(tool_display: ToolDisplay | None, event: ToolCallEvent) -> str:
-        icon = tool_display.icon if tool_display else ""
-        label_text = (tool_display.label if tool_display else None) or event.tool.replace(
+        return (tool_display.label if tool_display else None) or event.tool.replace(
             "_", " "
         ).title()
-        return f"{icon} {label_text}".strip() if icon else label_text
 
     @staticmethod
     def _make_summary(tool_display: ToolDisplay | None, event: ToolCallEvent) -> str:
-        icon = tool_display.icon if tool_display else ""
-        return f"{icon} {event.summary}".strip() if (icon and event.summary) else event.summary
+        return event.summary
 
     # ── Event handlers ────────────────────────────────────────────────────────
 
@@ -220,13 +217,8 @@ class _TurnPresenter:
             tool_name = event.content
             tool_display = REGISTRY.get(tool_name)
             activity = event.summary
-            icon = tool_display.icon if tool_display else ""
-            if activity:
-                activity = f"{icon} {activity}".strip() if icon else activity
-            elif tool_display:
-                activity = f"{icon} {tool_display.label}".strip() if icon else tool_display.label
-            else:
-                activity = tool_name
+            if not activity:
+                activity = tool_display.label if tool_display else tool_name
             self._worker_block.update_worker_activity(event.worker_idx, activity)
         elif event.event_type == "worker_tool_result":
             # Tool finished — drop the inline activity so the row reverts to the
@@ -262,13 +254,13 @@ class _TurnPresenter:
         self._dismiss_thinking_block()
         if self._agent_msg is None:
             self._agent_msg = self._ui.add_message("agent", "")
-        await self._agent_msg.append(f"\n\n❌ {event.content}")
+        await self._agent_msg.append(f"\n\n✗ {event.content}")
 
     async def handle_exception(self, exc: Exception) -> None:
         self._dismiss_thinking_block()
         if self._agent_msg is None:
             self._agent_msg = self._ui.add_message("agent", "")
-        await self._agent_msg.set_content(f"❌ **Error:** {exc}")
+        await self._agent_msg.set_content(f"✗ **Error:** {exc}")
 
     # ── Cleanup ───────────────────────────────────────────────────────────────
 

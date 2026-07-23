@@ -82,9 +82,7 @@ class _Harness(App[None]):
         return variables
 
     def compose(self) -> ComposeResult:
-        yield AppHeader(
-            version="9.9.9", provider="anthropic", model="claude-sonnet-4-6", workspace="/data"
-        )
+        yield AppHeader(version="9.9.9", workspace="/data")
         yield ChatPane()
 
     def on_command_approval_prompt_decision(self, message: CommandApprovalPrompt.Decision) -> None:
@@ -110,13 +108,17 @@ async def harness():
 
 
 class TestAppHeader:
-    async def test_renders_version_workspace_and_model(self, harness) -> None:
+    async def test_renders_version_and_workspace(self, harness) -> None:
         app, pilot, _ = harness
         info = _plain(app.query_one("#header-info", Static))
         assert "v9.9.9" in info
         assert "/data" in info
-        # _fmt_model prettifies provider/model ids for display
-        assert "Anthropic Claude Sonnet 4.6" in info
+
+    async def test_does_not_render_a_model_line(self, harness) -> None:
+        # Model info now lives behind /models, not the always-on header.
+        app, pilot, _ = harness
+        info = _plain(app.query_one("#header-info", Static))
+        assert "Model" not in info
 
     async def test_set_file_count_and_workspace_rerender(self, harness) -> None:
         app, pilot, _ = harness
@@ -389,7 +391,7 @@ class TestWorkerBlock:
         await pilot.pause()
         text = _plain(block)
         assert "Fanning out" in text
-        assert "⚡ Parallelizing" in text
+        assert "Parallelizing" in text
         assert "Worker 1: Clean data" in text
         assert "Worker 2: Fit model" in text
 
@@ -455,7 +457,7 @@ class TestCommandApprovalPrompt:
         app, pilot, pane = harness
         pane.show_approval_prompt("Delete rows", "Data loss possible")
         await pilot.pause()
-        assert "⚠️  Data loss possible" in _plain(app.query_one("#approval-prompt-content", Static))
+        assert "Data loss possible" in _plain(app.query_one("#approval-prompt-content", Static))
         await pilot.press("down", "enter")
         assert app.decisions == [False]
 
@@ -482,7 +484,12 @@ class TestCommandApprovalPrompt:
         app, pilot, pane = harness
         pane.show_approval_prompt("Benign action", "")
         await pilot.pause()
-        assert "⚠️" not in _plain(app.query_one("#approval-prompt-content", Static))
+        lines = _plain(app.query_one("#approval-prompt-content", Static)).splitlines()
+        # Compact layout: header+description line, then straight to Yes/No —
+        # no heads-up line, and no blank-line padding anywhere.
+        assert lines[0] == "Approval required — Benign action"
+        assert lines[1].lstrip("▸ ").rstrip() == "Yes"
+        assert "" not in lines
 
     async def test_content_layout_signposts_description_and_heads_up(self, harness) -> None:
         app, pilot, pane = harness
@@ -490,10 +497,8 @@ class TestCommandApprovalPrompt:
         await pilot.pause()
         text = _plain(app.query_one("#approval-prompt-content", Static))
         lines = text.splitlines()
-        assert lines[0] == "🛡  Approval required"
-        signpost = lines.index("I need your approval to run a bash script:")
-        assert lines[signpost + 1] == "Deletes temporary files"
-        assert lines[signpost + 2] == "⚠️  Files are gone for good"
+        assert lines[0] == "Approval required — Deletes temporary files"
+        assert lines[1] == "Files are gone for good"
 
 
 # ---------------------------------------------------------------------------
@@ -507,8 +512,12 @@ class TestThinkingBlock:
         block = pane.add_thinking_block()
         await pilot.pause()
         assert "Thinking" in _plain(block)
+        first = _plain(block)
         block._tick()
-        assert "Thinking." in _plain(block)
+        second = _plain(block)
+        # The spinner glyph cycles each tick, but the label text stays "Thinking".
+        assert "Thinking" in second
+        assert first != second
 
     async def test_finish_stops_animation_and_shows_summary(self, harness) -> None:
         app, pilot, pane = harness
@@ -750,7 +759,7 @@ class TestPendingMessages:
         app, pilot, pane = harness
         bubble = pane.add_pending_message("run the model")
         await pilot.pause()
-        assert "⏳ Queued" in _plain(bubble)
+        assert "Queued" in _plain(bubble)
 
 
 # ---------------------------------------------------------------------------

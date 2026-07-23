@@ -26,7 +26,13 @@ from rich.markup import escape as escape_markup
 from opendatasci._tui.service import OpenDataSciTuiService
 from opendatasci._tui.session import CLISessionInfo
 from opendatasci.agents.agents_factory import create_agent
-from opendatasci.configs import OpenDataSciConfig
+from opendatasci.configs import (
+    DEFAULT_MODEL,
+    DEFAULT_SECONDARY_MODEL,
+    PROVIDER_KEY_FIELD,
+    OpenDataSciConfig,
+)
+from opendatasci.models.providers import Provider
 from opendatasci.streaming import BaseAgentStreamEvent
 from opendatasci.streaming.events import (
     ApprovalRequiredEvent,
@@ -53,8 +59,13 @@ from .adapter import (
 )
 from .commands import (
     format_help_message,
+    format_missing_api_key_message,
+    format_model_switched_message,
     format_models_message,
+    format_theme_switched_message,
     format_themes_message,
+    format_unknown_provider_message,
+    format_unknown_theme_message,
 )
 from .completion import CompletionState
 from .file_refs import (
@@ -104,7 +115,11 @@ class CLIController:
         self._pending_handles: dict[int, PendingMessageHandle] = {}
         self._cfg: OpenDataSciConfig | None = None
         self._completion = (
-            completion if completion is not None else CompletionState(extra_commands=[])
+            completion
+            if completion is not None
+            else CompletionState(
+                extra_commands=[], config_provider=lambda: self._cfg or self._base_config
+            )
         )
         self._paste_attachment: PasteAttachment | None = None
 
@@ -148,6 +163,10 @@ class CLIController:
             await self._service.close()
         await self._exit_stack.aclose()
 
+    def apply_config_updates(self, values: dict[str, str]) -> None:
+        """Merge onboarding-collected *values* into the base config before boot."""
+        self._base_config = self._base_config.model_copy(update=values)
+
     # ── Boot ──────────────────────────────────────────────────────────────────
 
     async def boot(self) -> None:
@@ -177,17 +196,17 @@ class CLIController:
             hint = self._did_you_mean(self._workspace_path)
             await self._fail_boot(
                 ui,
-                f"❌ File not found: `{escape_markup(self._workspace_path)}`\n\n"
+                f"File not found: `{escape_markup(self._workspace_path)}`\n\n"
                 f"Check the path and try again.{hint}",
             )
         except PermissionError:
             await self._fail_boot(
-                ui, f"❌ Permission denied: `{escape_markup(self._workspace_path)}`"
+                ui, f"Permission denied: `{escape_markup(self._workspace_path)}`"
             )
         except ValueError as exc:
-            await self._fail_boot(ui, f"❌ Provider error: {exc}")
+            await self._fail_boot(ui, f"Provider error: {exc}")
         except Exception as exc:
-            await self._fail_boot(ui, f"❌ Failed to load: {exc}")
+            await self._fail_boot(ui, f"Failed to load: {exc}")
 
     async def _fail_boot(self, ui: UIAdapter, msg_text: str) -> None:
         self._boot_failed = True
@@ -301,7 +320,7 @@ class CLIController:
         valid_refs, missing_refs = _split_existing_file_refs(refs)
         for ref in missing_refs:
             await self._ui.add_message(
-                "agent", f"⚠️ File not found: {escape_markup(ref._path)}"
+                "agent", f"File not found: {escape_markup(ref._path)}"
             ).finish()
 
         if refs and not clean_text and not valid_refs and attachment is None:
@@ -340,13 +359,13 @@ class CLIController:
             if self._boot_failed:
                 await self._ui.add_message(
                     "agent",
-                    "❌ Startup failed, so queries can't run in this session. "
+                    "Startup failed, so queries can't run in this session. "
                     "Fix the problem shown above and restart the app "
                     "(type `/exit` to quit).",
                 ).finish()
             else:
                 await self._ui.add_message(
-                    "agent", "⚠️ Still loading — please wait a moment and try again."
+                    "agent", "Still loading — please wait a moment and try again."
                 ).finish()
             return
 
@@ -430,7 +449,6 @@ class CLIController:
             else None
         )
         lines = [
-            f"[bold {theme['warning']}]❓[/bold {theme['warning']}]  "
             f"[bold {theme['text_primary']}]{question}[/bold {theme['text_primary']}]\n"
         ]
         for label, choice_text in zip(labels, choices):
@@ -570,15 +588,31 @@ class CLIController:
             await self.show_help()
         elif cmd == "/themes":
             await self.show_themes()
+        elif cmd == "/theme":
+            await self.switch_theme(self._command_args(raw))
+        elif cmd == "/model":
+            await self.switch_model(self._command_args(raw))
+        elif cmd == "/provider":
+            parts = raw.split()[1:]
+            await self.switch_provider(
+                parts[0] if parts else "", parts[1] if len(parts) > 1 else None
+            )
+        elif cmd == "/secondary-model":
+            await self.switch_secondary_model(self._command_args(raw))
+        elif cmd == "/secondary-provider":
+            parts = raw.split()[1:]
+            await self.switch_secondary_provider(
+                parts[0] if parts else "", parts[1] if len(parts) > 1 else None
+            )
         elif cmd == "/vars":
             await self._ui.add_message(
                 "agent",
-                "⚠️ `/vars` has been removed. Use `/help` to see available commands.",
+                "`/vars` has been removed. Use `/help` to see available commands.",
             ).finish()
         else:
             await self._ui.add_message(
                 "agent",
-                f"⚠️ Unknown command: `{cmd}`\n\nType `/help` to see all available commands.",
+                f"Unknown command: `{cmd}`\n\nType `/help` to see all available commands.",
             ).finish()
         return False
 
@@ -594,7 +628,7 @@ class CLIController:
                 await self._service.reset_session()
                 await self._ui.add_message("agent", "✓ Session reset.").finish()
             except Exception as exc:
-                await self._ui.add_message("agent", f"❌ Reset failed: {exc}").finish()
+                await self._ui.add_message("agent", f"✗ Reset failed: {exc}").finish()
         else:
             await self._ui.add_message("agent", "Not loaded yet.").finish()
 
@@ -612,7 +646,7 @@ class CLIController:
                 await self._service.clear_context()
             except Exception as exc:
                 logger.exception("Failed to clear service context")
-                await self._ui.add_message("agent", f"❌ Clear failed: {exc}").finish()
+                await self._ui.add_message("agent", f"✗ Clear failed: {exc}").finish()
                 return
         await self._ui.add_message("agent", "✓ Context cleared.").finish()
 
@@ -627,7 +661,7 @@ class CLIController:
         try:
             await self._service.compact_chat_history()
         except Exception as exc:
-            await status.set_content(f"❌ Compact failed: {exc}")
+            await status.set_content(f"✗ Compact failed: {exc}")
             if compact_timer is not None:
                 compact_timer.stop()
             await status.finish()
@@ -668,6 +702,206 @@ class CLIController:
             format_themes_message(_theme.active_name, _theme.THEME_DESCRIPTIONS),
         ).finish()
 
+    @staticmethod
+    def _command_args(raw: str) -> str:
+        """Return everything after the command token, stripped (``""`` if none)."""
+        parts = raw.split(maxsplit=1)
+        return parts[1].strip() if len(parts) > 1 else ""
+
+    # ── Live theme/model/provider switching ──────────────────────────────────
+
+    async def switch_theme(self, name: str) -> None:
+        """Switch the colour theme in place — no restart required."""
+        name = name.strip().lower()
+        if not name:
+            await self._ui.add_message(
+                "agent",
+                "Usage: `/theme <name>`\n\n"
+                + format_themes_message(_theme.active_name, _theme.THEME_DESCRIPTIONS),
+            ).finish()
+            return
+        if not _theme.set_active(name):
+            await self._ui.add_message(
+                "agent", format_unknown_theme_message(name, _theme.THEME_DESCRIPTIONS)
+            ).finish()
+            return
+        self._ui.refresh_theme()
+        await self._ui.add_message("agent", format_theme_switched_message(name)).finish()
+
+    async def switch_model(self, model_name: str) -> None:
+        """Switch the primary model, rebuilding the agent with the current provider."""
+        model_name = model_name.strip()
+        if not model_name:
+            await self._ui.add_message("agent", "Usage: `/model <model-name>`").finish()
+            return
+        if self._cfg is None:
+            await self._ui.add_message("agent", "Not loaded yet.").finish()
+            return
+        if self._agent_running:
+            await self._ui.add_message(
+                "agent", "Agent is running — stop it first with `/stop`."
+            ).finish()
+            return
+        if model_name == self._base_config.model:
+            await self._ui.add_message("agent", f"Already using model `{model_name}`.").finish()
+            return
+        new_cfg = self._base_config.model_copy(update={"model": model_name})
+        await self._switch_config(new_cfg, f"model `{model_name}`")
+
+    async def switch_provider(self, provider_name: str, model_name: str | None) -> None:
+        """Switch provider (and optionally model), rebuilding the agent."""
+        provider_name = provider_name.strip()
+        if not provider_name:
+            await self._ui.add_message(
+                "agent", "Usage: `/provider <provider-name> [model]`"
+            ).finish()
+            return
+        if self._cfg is None:
+            await self._ui.add_message("agent", "Not loaded yet.").finish()
+            return
+        if self._agent_running:
+            await self._ui.add_message(
+                "agent", "Agent is running — stop it first with `/stop`."
+            ).finish()
+            return
+        try:
+            provider = Provider(provider_name.lower())
+        except ValueError:
+            await self._ui.add_message(
+                "agent", format_unknown_provider_message(provider_name)
+            ).finish()
+            return
+        key_field = PROVIDER_KEY_FIELD.get(provider)
+        if key_field and not getattr(self._base_config, key_field, None):
+            await self._ui.add_message(
+                "agent", format_missing_api_key_message(provider, key_field)
+            ).finish()
+            return
+        model = model_name.strip() if model_name else DEFAULT_MODEL[provider]
+        new_cfg = self._base_config.model_copy(update={"provider": provider, "model": model})
+        await self._switch_config(new_cfg, f"provider `{provider}`")
+
+    async def switch_secondary_model(self, model_name: str) -> None:
+        """Switch the secondary model, rebuilding the agent with the current secondary provider."""
+        model_name = model_name.strip()
+        if not model_name:
+            await self._ui.add_message(
+                "agent", "Usage: `/secondary-model <model-name>`"
+            ).finish()
+            return
+        if self._cfg is None:
+            await self._ui.add_message("agent", "Not loaded yet.").finish()
+            return
+        if self._agent_running:
+            await self._ui.add_message(
+                "agent", "Agent is running — stop it first with `/stop`."
+            ).finish()
+            return
+        if model_name == self._base_config.secondary_model:
+            await self._ui.add_message(
+                "agent", f"Already using secondary model `{model_name}`."
+            ).finish()
+            return
+        new_cfg = self._base_config.model_copy(update={"secondary_model": model_name})
+        await self._switch_config(new_cfg, f"secondary model `{model_name}`", secondary=True)
+
+    async def switch_secondary_provider(
+        self, provider_name: str, model_name: str | None
+    ) -> None:
+        """Switch the secondary provider (and optionally model), rebuilding the agent."""
+        provider_name = provider_name.strip()
+        if not provider_name:
+            await self._ui.add_message(
+                "agent", "Usage: `/secondary-provider <provider-name> [model]`"
+            ).finish()
+            return
+        if self._cfg is None:
+            await self._ui.add_message("agent", "Not loaded yet.").finish()
+            return
+        if self._agent_running:
+            await self._ui.add_message(
+                "agent", "Agent is running — stop it first with `/stop`."
+            ).finish()
+            return
+        try:
+            provider = Provider(provider_name.lower())
+        except ValueError:
+            await self._ui.add_message(
+                "agent", format_unknown_provider_message(provider_name)
+            ).finish()
+            return
+        key_field = PROVIDER_KEY_FIELD.get(provider)
+        if key_field and not getattr(self._base_config, key_field, None):
+            await self._ui.add_message(
+                "agent", format_missing_api_key_message(provider, key_field)
+            ).finish()
+            return
+        model = model_name.strip() if model_name else DEFAULT_SECONDARY_MODEL[provider]
+        new_cfg = self._base_config.model_copy(
+            update={"secondary_provider": provider, "secondary_model": model}
+        )
+        await self._switch_config(new_cfg, f"secondary provider `{provider}`", secondary=True)
+
+    async def _switch_config(
+        self, new_cfg: OpenDataSciConfig, label: str, secondary: bool = False
+    ) -> None:
+        """Rebuild the agent from *new_cfg*, swapping it in only on success."""
+        status = self._ui.add_message("agent", f"Switching to {label}…")
+        await status.set_content(f"Switching to {label}…")
+        error = await self._rebuild_agent(new_cfg)
+        if error is not None:
+            await status.set_content(f"✗ Failed to switch to {label}: {error}")
+        elif secondary:
+            await status.set_content(
+                format_model_switched_message(
+                    self._base_config.secondary_provider, self._base_config.secondary_model
+                )
+            )
+        else:
+            await status.set_content(
+                format_model_switched_message(self._base_config.provider, self._base_config.model)
+            )
+        await status.finish()
+
+    async def _rebuild_agent(self, new_base_config: OpenDataSciConfig) -> str | None:
+        """Boot a fresh agent from *new_base_config*, swapping it in only on success.
+
+        The current session (service + exit stack) is left completely
+        untouched until the new agent has booted successfully, so a bad
+        model/provider switch never leaves the user without a working
+        session. Returns an error string on failure, or ``None`` on success.
+        """
+        resolved_path = Path(self._workspace_path).resolve()
+        config_search_path = resolved_path if resolved_path.is_dir() else resolved_path.parent
+        exit_stack = AsyncExitStack()
+        try:
+            mcp_servers = load_mcp_servers(config_search_path)
+            cfg = new_base_config.model_copy(update={"mcp_servers": mcp_servers})
+            agent = await exit_stack.enter_async_context(
+                create_agent(self._workspace_path, config=cfg)
+            )
+            workspace_path = Path(agent._workspace.get_reference())
+            service = OpenDataSciTuiService(
+                agent=agent, sandbox=agent._sandbox, workspace_path=workspace_path
+            )
+        except Exception as exc:
+            await exit_stack.aclose()
+            return str(exc)
+
+        old_service = self._service
+        old_exit_stack = self._exit_stack
+        self._service = service
+        self._exit_stack = exit_stack
+        self._base_config = new_base_config
+        self._cfg = cfg
+        if old_service is not None:
+            await old_service.close()
+        await old_exit_stack.aclose()
+
+        info = CLISessionInfo.from_path(self._workspace_path, workspace_path, cfg)
+        self._ui.set_file_count(self._describe_data(info))
+        return None
+
     async def stop_agent(self) -> None:
         """Stop the currently running agent turn."""
         if not self._agent_running:
@@ -676,7 +910,7 @@ class CLIController:
         self._ui.stop_agent()
         if self._service is not None:
             await self._service.rewind_turn()
-        await self._ui.add_message("agent", "⏹ Agent stopped. You can continue from here.").finish()
+        await self._ui.add_message("agent", "Agent stopped. You can continue from here.").finish()
 
     async def cancel_pending_messages(self) -> None:
         """Discard every message currently queued behind a running agent turn."""
@@ -717,6 +951,6 @@ class CLIController:
         try:
             files = self._service.get_workspace_files()
         except Exception as exc:
-            await self._ui.add_message("agent", f"❌ {exc}").finish()
+            await self._ui.add_message("agent", f"✗ {exc}").finish()
             return
         self._ui.show_workspace_panel(files)

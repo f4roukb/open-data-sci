@@ -158,7 +158,7 @@ opendatasci PATH [OPTIONS]
 | `--secondary-provider` | *(same as `--provider`)* | Provider for the secondary (auxiliary) model — may differ from `--provider` |
 | `--secondary-model` | *(provider default)* | Secondary model name for lightweight tasks (summarisation, etc.) |
 | `--api-key` | *(env var)* | API key for the primary provider. Falls back to the standard env var for the selected provider |
-| `--theme` | `default` | Colour palette. Choices: `default`, `accessible`, `light`, `solarized`, `dracula`. Run `/themes` inside the TUI for descriptions |
+| `--theme` | `default` | Colour palette. Choices: `default`, `accessible`, `light`, `solarized`, `dracula`. Run `/themes` inside the TUI for descriptions, or switch live any time with `/theme <name>` |
 | `--config` | *(none)* | Path to a YAML file containing `OpenDataSciConfig` fields; explicit TUI flags take precedence |
 | `--list-providers` | | Print all supported providers and their default models, then exit |
 | `--version` | | Print the installed version, then exit |
@@ -199,11 +199,18 @@ Type `/` in the input box to trigger autocomplete. All commands are available at
 | `/compact` | Summarise and compress conversation history to free up context |
 | `/help` | Show all available commands |
 | `/ls-workspace` | List all files currently in the workspace |
+| `/model <name>` | Switch the primary model without restarting, e.g. `/model claude-opus-4-8` |
 | `/models` | Show the primary and secondary model in use |
+| `/provider <name> [model]` | Switch provider (and optionally model) without restarting, e.g. `/provider openai` |
 | `/reset` | Reset the agent session and reload data from disk |
+| `/secondary-model <name>` | Switch the secondary model without restarting, e.g. `/secondary-model gpt-5.6-luna` |
+| `/secondary-provider <name> [model]` | Switch the secondary provider (and optionally model) without restarting, e.g. `/secondary-provider openai` |
 | `/stop` | Stop the currently running agent turn (future messages resume from where it left off) |
+| `/theme <name>` | Switch colour theme instantly, e.g. `/theme dracula` |
 | `/themes` | List available colour themes with descriptions |
 | `/exit` | Quit OpenDataSci |
+
+Switching model or provider mid-session rebuilds the agent in the background; if the new provider/model fails to start (e.g. a missing API key), the error is reported and your current session keeps running untouched. Tab-completion for `/theme`, `/model`, and `/provider` (and their `/secondary-*` counterparts) suggests valid names as you type — model suggestions are scoped to whichever provider (primary or secondary) is currently active.
 
 Sending a message while the agent is still working doesn't reject it — it's pinned above the input box as a queued message and run automatically, in order, once the agent finishes (unless the agent is waiting on your answer to a question). Use `/cancel-message` or `/cancel-all-messages` to discard queued messages instead of waiting for them to run.
 
@@ -238,7 +245,7 @@ The agent sees the attached content as structured context inline with your messa
 
 ## Themes
 
-Select a theme at launch with `--theme`. Run `/themes` inside the TUI to see descriptions.
+Select a theme at launch with `--theme`, or switch live at any time with `/theme <name>` — no restart required. Run `/themes` inside the TUI to see descriptions.
 
 | Name | Description |
 |------|-------------|

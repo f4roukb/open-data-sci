@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Live in-TUI configuration** — `/theme <name>`, `/model <name>`, `/provider <name> [model]`, and their `/secondary-model` / `/secondary-provider` counterparts switch the colour theme, primary model/provider, or secondary model/provider without restarting the app. Model/provider switches rebuild the agent in the background and swap it in only on success, so a bad switch (missing API key, unreachable provider) leaves the current session running untouched.
+- **Tab-completion for the new config commands** — `/theme`, `/provider`, and `/secondary-provider` suggest valid names as you type; `/model` and `/secondary-model` suggest known model names scoped to whichever provider (primary or secondary, respectively) is currently active.
+
+### Changed
+
+- **TUI header trimmed** — the docked header drops its Model line (still available via `/models`) and shrinks from 5 to 4 rows, giving the conversation more vertical space.
+- **TUI dropped decorative emoji in favor of its existing plain-glyph vocabulary** (▸ selection, ✓/✗ done/error, braille spinner) — this covers the approval prompt, thinking indicator, queued-message pill, parallel-worker header, attachment pill, and status/error chat messages. The per-tool emoji icon (`ToolDisplay.icon`) shown on every tool-call status line has been removed entirely rather than just hidden.
+- **TUI "Thinking…" indicator now uses the same braille spinner as tool-call status lines** instead of its own dot-cycle animation on a separate timer, so every "in progress" indicator in the app looks and moves the same way.
+- **TUI command-approval prompt is more compact** — the description now shares a line with the "Approval required" header instead of a separate boilerplate sentence, and the blank-line padding between sections is gone, cutting the prompt from 8-9 lines to 4-5 without changing its keybindings.
+
+### Removed
+
+- **Dead TUI theme keys** — `thinking` and `muted_bg` were defined in every palette but their only consumer (an unused `MessageBubble.thinking` CSS rule, for a message role nothing ever creates) has been removed too.
+
 ## [0.2.1] - 2026-07-21
 
 ### Fixed

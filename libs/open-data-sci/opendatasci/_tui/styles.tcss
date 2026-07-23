@@ -10,20 +10,20 @@ Screen {
 
 AppHeader {
     dock: top;
-    height: 5;
+    height: 4;
     background: $ods-surface;
     border-bottom: solid $ods-separator;
 }
 
 #header-logo {
     width: 23;
-    height: 5;
+    height: 4;
     padding-left: 2;
     content-align: center middle;
 }
 
 #header-info {
-    height: 5;
+    height: 4;
     padding: 1 3 1 2;
     content-align: left middle;
 }
@@ -126,12 +126,6 @@ MessageBubble {
 MessageBubble.user {
     background: $ods-surface-alt;
     border-left: thick $ods-accent;
-    padding: 0 2;
-}
-
-MessageBubble.thinking {
-    background: $ods-muted-bg;
-    border-left: thick $ods-text-muted;
     padding: 0 2;
 }
 

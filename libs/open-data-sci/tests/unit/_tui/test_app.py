@@ -178,6 +178,21 @@ def _make_app() -> tuple[OpenDataSciApp, MagicMock]:
     return app, mock_input
 
 
+# ---------------------------------------------------------------------------
+# OpenDataSciApp.refresh_theme — live /theme <name> switching
+# ---------------------------------------------------------------------------
+
+
+class TestRefreshTheme:
+    def test_refresh_theme_calls_refresh_css(self) -> None:
+        app, _ = _make_app()
+        app.refresh_css = MagicMock()
+
+        app.refresh_theme()
+
+        app.refresh_css.assert_called_once()
+
+
 class TestOnSubmitHistory:
     async def test_push_history_called_for_non_empty_submission(self) -> None:
         app, mock_input = _make_app()

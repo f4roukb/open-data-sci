@@ -11,6 +11,7 @@ import pytest
 
 from opendatasci._tui.commands import SLASH_COMMANDS
 from opendatasci._tui.completion import CompletionState
+from opendatasci.configs import OpenDataSciConfig
 
 
 # ---------------------------------------------------------------------------
@@ -214,6 +215,136 @@ class TestCompletionStateOnInputChangedAtMode:
             state.on_input_changed("describe @d", ui)
         # "@" is at index 9 in "describe @d"
         assert state._at_pos == 9
+
+
+# ---------------------------------------------------------------------------
+# on_input_changed — arg mode (/theme, /model, /provider, /secondary-*)
+# ---------------------------------------------------------------------------
+
+
+class TestCompletionStateOnInputChangedArgMode:
+    def test_theme_arg_shows_popup(self) -> None:
+        state = CompletionState()
+        ui = _make_ui()
+        state.on_input_changed("/theme dra", ui)
+        ui.show_completion.assert_called_once()
+
+    def test_theme_arg_matches_are_theme_names(self) -> None:
+        state = CompletionState()
+        ui = _make_ui()
+        state.on_input_changed("/theme dra", ui)
+        assert "dracula" in state._matches
+
+    def test_theme_arg_mode_is_set(self) -> None:
+        state = CompletionState()
+        ui = _make_ui()
+        state.on_input_changed("/theme dra", ui)
+        assert state._mode == "arg"
+
+    def test_theme_arg_no_match_hides_popup(self) -> None:
+        state = CompletionState()
+        ui = _make_ui()
+        state.on_input_changed("/theme zzz_nope", ui)
+        ui.show_completion.assert_not_called()
+        assert state.has_matches is False
+
+    def test_provider_arg_matches_are_provider_names(self) -> None:
+        state = CompletionState()
+        ui = _make_ui()
+        state.on_input_changed("/provider open", ui)
+        assert "openai" in state._matches
+
+    def test_secondary_provider_arg_matches_are_provider_names(self) -> None:
+        state = CompletionState()
+        ui = _make_ui()
+        state.on_input_changed("/secondary-provider anthro", ui)
+        assert "anthropic" in state._matches
+
+    def test_non_completable_command_does_not_enter_arg_mode(self) -> None:
+        # /reset takes no argument — typing a space after it must not open a popup.
+        state = CompletionState()
+        ui = _make_ui()
+        state.on_input_changed("/reset x", ui)
+        ui.show_completion.assert_not_called()
+
+    def test_second_argument_does_not_trigger_arg_mode(self) -> None:
+        # /provider openai gpt-... — once past the first argument, no completion.
+        state = CompletionState()
+        ui = _make_ui()
+        state.on_input_changed("/provider openai gp", ui)
+        ui.show_completion.assert_not_called()
+
+    def test_model_arg_with_no_config_provider_has_no_matches(self) -> None:
+        state = CompletionState()  # no config_provider supplied
+        ui = _make_ui()
+        state.on_input_changed("/model cla", ui)
+        ui.show_completion.assert_not_called()
+        assert state.has_matches is False
+
+    def test_model_arg_uses_config_provider_for_current_provider(self) -> None:
+        cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        state = CompletionState(config_provider=lambda: cfg)
+        ui = _make_ui()
+        state.on_input_changed("/model cla", ui)
+        assert all(m.startswith("claude") for m in state._matches)
+        assert len(state._matches) > 0
+
+    def test_model_arg_excludes_other_providers_models(self) -> None:
+        cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        state = CompletionState(config_provider=lambda: cfg)
+        ui = _make_ui()
+        state.on_input_changed("/model gpt", ui)
+        # "gpt-*" models belong to openai, not the active (anthropic) provider.
+        ui.show_completion.assert_not_called()
+        assert state.has_matches is False
+
+    def test_secondary_model_arg_uses_secondary_provider(self) -> None:
+        cfg = OpenDataSciConfig(
+            provider="anthropic",
+            model="claude-sonnet-4-6",
+            secondary_provider="openai",
+            secondary_model="gpt-5.6-luna",
+        )
+        state = CompletionState(config_provider=lambda: cfg)
+        ui = _make_ui()
+        state.on_input_changed("/secondary-model gpt", ui)
+        assert all(m.startswith("gpt") for m in state._matches)
+        assert len(state._matches) > 0
+
+    def test_secondary_model_arg_excludes_primary_providers_models(self) -> None:
+        cfg = OpenDataSciConfig(
+            provider="anthropic",
+            model="claude-sonnet-4-6",
+            secondary_provider="openai",
+            secondary_model="gpt-5.6-luna",
+        )
+        state = CompletionState(config_provider=lambda: cfg)
+        ui = _make_ui()
+        state.on_input_changed("/secondary-model claude", ui)
+        ui.show_completion.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# cycle — arg mode
+# ---------------------------------------------------------------------------
+
+
+class TestCompletionStateCycleArgMode:
+    def test_cycle_replaces_fragment_keeping_command_prefix(self) -> None:
+        state = CompletionState()
+        ui = _make_ui()
+        state.on_input_changed("/theme dra", ui)
+        ui.reset_mock()
+        state.cycle("/theme dra", direction=1, ui=ui)
+        new_value = ui.set_input_value.call_args[0][0]
+        assert new_value == "/theme dracula"
+
+    def test_cycle_sets_completing_flag(self) -> None:
+        state = CompletionState()
+        ui = _make_ui()
+        state.on_input_changed("/theme dra", ui)
+        state.cycle("/theme dra", direction=1, ui=ui)
+        assert state._completing is True
 
 
 # ---------------------------------------------------------------------------

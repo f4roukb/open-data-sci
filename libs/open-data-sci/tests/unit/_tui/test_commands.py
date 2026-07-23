@@ -7,8 +7,13 @@ from opendatasci._tui.commands import (
     SLASH_COMMAND_DESCRIPTIONS,
     _fmt_model,
     format_help_message,
+    format_missing_api_key_message,
+    format_model_switched_message,
     format_models_message,
     format_themes_message,
+    format_theme_switched_message,
+    format_unknown_provider_message,
+    format_unknown_theme_message,
 )
 
 
@@ -111,6 +116,26 @@ class TestFormatHelpMessage:
     def test_clear_command_described(self) -> None:
         msg = format_help_message()
         assert "/clear" in msg
+
+    def test_theme_switch_command_described(self) -> None:
+        msg = format_help_message()
+        assert "/theme" in msg
+
+    def test_model_switch_command_described(self) -> None:
+        msg = format_help_message()
+        assert "/model" in msg
+
+    def test_provider_switch_command_described(self) -> None:
+        msg = format_help_message()
+        assert "/provider" in msg
+
+    def test_secondary_model_switch_command_described(self) -> None:
+        msg = format_help_message()
+        assert "/secondary-model" in msg
+
+    def test_secondary_provider_switch_command_described(self) -> None:
+        msg = format_help_message()
+        assert "/secondary-provider" in msg
 
     def test_help_command_described(self) -> None:
         msg = format_help_message()
@@ -233,3 +258,98 @@ class TestSlashCommandsRegistry:
     def test_descriptions_are_non_empty_strings(self) -> None:
         for cmd, desc in SLASH_COMMAND_DESCRIPTIONS.items():
             assert isinstance(desc, str) and desc.strip(), f"{cmd!r} has empty description"
+
+    def test_theme_switch_command_registered(self) -> None:
+        assert "/theme" in SLASH_COMMANDS
+
+    def test_model_switch_command_registered(self) -> None:
+        assert "/model" in SLASH_COMMANDS
+
+    def test_provider_switch_command_registered(self) -> None:
+        assert "/provider" in SLASH_COMMANDS
+
+    def test_secondary_model_switch_command_registered(self) -> None:
+        assert "/secondary-model" in SLASH_COMMANDS
+
+    def test_secondary_provider_switch_command_registered(self) -> None:
+        assert "/secondary-provider" in SLASH_COMMANDS
+
+
+# ---------------------------------------------------------------------------
+# format_theme_switched_message / format_unknown_theme_message
+# ---------------------------------------------------------------------------
+
+
+class TestFormatThemeSwitchedMessage:
+    def test_contains_theme_name(self) -> None:
+        assert "dracula" in format_theme_switched_message("dracula")
+
+    def test_contains_confirmation_marker(self) -> None:
+        assert "✓" in format_theme_switched_message("light")
+
+
+class TestFormatUnknownThemeMessage:
+    def test_contains_requested_name(self) -> None:
+        msg = format_unknown_theme_message("bogus", {"default": "A", "light": "B"})
+        assert "bogus" in msg
+
+    def test_lists_valid_theme_names(self) -> None:
+        msg = format_unknown_theme_message("bogus", {"default": "A", "light": "B"})
+        assert "default" in msg
+        assert "light" in msg
+
+    def test_contains_error_marker(self) -> None:
+        msg = format_unknown_theme_message("bogus", {"default": "A"})
+        assert "✗" in msg
+
+
+# ---------------------------------------------------------------------------
+# format_model_switched_message
+# ---------------------------------------------------------------------------
+
+
+class TestFormatModelSwitchedMessage:
+    def test_contains_formatted_model_name(self) -> None:
+        msg = format_model_switched_message("anthropic", "claude-sonnet-4-6")
+        assert "Sonnet" in msg
+
+    def test_contains_confirmation_marker(self) -> None:
+        msg = format_model_switched_message("anthropic", "claude-sonnet-4-6")
+        assert "✓" in msg
+
+
+# ---------------------------------------------------------------------------
+# format_unknown_provider_message
+# ---------------------------------------------------------------------------
+
+
+class TestFormatUnknownProviderMessage:
+    def test_contains_requested_name(self) -> None:
+        assert "bogus" in format_unknown_provider_message("bogus")
+
+    def test_lists_known_providers(self) -> None:
+        msg = format_unknown_provider_message("bogus")
+        assert "anthropic" in msg
+        assert "openai" in msg
+
+    def test_contains_error_marker(self) -> None:
+        assert "✗" in format_unknown_provider_message("bogus")
+
+
+# ---------------------------------------------------------------------------
+# format_missing_api_key_message
+# ---------------------------------------------------------------------------
+
+
+class TestFormatMissingApiKeyMessage:
+    def test_contains_provider_display_name(self) -> None:
+        msg = format_missing_api_key_message("openai", "openai_api_key")
+        assert "OpenAI" in msg
+
+    def test_contains_env_var_name(self) -> None:
+        msg = format_missing_api_key_message("openai", "openai_api_key")
+        assert "OPENAI_API_KEY" in msg
+
+    def test_contains_error_marker(self) -> None:
+        msg = format_missing_api_key_message("openai", "openai_api_key")
+        assert "✗" in msg

@@ -39,6 +39,22 @@ DEFAULT_SECONDARY_MODEL: MappingProxyType[Provider, str] = MappingProxyType(
     }
 )
 
+# Maps a provider to the OpenDataSciConfig field that holds its API key.
+# Providers that use cloud-native auth (bedrock, vertexai, ollama) have no
+# key field, so switching to them never requires an API key check.
+PROVIDER_KEY_FIELD: MappingProxyType[Provider, str | None] = MappingProxyType(
+    {
+        Provider.ANTHROPIC: "anthropic_api_key",
+        Provider.OPENAI: "openai_api_key",
+        Provider.GEMINI: "google_api_key",
+        Provider.AZURE: "azure_api_key",
+        Provider.OPENAI_COMPATIBLE_SERVER: "openai_api_key",
+        Provider.BEDROCK: None,
+        Provider.VERTEXAI: None,
+        Provider.OLLAMA: None,
+    }
+)
+
 
 class OpenDataSciConfig(BaseSettings):
     """Configuration for OpenDataSci.

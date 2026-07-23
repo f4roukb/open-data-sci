@@ -11,13 +11,11 @@ DARK: dict[str, str] = {
     "background": "#060a10",  # screen background
     "surface": "#0d1117",  # header / input / popup / code-fence background
     "surface_alt": "#0e1520",  # user bubble / blockquote / scrollbar track
-    "muted_bg": "#1e2228",  # thinking bubble background
     "warning_bg": "#1c1408",  # question / pending bubble background
     "accent": "#79c0ff",  # soft blue
     "success": "#4caa5e",  # muted sage-green
     "error": "#c97a74",  # muted terracotta-red
     "warning": "#c9963a",  # muted amber
-    "thinking": "#9f75d6",  # muted lavender
     "text_primary": "#e6edf3",
     "text_secondary": "#8b949e",
     "text_muted": "#6e7681",
@@ -34,13 +32,11 @@ VISIBLE: dict[str, str] = {
     "background": "#060a10",
     "surface": "#0d1117",
     "surface_alt": "#0a1520",
-    "muted_bg": "#1e2228",
     "warning_bg": "#1c1608",
     "accent": "#56b4e9",  # sky blue
     "success": "#009e73",  # bluish green / teal
     "error": "#d55e00",  # vermilion
     "warning": "#e69f00",  # orange
-    "thinking": "#cc79a7",  # reddish purple
     "text_primary": "#f5f5f5",
     "text_secondary": "#a0b0c0",
     "text_muted": "#8090a0",
@@ -57,13 +53,11 @@ LIGHT: dict[str, str] = {
     "background": "#ffffff",
     "surface": "#f6f8fa",
     "surface_alt": "#eaeef2",
-    "muted_bg": "#eaeef2",
     "warning_bg": "#fff8c5",
     "accent": "#0969da",
     "success": "#1a7f37",
     "error": "#cf222e",
     "warning": "#9a6700",
-    "thinking": "#8250df",
     "text_primary": "#1f2328",
     "text_secondary": "#656d76",
     "text_muted": "#8c959f",
@@ -80,13 +74,11 @@ SOLARIZED: dict[str, str] = {
     "background": "#002b36",  # base03
     "surface": "#073642",  # base02
     "surface_alt": "#08404e",
-    "muted_bg": "#0a3540",
     "warning_bg": "#2c2d10",
     "accent": "#268bd2",  # blue
     "success": "#859900",  # green
     "error": "#dc322f",  # red
     "warning": "#b58900",  # yellow
-    "thinking": "#6c71c4",  # violet
     "text_primary": "#fdf6e3",  # base3
     "text_secondary": "#93a1a1",  # base1
     "text_muted": "#586e75",  # base01
@@ -103,13 +95,11 @@ DRACULA: dict[str, str] = {
     "background": "#21222c",
     "surface": "#282a36",  # canonical Dracula background
     "surface_alt": "#2f3140",
-    "muted_bg": "#343746",
     "warning_bg": "#3b3223",
     "accent": "#bd93f9",  # purple
     "success": "#50fa7b",  # green
     "error": "#ff5555",  # red
     "warning": "#ffb86c",  # orange
-    "thinking": "#ff79c6",  # pink
     "text_primary": "#f8f8f2",  # foreground
     "text_secondary": "#6272a4",  # comment
     "text_muted": "#44475a",
@@ -143,6 +133,23 @@ THEME_DESCRIPTIONS: dict[str, str] = {
     "dracula": "Dracula — vivid pastels on near-black",
 }
 
-# Mutated at startup by OpenDataSciApp based on --theme flag.
+# Mutated at startup by OpenDataSciApp based on --theme flag, and at runtime
+# by set_active() when the user switches themes with /theme <name>.
 active: dict[str, str] = dict(DARK)
 active_name: str = "default"
+
+
+def set_active(name: str) -> bool:
+    """Switch the active palette to *name* in place.
+
+    Returns ``True`` and updates ``active``/``active_name`` when *name* is a
+    registered theme; returns ``False`` and leaves the current theme
+    untouched otherwise, so callers can tell a valid switch from a no-op.
+    """
+    global active_name
+    if name not in THEMES:
+        return False
+    active.clear()
+    active.update(THEMES[name])
+    active_name = name
+    return True

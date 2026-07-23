@@ -15,6 +15,7 @@ from opendatasci._tui.widgets import (
     AppHeader,
     AttachmentBar,
     ChatPane,
+    CommandApprovalPrompt,
     CommandHighlighter,
     CompletionPopup,
     MessageBubble,
@@ -58,8 +59,6 @@ def _make_header(version: str = "0.1.0") -> AppHeader:
     """Instantiate AppHeader bypassing Textual Widget.__init__."""
     header = AppHeader.__new__(AppHeader)
     header._version = version
-    header._provider = "anthropic"
-    header._model = "claude-sonnet-4-6"
     header._workspace = "/tmp/data"
     header._workspace_name = None
     header._file_count = ""
@@ -81,6 +80,11 @@ class TestAppHeaderVersionString:
     def test_version_string_shown(self) -> None:
         text = _render_info_plain(_make_header(version="1.2.3"))
         assert "v1.2.3" in text
+
+    def test_no_model_line_rendered(self) -> None:
+        # Model info now lives behind /models, not the always-on header.
+        text = _render_info_plain(_make_header())
+        assert "Model" not in text
 
 
 # ---------------------------------------------------------------------------
@@ -674,7 +678,7 @@ class TestToolCallBlockCommunicationOnly:
 class TestToolCallBlockWorkerRowRendering:
     """Worker block renders a subtree:
 
-        ⚡ Parallelizing
+        Parallelizing
           └─ ⣾ Worker 1: …
           └─ ⣾ Worker 2: …
 
@@ -695,8 +699,8 @@ class TestToolCallBlockWorkerRowRendering:
         block = _make_block(communication="", worker_summaries=["w1"])
         lines = self._rendered_lines(block)
         # While workers run, the spinner is prepended to the header by
-        # _status_markup; expected layout is "{spin} ⚡ Parallelizing".
-        assert "⚡ Parallelizing" in lines[0]
+        # _status_markup; expected layout is "{spin} Parallelizing".
+        assert "Parallelizing" in lines[0]
         assert not lines[0].rstrip().endswith(":")
 
     def test_header_done_state_has_no_trailing_colon(self) -> None:
@@ -704,7 +708,7 @@ class TestToolCallBlockWorkerRowRendering:
         block._worker_statuses[0] = "done"
         lines = self._rendered_lines(block)
         # All workers terminal → header rendered in the done style (no spinner).
-        assert lines[0] == "⚡ Parallelizing"
+        assert lines[0] == "Parallelizing"
 
     def test_running_worker_row_has_indented_tree_prefix_before_spinner(self) -> None:
         block = _make_block(communication="", worker_summaries=["w1"])
@@ -745,6 +749,103 @@ def _make_bubble(role: str, content: str = "") -> MessageBubble:
     bubble._write_lock = asyncio.Lock()
     bubble._ready = asyncio.Event()
     return bubble
+
+
+# ---------------------------------------------------------------------------
+# CommandApprovalPrompt — pure rendering logic (no DOM)
+# ---------------------------------------------------------------------------
+
+
+def _make_prompt(description: str = "Run script", heads_up: str = "") -> CommandApprovalPrompt:
+    """Instantiate CommandApprovalPrompt bypassing Textual Widget.__init__."""
+    prompt = CommandApprovalPrompt.__new__(CommandApprovalPrompt)
+    prompt._description = description
+    prompt._heads_up = heads_up
+    prompt._selected = 0
+    prompt._resolved = False
+    return prompt
+
+
+def _prompt_rendered_lines(prompt: CommandApprovalPrompt) -> list[str]:
+    """Call _refresh_content() and return the plain lines passed to Static.update()."""
+    captured: list[Text] = []
+    mock_static = MagicMock()
+    mock_static.update.side_effect = captured.append
+    prompt.query_one = MagicMock(return_value=mock_static)
+    prompt._refresh_content()
+    assert captured, "_refresh_content() never called Static.update()"
+    return captured[-1].plain.splitlines()
+
+
+class TestCommandApprovalPromptRefreshContent:
+    """Compact layout: header+description share a line, no blank-line padding.
+
+    Unresolved:              Resolved:
+        Approval required — <description>      Approval required — <description>
+        <heads_up>                              <heads_up>
+        ▸ Yes                                   ✓ Yes
+          No
+        ↑↓ select  Enter confirm  Esc decline
+    """
+
+    def test_header_and_description_share_first_line(self) -> None:
+        lines = _prompt_rendered_lines(_make_prompt(description="Deletes temporary files"))
+        assert lines[0] == "Approval required — Deletes temporary files"
+
+    def test_no_blank_lines_in_unresolved_layout(self) -> None:
+        lines = _prompt_rendered_lines(_make_prompt(heads_up="Files are gone for good"))
+        assert "" not in lines
+
+    def test_heads_up_shown_without_emoji_when_present(self) -> None:
+        lines = _prompt_rendered_lines(_make_prompt(heads_up="Files are gone for good"))
+        assert "Files are gone for good" in lines
+        assert not any("⚠" in line for line in lines)
+
+    def test_heads_up_omitted_when_empty(self) -> None:
+        lines = _prompt_rendered_lines(_make_prompt(heads_up=""))
+        assert not any("⚠" in line for line in lines)
+        # Header line, then straight to Yes/No — no empty heads-up line either.
+        assert lines[1].strip().lstrip("▸").strip() in ("Yes", "No")
+
+    def test_selected_option_marked_with_arrow(self) -> None:
+        prompt = _make_prompt()
+        prompt._selected = 0
+        lines = _prompt_rendered_lines(prompt)
+        assert any(line.startswith("▸ Yes") for line in lines)
+
+    def test_moving_selection_marks_no(self) -> None:
+        prompt = _make_prompt()
+        prompt._selected = 1
+        lines = _prompt_rendered_lines(prompt)
+        assert any(line.startswith("▸ No") for line in lines)
+
+    def test_hint_line_present_while_unresolved(self) -> None:
+        lines = _prompt_rendered_lines(_make_prompt())
+        assert any("Enter confirm" in line for line in lines)
+
+    def test_resolved_yes_shows_only_check_marked_choice(self) -> None:
+        prompt = _make_prompt()
+        prompt._selected = 0
+        prompt._resolved = True
+        lines = _prompt_rendered_lines(prompt)
+        assert any(line.startswith("✓ Yes") for line in lines)
+        assert not any("No" in line for line in lines)
+        assert not any("Enter confirm" in line for line in lines)
+
+    def test_resolved_layout_has_exactly_two_lines_without_heads_up(self) -> None:
+        prompt = _make_prompt(description="Do the thing")
+        prompt._selected = 0
+        prompt._resolved = True
+        lines = _prompt_rendered_lines(prompt)
+        assert lines == ["Approval required — Do the thing", "✓ Yes"]
+
+    def test_no_emoji_anywhere_in_output(self) -> None:
+        lines = _prompt_rendered_lines(
+            _make_prompt(description="Do the thing", heads_up="Heads up text")
+        )
+        text = "\n".join(lines)
+        assert "🛡" not in text
+        assert "⚠️" not in text
 
 
 class TestMessageBubbleCompose:
@@ -1055,6 +1156,35 @@ class TestThinkingBlock:
         block._spin_timer = None
         block.finish("Thought for 1s")
         block.remove.assert_not_called()
+
+    def test_on_mount_uses_shared_spinner_interval(self) -> None:
+        # Must use the same SPINNER_INTERVAL as ToolCallBlock, not a private
+        # literal, so the two "in progress" indicators never drift apart again.
+        block = self._make_block()
+        block.set_interval = MagicMock(return_value=MagicMock())  # type: ignore[assignment]
+        block.on_mount()
+        block.set_interval.assert_called_once_with(SPINNER_INTERVAL, block._tick)
+
+    def test_tick_cycles_through_shared_spinner_frames(self) -> None:
+        block = self._make_block()
+        assert block._spin_idx == 0
+        block._tick()
+        assert block._spin_idx == 1
+        rendered: Text = block.update.call_args[0][0]
+        assert rendered.plain.startswith(f"{SPINNER[1]} Thinking")
+
+    def test_tick_wraps_around_after_last_frame(self) -> None:
+        block = self._make_block()
+        block._spin_idx = len(SPINNER) - 1
+        block._tick()
+        assert block._spin_idx == 0
+
+    def test_display_has_no_emoji(self) -> None:
+        block = self._make_block()
+        block._update_display()
+        rendered: Text = block.update.call_args[0][0]
+        assert "💭" not in rendered.plain
+        assert rendered.plain == f"{SPINNER[0]} Thinking"
 
 
 # ---------------------------------------------------------------------------
@@ -1670,12 +1800,12 @@ class TestPendingMessageBubbleMount:
         rendered: Text = bubble.update.call_args[0][0]
         assert "analyse this dataset" in rendered.plain
 
-    def test_on_mount_renders_hourglass_emoji(self) -> None:
+    def test_on_mount_renders_no_emoji(self) -> None:
         bubble = PendingMessageBubble("query")
         bubble.update = MagicMock()
         bubble.on_mount()
         rendered: Text = bubble.update.call_args[0][0]
-        assert "⏳" in rendered.plain
+        assert "⏳" not in rendered.plain
 
 
 # ---------------------------------------------------------------------------

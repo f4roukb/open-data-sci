@@ -18,6 +18,7 @@ from opendatasci.streaming import (
     UsageEvent,
     WorkerDoneEvent,
 )
+from opendatasci._tui import theme as _theme
 from opendatasci._tui.controller import CLIController
 from opendatasci._tui.file_refs import (
     PasteAttachment,
@@ -1630,3 +1631,467 @@ class TestControllerStateProperties:
         assert controller.has_paste_attachment is True
         controller.clear_paste_attachment()
         assert controller.has_paste_attachment is False
+
+
+# ---------------------------------------------------------------------------
+# CLIController.switch_theme — live /theme <name> switching
+# ---------------------------------------------------------------------------
+
+
+class TestSwitchTheme:
+    async def test_valid_theme_updates_active_name(self, controller: CLIController) -> None:
+        await controller.switch_theme("dracula")
+        assert _theme.active_name == "dracula"
+
+    async def test_valid_theme_calls_ui_refresh_theme(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await controller.switch_theme("light")
+        mock_ui.refresh_theme.assert_called_once()
+
+    async def test_valid_theme_shows_confirmation(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await controller.switch_theme("light")
+        mock_ui.add_message.assert_called_once_with("agent", "✓ Theme switched to **light**.")
+
+    async def test_unknown_theme_shows_error(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await controller.switch_theme("bogus")
+        content = mock_ui.add_message.call_args[0][1]
+        assert "Unknown theme" in content
+        assert "bogus" in content
+
+    async def test_unknown_theme_does_not_change_active_name(
+        self, controller: CLIController
+    ) -> None:
+        await controller.switch_theme("bogus")
+        assert _theme.active_name == "default"
+
+    async def test_unknown_theme_does_not_refresh_ui(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await controller.switch_theme("bogus")
+        mock_ui.refresh_theme.assert_not_called()
+
+    async def test_empty_name_shows_usage_hint(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await controller.switch_theme("")
+        content = mock_ui.add_message.call_args[0][1]
+        assert "/theme" in content
+
+    async def test_name_matching_case_insensitive(self, controller: CLIController) -> None:
+        await controller.switch_theme("DRACULA")
+        assert _theme.active_name == "dracula"
+
+
+# ---------------------------------------------------------------------------
+# CLIController.switch_model / switch_provider - guard clauses
+# ---------------------------------------------------------------------------
+
+
+class TestSwitchModelGuards:
+    async def test_empty_name_shows_usage(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await controller.switch_model("")
+        content = mock_ui.add_message.call_args[0][1]
+        assert "/model" in content
+
+    async def test_not_loaded_shows_message(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await controller.switch_model("claude-opus-4-8")
+        content = mock_ui.add_message.call_args[0][1]
+        assert "Not loaded yet" in content
+
+    async def test_agent_running_shows_message(
+        self, loaded_controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        loaded_controller._cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        loaded_controller._agent_running = True
+        await loaded_controller.switch_model("claude-opus-4-8")
+        content = mock_ui.add_message.call_args[0][1]
+        assert "running" in content.lower()
+
+    async def test_same_model_shows_already_using_message(
+        self, loaded_controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        loaded_controller._cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        await loaded_controller.switch_model("claude-sonnet-4-6")
+        content = mock_ui.add_message.call_args[0][1]
+        assert "Already using" in content
+
+
+class TestSwitchProviderGuards:
+    async def test_empty_name_shows_usage(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await controller.switch_provider("", None)
+        content = mock_ui.add_message.call_args[0][1]
+        assert "/provider" in content
+
+    async def test_not_loaded_shows_message(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await controller.switch_provider("openai", None)
+        content = mock_ui.add_message.call_args[0][1]
+        assert "Not loaded yet" in content
+
+    async def test_agent_running_shows_message(
+        self, loaded_controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        loaded_controller._cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        loaded_controller._agent_running = True
+        await loaded_controller.switch_provider("openai", None)
+        content = mock_ui.add_message.call_args[0][1]
+        assert "running" in content.lower()
+
+    async def test_unknown_provider_shows_error(
+        self, loaded_controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        loaded_controller._cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        await loaded_controller.switch_provider("bogus", None)
+        content = mock_ui.add_message.call_args[0][1]
+        assert "Unknown provider" in content
+
+    async def test_missing_api_key_shows_error(
+        self, loaded_controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        loaded_controller._cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        await loaded_controller.switch_provider("openai", None)
+        content = mock_ui.add_message.call_args[0][1]
+        assert "No API key configured" in content
+
+    async def test_missing_api_key_does_not_touch_service(
+        self, loaded_controller: CLIController, mock_service: MagicMock
+    ) -> None:
+        loaded_controller._cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        await loaded_controller.switch_provider("openai", None)
+        assert loaded_controller._service is mock_service
+
+
+# ---------------------------------------------------------------------------
+# CLIController._rebuild_agent - swap-on-success semantics for /model, /provider
+# ---------------------------------------------------------------------------
+
+
+def _wire_boot_mocks(mock_agent: MagicMock, mock_service_instance: MagicMock):
+    mock_workspace = MagicMock()
+    mock_workspace.get_reference.return_value = "/tmp/fake_workspace"
+    mock_sandbox = MagicMock()
+    mock_sandbox.get_history = MagicMock(return_value=[])
+    mock_agent.__aenter__ = AsyncMock(return_value=mock_agent)
+    mock_agent.__aexit__ = AsyncMock(return_value=None)
+    mock_agent._workspace = mock_workspace
+    mock_agent._sandbox = mock_sandbox
+    mock_create_agent = MagicMock(return_value=mock_agent)
+    mock_service_cls = MagicMock(return_value=mock_service_instance)
+    fake_info = MagicMock(is_directory=False, workspaces=[{"name": "data.csv"}], workspace_count=1)
+    return mock_create_agent, mock_service_cls, fake_info
+
+
+class TestSwitchModelSuccess:
+    async def _switch(self, controller: CLIController, mock_service_instance: MagicMock):
+        mock_agent = MagicMock()
+        mock_create_agent, mock_service_cls, fake_info = _wire_boot_mocks(
+            mock_agent, mock_service_instance
+        )
+        with (
+            patch("pathlib.Path.is_file", return_value=True),
+            patch("pathlib.Path.is_dir", return_value=False),
+            patch("opendatasci._tui.controller.create_agent", mock_create_agent),
+            patch("opendatasci._tui.controller.OpenDataSciTuiService", mock_service_cls),
+            patch("opendatasci._tui.session.CLISessionInfo.from_path", return_value=fake_info),
+            patch("opendatasci.tools.mcp.load_mcp_servers", return_value=[]),
+            patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
+        ):
+            await controller.switch_model("claude-opus-4-8")
+        return mock_create_agent
+
+    async def test_switch_swaps_in_new_service(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        controller._cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        old_service = MagicMock()
+        old_service.close = AsyncMock()
+        controller._service = old_service
+        new_service = MagicMock()
+        await self._switch(controller, new_service)
+        assert controller._service is new_service
+        old_service.close.assert_awaited_once()
+
+    async def test_switch_updates_base_config_model(self, controller: CLIController) -> None:
+        controller._cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        controller._service = MagicMock()
+        controller._service.close = AsyncMock()
+        await self._switch(controller, MagicMock())
+        assert controller._base_config.model == "claude-opus-4-8"
+
+    async def test_switch_shows_confirmation(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        controller._cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        controller._service = MagicMock()
+        controller._service.close = AsyncMock()
+        await self._switch(controller, MagicMock())
+        handle = mock_ui.add_message.return_value
+        set_calls = [c.args[0] for c in handle.set_content.call_args_list]
+        assert any("✓" in text for text in set_calls)
+
+
+class TestRebuildAgentFailure:
+    async def test_failed_switch_keeps_old_service(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        controller._cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        old_service = MagicMock()
+        old_service.close = AsyncMock()
+        controller._service = old_service
+
+        with (
+            patch("pathlib.Path.is_file", return_value=True),
+            patch("pathlib.Path.is_dir", return_value=False),
+            patch(
+                "opendatasci._tui.controller.create_agent",
+                side_effect=RuntimeError("boom"),
+            ),
+            patch("opendatasci.tools.mcp.load_mcp_servers", return_value=[]),
+            patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
+        ):
+            await controller.switch_model("claude-opus-4-8")
+
+        assert controller._service is old_service
+        old_service.close.assert_not_awaited()
+
+    async def test_failed_switch_shows_error(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        controller._cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        controller._service = MagicMock()
+
+        with (
+            patch("pathlib.Path.is_file", return_value=True),
+            patch("pathlib.Path.is_dir", return_value=False),
+            patch(
+                "opendatasci._tui.controller.create_agent",
+                side_effect=RuntimeError("boom"),
+            ),
+            patch("opendatasci.tools.mcp.load_mcp_servers", return_value=[]),
+            patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
+        ):
+            await controller.switch_model("claude-opus-4-8")
+
+        handle = mock_ui.add_message.return_value
+        set_calls = [c.args[0] for c in handle.set_content.call_args_list]
+        assert any("Failed to switch" in text and "boom" in text for text in set_calls)
+
+
+# ---------------------------------------------------------------------------
+# Slash dispatch - /theme, /model, /provider
+# ---------------------------------------------------------------------------
+
+
+class TestSlashDispatchConfigSwitching:
+    async def test_slash_theme_invokes_switch_theme(self, controller: CLIController) -> None:
+        controller.switch_theme = AsyncMock()
+        await controller._handle_slash("/theme dracula")
+        controller.switch_theme.assert_awaited_once_with("dracula")
+
+    async def test_slash_model_invokes_switch_model(self, controller: CLIController) -> None:
+        controller.switch_model = AsyncMock()
+        await controller._handle_slash("/model claude-opus-4-8")
+        controller.switch_model.assert_awaited_once_with("claude-opus-4-8")
+
+    async def test_slash_provider_invokes_switch_provider(
+        self, controller: CLIController
+    ) -> None:
+        controller.switch_provider = AsyncMock()
+        await controller._handle_slash("/provider openai gpt-5.6-sol")
+        controller.switch_provider.assert_awaited_once_with("openai", "gpt-5.6-sol")
+
+    async def test_slash_provider_without_model_passes_none(
+        self, controller: CLIController
+    ) -> None:
+        controller.switch_provider = AsyncMock()
+        await controller._handle_slash("/provider openai")
+        controller.switch_provider.assert_awaited_once_with("openai", None)
+
+    async def test_slash_theme_without_arg_passes_empty_string(
+        self, controller: CLIController
+    ) -> None:
+        controller.switch_theme = AsyncMock()
+        await controller._handle_slash("/theme")
+        controller.switch_theme.assert_awaited_once_with("")
+
+
+# ---------------------------------------------------------------------------
+# CLIController.switch_secondary_model / switch_secondary_provider
+# ---------------------------------------------------------------------------
+
+
+class TestSwitchSecondaryModelGuards:
+    async def test_empty_name_shows_usage(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await controller.switch_secondary_model("")
+        content = mock_ui.add_message.call_args[0][1]
+        assert "/secondary-model" in content
+
+    async def test_not_loaded_shows_message(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await controller.switch_secondary_model("gpt-5.6-luna")
+        content = mock_ui.add_message.call_args[0][1]
+        assert "Not loaded yet" in content
+
+    async def test_agent_running_shows_message(
+        self, loaded_controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        loaded_controller._cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        loaded_controller._agent_running = True
+        await loaded_controller.switch_secondary_model("gpt-5.6-luna")
+        content = mock_ui.add_message.call_args[0][1]
+        assert "running" in content.lower()
+
+    async def test_same_secondary_model_shows_already_using_message(
+        self, loaded_controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        loaded_controller._cfg = cfg
+        loaded_controller._base_config = cfg
+        await loaded_controller.switch_secondary_model(cfg.secondary_model)
+        content = mock_ui.add_message.call_args[0][1]
+        assert "Already using" in content
+
+
+class TestSwitchSecondaryProviderGuards:
+    async def test_empty_name_shows_usage(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await controller.switch_secondary_provider("", None)
+        content = mock_ui.add_message.call_args[0][1]
+        assert "/secondary-provider" in content
+
+    async def test_not_loaded_shows_message(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await controller.switch_secondary_provider("openai", None)
+        content = mock_ui.add_message.call_args[0][1]
+        assert "Not loaded yet" in content
+
+    async def test_agent_running_shows_message(
+        self, loaded_controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        loaded_controller._cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        loaded_controller._agent_running = True
+        await loaded_controller.switch_secondary_provider("openai", None)
+        content = mock_ui.add_message.call_args[0][1]
+        assert "running" in content.lower()
+
+    async def test_unknown_provider_shows_error(
+        self, loaded_controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        loaded_controller._cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        await loaded_controller.switch_secondary_provider("bogus", None)
+        content = mock_ui.add_message.call_args[0][1]
+        assert "Unknown provider" in content
+
+    async def test_missing_api_key_shows_error(
+        self, loaded_controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        loaded_controller._cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        await loaded_controller.switch_secondary_provider("openai", None)
+        content = mock_ui.add_message.call_args[0][1]
+        assert "No API key configured" in content
+
+
+class TestSwitchSecondaryModelSuccess:
+    async def test_switch_updates_base_config_secondary_model(
+        self, controller: CLIController
+    ) -> None:
+        controller._cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        controller._service = MagicMock()
+        controller._service.close = AsyncMock()
+        mock_agent = MagicMock()
+        mock_create_agent, mock_service_cls, fake_info = _wire_boot_mocks(mock_agent, MagicMock())
+        with (
+            patch("pathlib.Path.is_file", return_value=True),
+            patch("pathlib.Path.is_dir", return_value=False),
+            patch("opendatasci._tui.controller.create_agent", mock_create_agent),
+            patch("opendatasci._tui.controller.OpenDataSciTuiService", mock_service_cls),
+            patch("opendatasci._tui.session.CLISessionInfo.from_path", return_value=fake_info),
+            patch("opendatasci.tools.mcp.load_mcp_servers", return_value=[]),
+            patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
+        ):
+            await controller.switch_secondary_model("gpt-5.6-luna")
+        assert controller._base_config.secondary_model == "gpt-5.6-luna"
+        # Primary model/provider are untouched by a secondary-model switch.
+        assert controller._base_config.model == "claude-sonnet-4-6"
+
+    async def test_switch_shows_confirmation_referencing_secondary_model(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        controller._cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        controller._service = MagicMock()
+        controller._service.close = AsyncMock()
+        mock_agent = MagicMock()
+        mock_create_agent, mock_service_cls, fake_info = _wire_boot_mocks(mock_agent, MagicMock())
+        with (
+            patch("pathlib.Path.is_file", return_value=True),
+            patch("pathlib.Path.is_dir", return_value=False),
+            patch("opendatasci._tui.controller.create_agent", mock_create_agent),
+            patch("opendatasci._tui.controller.OpenDataSciTuiService", mock_service_cls),
+            patch("opendatasci._tui.session.CLISessionInfo.from_path", return_value=fake_info),
+            patch("opendatasci.tools.mcp.load_mcp_servers", return_value=[]),
+            patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
+        ):
+            await controller.switch_secondary_model("gpt-5.6-luna")
+        handle = mock_ui.add_message.return_value
+        set_calls = [c.args[0] for c in handle.set_content.call_args_list]
+        assert any("gpt-5.6-luna" in text or "luna" in text.lower() for text in set_calls)
+
+
+class TestSecondarySlashDispatch:
+    async def test_slash_secondary_model_invokes_switch(
+        self, controller: CLIController
+    ) -> None:
+        controller.switch_secondary_model = AsyncMock()
+        await controller._handle_slash("/secondary-model gpt-5.6-luna")
+        controller.switch_secondary_model.assert_awaited_once_with("gpt-5.6-luna")
+
+    async def test_slash_secondary_provider_invokes_switch(
+        self, controller: CLIController
+    ) -> None:
+        controller.switch_secondary_provider = AsyncMock()
+        await controller._handle_slash("/secondary-provider openai gpt-5.6-luna")
+        controller.switch_secondary_provider.assert_awaited_once_with("openai", "gpt-5.6-luna")
+
+    async def test_slash_secondary_provider_without_model_passes_none(
+        self, controller: CLIController
+    ) -> None:
+        controller.switch_secondary_provider = AsyncMock()
+        await controller._handle_slash("/secondary-provider openai")
+        controller.switch_secondary_provider.assert_awaited_once_with("openai", None)
+
+
+class TestCompletionConfigProviderWiring:
+    def test_default_completion_config_provider_returns_base_config(self) -> None:
+        ui = MagicMock()
+        cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        ctrl = CLIController(
+            ui=ui, workspace_path="/fake/data.csv", datasci_config=cfg, session_id="s0"
+        )
+        assert ctrl._completion._config_provider() is cfg
+
+    def test_completion_config_provider_prefers_booted_cfg(self) -> None:
+        ui = MagicMock()
+        cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        ctrl = CLIController(
+            ui=ui, workspace_path="/fake/data.csv", datasci_config=cfg, session_id="s0"
+        )
+        booted_cfg = cfg.model_copy(update={"model": "claude-opus-4-8"})
+        ctrl._cfg = booted_cfg
+        assert ctrl._completion._config_provider() is booted_cfg

@@ -172,7 +172,7 @@ opendatasci data.csv --config opendatasci_config.yaml
 | `--secondary-provider` | *(same as `--provider`)* | Provider for the secondary model |
 | `--secondary-model` | *(provider default)* | Secondary model for lightweight tasks |
 | `--api-key` | *(env var)* | API key for the primary provider |
-| `--theme` | `default` | Colour theme: `default`, `accessible`, `light`, `solarized`, `dracula` |
+| `--theme` | `default` | Colour theme: `default`, `accessible`, `light`, `solarized`, `dracula`. Switchable live in-session with `/theme <name>` |
 | `--debug` | `false` | Enable debug output — writes a detailed `opendatasci_debug.log` |
 | `--config` | | Path to a YAML config file |
 | `--list-providers` | | Print all providers and default models, then exit |

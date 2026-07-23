@@ -5,8 +5,20 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from opendatasci._tui import theme as _theme
 from opendatasci._tui.controller import CLIController, UIAdapter
 from opendatasci.configs import OpenDataSciConfig
+
+
+@pytest.fixture(autouse=True)
+def _restore_active_theme():
+    """theme.set_active() mutates module-level globals; keep tests isolated."""
+    saved_active = dict(_theme.active)
+    saved_name = _theme.active_name
+    yield
+    _theme.active.clear()
+    _theme.active.update(saved_active)
+    _theme.active_name = saved_name
 
 
 def _make_message_handle() -> MagicMock:

@@ -90,5 +90,8 @@ class UIAdapter(Protocol):
     def show_attachment(self, label: str) -> None: ...
     def hide_attachment(self) -> None: ...
 
+    def refresh_theme(self) -> None:
+        """Re-apply the active theme palette (call after opendatasci._tui.theme.set_active)."""
+
     def stop_agent(self) -> None:
         """Cancel the running agent worker. No-op if nothing is running."""

@@ -633,11 +633,11 @@ class TestSubagentEventActivityFallbacks:
     async def test_activity_falls_back_to_registry_label_when_no_summary(self) -> None:
         """When the subagent event carries no summary but the tool has a
         ToolDisplay in REGISTRY, the row activity must surface the registry
-        label (with icon) instead of the raw tool name."""
+        label instead of the raw tool name."""
         from opendatasci._tui.tools_display import ToolDisplay, _registry, register
 
         original = _registry.get("fake_demo_tool")
-        register("fake_demo_tool", ToolDisplay(label="Demo Tool", icon="🎯"))
+        register("fake_demo_tool", ToolDisplay(label="Demo Tool"))
         try:
             p, wb = await self._setup()
             p.handle_subagent_event(
@@ -649,8 +649,7 @@ class TestSubagentEventActivityFallbacks:
                 )
             )
             _, activity = wb.update_worker_activity.call_args.args
-            assert "🎯" in activity
-            assert "Demo Tool" in activity
+            assert activity == "Demo Tool"
         finally:
             if original is not None:
                 _registry["fake_demo_tool"] = original
@@ -692,22 +691,13 @@ class TestMakeLabel:
         assert "_" not in label
         assert label == "My Mcp Tool Name"
 
-    def test_registered_tool_uses_display_label_and_icon(self) -> None:
+    def test_registered_tool_uses_display_label(self) -> None:
         from opendatasci._tui.tools_display import ToolDisplay
 
-        td = ToolDisplay(label="Run Code", icon="🐍")
+        td = ToolDisplay(label="Run Code")
         event = ToolCallEvent(tool="execute_python_code", tool_call_id="tc1", summary="")
         label = _TurnPresenter._make_label(td, event)
-        assert "Run Code" in label
-        assert "🐍" in label
-
-    def test_registered_tool_without_icon_returns_label_only(self) -> None:
-        from opendatasci._tui.tools_display import ToolDisplay
-
-        td = ToolDisplay(label="Do Something", icon="")
-        event = ToolCallEvent(tool="do_something", tool_call_id="tc1", summary="")
-        label = _TurnPresenter._make_label(td, event)
-        assert label == "Do Something"
+        assert label == "Run Code"
 
 
 # ---------------------------------------------------------------------------

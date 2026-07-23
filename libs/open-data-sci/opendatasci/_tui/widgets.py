@@ -28,7 +28,7 @@ try:
 except ImportError:
     _TUIImage = None
 
-from .commands import SLASH_COMMANDS, _fmt_model
+from .commands import SLASH_COMMANDS
 from .models import SPINNER, SPINNER_INTERVAL
 from .theme import active as theme
 
@@ -66,21 +66,17 @@ class AppHeader(Widget):
     """Docked top bar: logo left, version/workspace info right."""
 
     DEFAULT_CSS = """
-    #header-layout { layout: horizontal; height: 5; }
+    #header-layout { layout: horizontal; height: 4; }
     """
 
     def __init__(
         self,
         version: str,
-        provider: str,
-        model: str,
         workspace: str,
         workspace_name: str | None = None,
     ) -> None:
         super().__init__()
         self._version = version
-        self._provider = provider
-        self._model = model
         self._workspace = workspace
         self._workspace_name = workspace_name
         self._file_count: str = ""
@@ -121,9 +117,6 @@ class AppHeader(Widget):
         if self._workspace_name:
             t.append("   Workspace  ", style=lbl)
             t.append(self._workspace_name, style=theme["accent"])
-        t.append("\n")
-        t.append("Model      ", style=lbl)
-        t.append(_fmt_model(self._provider, self._model), style=theme["text_primary"])
         self.query_one("#header-info", Static).update(t)
 
     def set_workspace(self, name: str | None) -> None:
@@ -195,7 +188,7 @@ class TurnStatusBar(Static):
 
     def _tick(self) -> None:
         s = int(time.monotonic() - self._start)
-        label = f"Working for {self._fmt(s)}{self._context_suffix()}"
+        label = f"Sciencing for {self._fmt(s)}{self._context_suffix()}"
         self.update(f"[{theme['text_muted']}]{label}[/{theme['text_muted']}]")
 
     def update_context(self, context_tokens: int | None, cached_tokens: int | None) -> None:
@@ -212,7 +205,7 @@ class TurnStatusBar(Static):
         if self._interval is not None:
             self._interval.stop()
         s = int(time.monotonic() - self._start)
-        label = f"Worked for {self._fmt(s)}{self._context_suffix()}"
+        label = f"Scienced for {self._fmt(s)}{self._context_suffix()}"
         self.update(f"[{theme['text_muted']}]{label}[/{theme['text_muted']}]")
 
     def on_unmount(self) -> None:
@@ -509,7 +502,7 @@ class AttachmentBar(Static):
     def show_pill(self, label: str) -> None:
         safe = escape(label)
         markup = (
-            f"[bold {theme['accent']}]📎 {safe}[/bold {theme['accent']}]"
+            f"[bold {theme['accent']}]{safe}[/bold {theme['accent']}]"
             f"  [dim {theme['text_muted']}](Esc to discard)[/dim {theme['text_muted']}]"
         )
         self.update(Text.from_markup(markup))
@@ -696,15 +689,11 @@ class CommandApprovalPrompt(Widget):
 
     def _refresh_content(self) -> None:
         lines = [
-            f"[bold {theme['warning']}]🛡  Approval required[/bold {theme['warning']}]",
-            "",
-            f"[{theme['text_primary']}]I need your approval to run a bash "
-            f"script:[/{theme['text_primary']}]",
-            f"[{theme['text_primary']}]{escape(self._description)}[/{theme['text_primary']}]",
+            f"[bold {theme['warning']}]Approval required[/bold {theme['warning']}]"
+            f" — [{theme['text_primary']}]{escape(self._description)}[/{theme['text_primary']}]"
         ]
         if self._heads_up:
-            lines.append(f"[{theme['warning']}]⚠️  {escape(self._heads_up)}[/{theme['warning']}]")
-        lines.append("")
+            lines.append(f"[{theme['warning']}]{escape(self._heads_up)}[/{theme['warning']}]")
         for idx, option in enumerate(self._OPTIONS):
             if self._resolved:
                 if idx == self._selected:
@@ -717,11 +706,10 @@ class CommandApprovalPrompt(Widget):
             else:
                 lines.append(f"  [{theme['text_secondary']}]{option}[/{theme['text_secondary']}]")
         if not self._resolved:
-            lines += [
-                "",
+            lines.append(
                 f"[dim {theme['text_secondary']}]↑↓ select  Enter confirm  "
-                f"Esc decline[/dim {theme['text_secondary']}]",
-            ]
+                f"Esc decline[/dim {theme['text_secondary']}]"
+            )
         self.query_one("#approval-prompt-content", Static).update(
             Text.from_markup("\n".join(lines))
         )
@@ -766,27 +754,23 @@ class ThinkingBlock(Static):
     }
     """
 
-    _DOTS = ["", ".", "..", "..."]
-
     def __init__(self) -> None:
         super().__init__("")
-        self._dot_idx = 0
+        self._spin_idx = 0
         self._spin_timer: Timer | None = None
 
     def on_mount(self) -> None:
-        self._spin_timer = self.set_interval(0.35, self._tick)
+        self._spin_timer = self.set_interval(SPINNER_INTERVAL, self._tick)
         self._update_display()
 
     def _tick(self) -> None:
-        self._dot_idx = (self._dot_idx + 1) % len(self._DOTS)
+        self._spin_idx = (self._spin_idx + 1) % len(SPINNER)
         self._update_display()
 
     def _update_display(self) -> None:
-        dots = self._DOTS[self._dot_idx]
+        spin = SPINNER[self._spin_idx]
         self.update(
-            Text.from_markup(
-                f"[dim {theme['text_muted']}]💭 Thinking{dots}[/dim {theme['text_muted']}]"
-            )
+            Text.from_markup(f"[dim {theme['text_muted']}]{spin} Thinking[/dim {theme['text_muted']}]")
         )
 
     def dismiss(self) -> None:
@@ -830,7 +814,7 @@ class PendingMessageBubble(Static):
     def on_mount(self) -> None:
         self.update(
             Text.from_markup(
-                f"[bold {theme['warning']}]⏳ Queued[/bold {theme['warning']}]  {self._text}"
+                f"[bold {theme['warning']}]Queued[/bold {theme['warning']}]  {self._text}"
             )
         )
 
@@ -1032,7 +1016,7 @@ class ToolCallBlock(Static):
             if self._communication:
                 lines.append(escape(self._communication))
                 lines.append("")
-            lines.append(self._status_markup("⚡ Parallelizing", done=self._done or all_terminal))
+            lines.append(self._status_markup("Parallelizing", done=self._done or all_terminal))
             for i, s in enumerate(self._worker_summaries):
                 if self._done:
                     # Force-done: keep terminal rows as-is; promote any still-running row to
