@@ -64,8 +64,8 @@ register(
     ToolDisplay(label="Checking available libraries", icon="📦", summary_arg="summary"),
 )
 register(
-    "enter_plan_mode",
-    ToolDisplay(label="Planning the next steps", icon="🎯", summary_arg="summary"),
+    "switch_agentic_mode",
+    ToolDisplay(label="Switching mode", icon="🔀", summary_arg="summary"),
 )
 register("exit_plan_mode", ToolDisplay(label="Planning complete", icon="🏁", summary_arg="summary"))
 register("load_skill", ToolDisplay(label="Loading skill", icon="🧠", summary_arg="summary"))
@@ -105,10 +105,6 @@ register(
 register(
     "ask_user_mcq",
     ToolDisplay(label="Question", icon="💬", summary_arg="summary", display_status=False),
-)
-register(
-    "enter_self_review_mode",
-    ToolDisplay(label="Reviewing progress so far", icon="🔍", summary_arg="summary"),
 )
 register(
     "exit_self_review_mode",

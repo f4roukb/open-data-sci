@@ -58,8 +58,9 @@ from opendatasci.streaming import (
     ResponseEvent,
 )
 from opendatasci.tools import (
-    ToolName,
-    create_agent_tools,
+    create_execution_mode_tools,
+    create_plan_mode_tools,
+    create_self_review_mode_tools,
 )
 from opendatasci.workspace.base import BaseWorkspace
 
@@ -176,7 +177,7 @@ class Agent(BaseOpenDataSciAgent):
         )
 
         if self._tools is None:
-            self._tools = create_agent_tools(
+            self._tools = create_execution_mode_tools(
                 self._workspace,
                 self._sandbox,
                 self._context_store,
@@ -186,9 +187,8 @@ class Agent(BaseOpenDataSciAgent):
                 datasci_config=self._config,
             )
 
-        tools_restricted = [t for t in self._tools if t.name != ToolName.SPAWN_WORKERS]
-        self._tools_in_plan_mode: list[BaseTool] = tools_restricted
-        self._tools_in_self_review_mode: list[BaseTool] = tools_restricted
+        self._tools_in_plan_mode: list[BaseTool] = create_plan_mode_tools(self._tools)
+        self._tools_in_self_review_mode: list[BaseTool] = create_self_review_mode_tools(self._tools)
 
         self._llm_with_tools: _RetryRunnable = with_retry(self._llm.bind_tools(self._tools))
         self._llm_with_tools_plan: _RetryRunnable = with_retry(

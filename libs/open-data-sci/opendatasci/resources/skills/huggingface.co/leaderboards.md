@@ -1,4 +1,4 @@
-# Web — huggingface.co Leaderboards
+# huggingface.co — Leaderboards
 
 - Hugging Face Spaces host the leaderboards that matter for picking a model; go to the leaderboard for the *category* of model needed rather than searching generically, since rankings and available checkpoints shift often and general knowledge goes stale fast
 - Text embeddings / retrieval / reranking: `mteb/leaderboard` (Massive Text Embedding Benchmark) ranks models across retrieval, classification, clustering, STS, and reranking tasks — filter by task type first, then by model size, since the top overall model is rarely the best fit for a size-constrained deployment; the RTEB (Retrieval-focused Text Embedding Benchmark) tab isolates retrieval-only performance when that is the actual use case (e.g. RAG)
@@ -14,4 +14,4 @@
 
 ## Metadata
 
-- parent domain: web
+- parent domain: huggingface.co

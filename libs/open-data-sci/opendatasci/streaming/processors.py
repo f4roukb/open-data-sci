@@ -340,7 +340,7 @@ class AgentTurnStreamProcessor:
     def _unwrap_command_output(output: Any) -> Any:
         """Return the ToolMessage carried by a langgraph ``Command``.
 
-        State-mutating tools (``load_skill``, ``enter_plan_mode``,
+        State-mutating tools (``load_skill``, ``switch_agentic_mode``,
         ``exit_plan_mode``) return a ``Command`` whose ToolMessage lives in
         ``update["messages"]`` instead of being returned directly. A
         ``Command`` exposes neither ``content`` nor ``tool_call_id``, so

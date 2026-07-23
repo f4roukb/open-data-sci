@@ -144,13 +144,13 @@ class TestRegistryContents:
     def test_list_python_libs_summary_arg(self) -> None:
         assert REGISTRY["list_python_libs"].summary_arg == "summary"
 
-    # ── Planning ──────────────────────────────────────────────────────────────
+    # ── Modes ─────────────────────────────────────────────────────────────────
 
-    def test_enter_plan_mode_label(self) -> None:
-        assert REGISTRY["enter_plan_mode"].label == "Planning the next steps"
+    def test_switch_agentic_mode_label(self) -> None:
+        assert REGISTRY["switch_agentic_mode"].label == "Switching mode"
 
-    def test_enter_plan_mode_icon(self) -> None:
-        assert REGISTRY["enter_plan_mode"].icon == "🎯"
+    def test_switch_agentic_mode_icon(self) -> None:
+        assert REGISTRY["switch_agentic_mode"].icon == "🔀"
 
     def test_exit_plan_mode_label(self) -> None:
         assert REGISTRY["exit_plan_mode"].label == "Planning complete"
@@ -246,12 +246,6 @@ class TestRegistryContents:
         assert REGISTRY["ask_user_mcq"].display_status is False
 
     # ── Self-review ───────────────────────────────────────────────────────────
-
-    def test_enter_self_review_mode_label(self) -> None:
-        assert REGISTRY["enter_self_review_mode"].label == "Reviewing progress so far"
-
-    def test_enter_self_review_mode_icon(self) -> None:
-        assert REGISTRY["enter_self_review_mode"].icon == "🔍"
 
     def test_exit_self_review_mode_label(self) -> None:
         assert REGISTRY["exit_self_review_mode"].label == "Done reviewing progress"

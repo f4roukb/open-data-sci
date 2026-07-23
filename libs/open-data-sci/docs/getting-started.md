@@ -29,6 +29,24 @@ sudo dnf install -y bubblewrap socat ripgrep
 sudo pacman -S --noconfirm bubblewrap socat ripgrep
 ```
 
+Additionally, install the [GitHub CLI](https://cli.github.com) (`gh`) to use the built-in **`github.com`** skill (`execute_cli_command` shells out to it for read-oriented GitHub lookups):
+
+```bash
+# macOS
+brew install gh
+
+# Linux (Debian/Ubuntu)
+sudo apt install gh
+
+# Linux (Fedora)
+sudo dnf install gh
+
+# Linux (Arch)
+sudo pacman -S github-cli
+```
+
+`gh` runs unauthenticated inside the sandbox (the sandbox denies read access to `~/.config/gh`, so it can't inherit a host `gh auth login` session) — fine for public read-only lookups, subject to GitHub's unauthenticated rate limits.
+
 ### Provider extras
 
 The default installation includes the Anthropic and OpenAI clients. Install additional extras to unlock other providers:
@@ -44,13 +62,14 @@ The default installation includes the Anthropic and OpenAI clients. Install addi
 ### Capability extras
 
 ```bash
-pip install "open-data-sci[jax]"   # Deep learning — JAX, Flax, Optax
+pip install "open-data-sci[jax]"       # Deep learning — JAX, Flax, Optax
+pip install "open-data-sci[finance]"   # Finance data — yfinance
 ```
 
-The `[jax]` extra is required for the built-in **Deep Learning** skill. Combine extras freely:
+The `[jax]` extra is required for the built-in **Deep Learning** skill; `[finance]` for the built-in **`finance.yahoo.com`** skill. Combine extras freely:
 
 ```bash
-pip install "open-data-sci[aws,gemini,jax]"
+pip install "open-data-sci[aws,gemini,jax,finance]"
 ```
 
 ---

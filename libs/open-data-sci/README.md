@@ -49,6 +49,24 @@ sudo pacman -S --noconfirm bubblewrap socat ripgrep
 
 If you've cloned the repository, `make install-system-dependencies` runs the right command for your platform automatically.
 
+Additionally, install the [GitHub CLI](https://cli.github.com) (`gh`) to use the built-in **`github.com`** skill (`execute_cli_command` shells out to it for read-oriented GitHub lookups):
+
+```bash
+# macOS
+brew install gh
+
+# Linux (Debian/Ubuntu)
+sudo apt install gh
+
+# Linux (Fedora)
+sudo dnf install gh
+
+# Linux (Arch)
+sudo pacman -S github-cli
+```
+
+`gh` runs unauthenticated inside the sandbox (the sandbox denies read access to `~/.config/gh`, so it can't inherit a host `gh auth login` session) — fine for public read-only lookups, subject to GitHub's unauthenticated rate limits.
+
 ### Provider extras
 
 Install optional extras to unlock additional LLM providers:
@@ -65,14 +83,15 @@ pip install "open-data-sci[ollama]"    # Ollama (local models)
 
 ```bash
 pip install "open-data-sci[jax]"       # Deep learning — JAX, Flax, Optax
+pip install "open-data-sci[finance]"   # Finance data — yfinance
 ```
 
-The `[jax]` extra is required to use the **Deep Learning** skill. Without it, the agent's sandboxed Python environment has no training framework available.
+The `[jax]` extra is required to use the **Deep Learning** skill; without it, the agent's sandboxed Python environment has no training framework available. The `[finance]` extra is required to use the **`finance.yahoo.com`** skill.
 
 Multiple extras can be combined:
 
 ```bash
-pip install "open-data-sci[aws,gemini,jax]"
+pip install "open-data-sci[aws,gemini,jax,finance]"
 ```
 
 ---

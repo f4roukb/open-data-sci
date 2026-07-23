@@ -6,6 +6,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Six new built-in skill domains for curated site navigation** — one domain per external site, rather than a single umbrella `web` domain, since each site accrues enough distinct aspects to warrant its own set of skills:
+  - `kaggle.com` — `competitions` (Data/Leaderboard/Code/Discussion tabs, submission format), `datasets` (Data Card, licensing, usability score), `prior_editions_research` (finding and vetting past winning approaches).
+  - `arxiv.org` — `searching` (category/date scoping, cross-listings), `reading_papers` (abstract page first, revision history, code/checkpoint availability), `credibility` (weighing Comments field, citation count, and version history given the lack of peer review).
+  - `huggingface.co` — `leaderboards` (which Spaces leaderboard to check per model category, filtering for hardware fit, translating an entry into a memory/compute estimate).
+  - `github.com` — `repository_reconnaissance`, `issues_and_prs`, `code_and_repo_search`, covering GitHub interaction through the `gh` CLI (the agent has no browser). These teach which `gh` subcommand group to reach for and why, not exact flags/JSON field names — those drift across `gh` versions, so the skills point at `gh <command> --help` as the authority on current syntax.
+  - `paperswithcode.com` — `sota_leaderboards` (task/dataset-scoped leaderboards linking SOTA claims to runnable code, complementing `arxiv.org`).
+  - `finance.yahoo.com` — `yfinance_basics` (fetching single/multi-ticker price history, pulling fundamentals and corporate actions, and the reliability caveats of an unofficial API); requires the new `[finance]` extra.
+- **`gh` (GitHub CLI) is now runnable via `execute_cli_command`** — added to the sandbox's `ALLOWED_CLI_COMMANDS`, backing the new `github.com` skill. Since the allowlist only checks the binary name (not the subcommand), this trusts callers to stick to read-oriented usage (`view`/`list`/`diff`/`search`/`api` GET) rather than write subcommands, consistent with the existing trust placed in e.g. `tar`/`zip`. Two changes make this safe by construction rather than by convention alone:
+  - `SRTSandbox.execute_cli` now runs under a separate sandbox config (`_make_cli_config`) that allows network access scoped to GitHub's own hosts only (`github.com`, `api.github.com`, `codeload.github.com`, `objects.githubusercontent.com`, `raw.githubusercontent.com`); Python code execution (`execute`) is untouched and remains fully network-isolated, as does every other allowlisted CLI command.
+  - `~/.config/gh` was added to the sandbox's denied-read paths, so a sandboxed `gh` call can't inherit a host `gh auth login` session — it runs unauthenticated, subject to GitHub's public rate limits.
+  - Installing `gh` itself is a new system-dependency step (`brew install gh` / `apt install gh` / `dnf install gh` / `pacman -S github-cli`), documented alongside the existing ripgrep/bubblewrap/socat requirements; it is optional, only needed for the `github.com` skill.
+- **`finance` extra** (`pip install "open-data-sci[finance]"`) — installs `yfinance`, backing the new `finance.yahoo.com` skill.
+
+### Changed
+
+- **`fetch_url` no longer restricted to an allowlisted set of domains** — the tool now fetches any http(s) URL. `OpenDataSciConfig.extra_web_domains` / `override_web_domains` (env: `EXTRA_FETCH_DOMAINS`) and `create_web_tools`'s domain arguments are removed accordingly.
+- **`enter_plan_mode` and `enter_self_review_mode` merged into a single `switch_agentic_mode` tool** — takes a `mode` argument (`AgenticMode.PLAN` / `AgenticMode.SELF_REVIEW`) and refuses to switch while another mode is already active, regardless of which one. All mode-lifecycle tools (`switch_agentic_mode`, `exit_plan_mode`, `exit_self_review_mode`) now live together in a new `opendatasci/tools/modes.py`, replacing `tools/planning.py` and `tools/critic.py`. The "when to use Plan Mode vs. Self-Review Mode" guidance that used to live in the two entry tools' descriptions moved to the `# Modes` section of the main system prompt, since the tool now just points there.
+- **`tools/factory.py`'s `create_agent_tools` split into `create_execution_mode_tools`, `create_plan_mode_tools`, and `create_self_review_mode_tools`** — the latter two derive their tool lists from the first, dropping `spawn_workers` and `switch_agentic_mode` and keeping only the exit tool matching that mode. Previously both `exit_plan_mode` and `exit_self_review_mode` were bound to the LLM in *both* modes; each is now only visible to the model in its own mode.
+
 ## [0.2.1] - 2026-07-21
 
 ### Fixed
