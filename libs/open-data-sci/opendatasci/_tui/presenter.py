@@ -53,8 +53,11 @@ def apply_usage_event(event: UsageEvent, turn_status: TurnStatusHandle | None) -
 class _TurnPresenter:
     """Manages ephemeral UI state (bubbles, tool blocks, thinking) for one turn.
 
-    All methods are synchronous; awaiting happens inside ``MessageBubble``
-    and ``ToolCallBlock`` via Textual's own async machinery.
+    Handlers that touch a ``MessageHandle`` (``handle_token``,
+    ``handle_tool_call``, ``handle_error``, ``handle_exception``,
+    ``cleanup``) are async, since ``MessageHandle.append/set_content/finish``
+    are async (they await Textual's ``MarkdownStream``). The rest stay
+    synchronous.
     """
 
     def __init__(self, ui: UIAdapter) -> None:
@@ -118,11 +121,11 @@ class _TurnPresenter:
             self._thinking_start = time.monotonic()
             self._had_reasoning = True
 
-    def handle_token(self, event: TokenEvent) -> None:
+    async def handle_token(self, event: TokenEvent) -> None:
         self._finish_thinking()
         if self._agent_msg is None:
             self._agent_msg = self._ui.add_message("agent", "")
-        self._agent_msg.append(event.content)
+        await self._agent_msg.append(event.content)
 
     def handle_tool_communication(self, event: ToolCommunicationEvent) -> None:
         tool_display = REGISTRY.get(event.tool_name) if event.tool_name else None
@@ -146,7 +149,7 @@ class _TurnPresenter:
             self._ephemerals.append(block)
             self._ephemerals_by_id[tc_id] = block
 
-    def handle_tool_call(self, event: ToolCallEvent) -> None:
+    async def handle_tool_call(self, event: ToolCallEvent) -> None:
         tool_call_id = event.tool_call_id or ""
         existing = self._pending_ephemerals.pop(tool_call_id, None) if tool_call_id else None
         tool_display = REGISTRY.get(str(event.tool))
@@ -173,13 +176,13 @@ class _TurnPresenter:
         self._finish_thinking()
         has_narration = self._agent_msg is not None
         if self._agent_msg is not None:
-            self._agent_msg.finish()
+            await self._agent_msg.finish()
             self._agent_msg = None
 
         buffered_comm = self._comm_buffers.pop(tool_call_id, "")
         comm = "" if has_narration else buffered_comm
 
-        if str(event.tool) == ToolName.SPAWN_WORKERS:
+        if str(event.tool) == ToolName.TASK:
             if existing is not None:
                 existing.dismiss()
                 self._ephemerals = [e for e in self._ephemerals if e is not existing]
@@ -255,24 +258,24 @@ class _TurnPresenter:
         if self._agent_msg is None and event.content:
             self._agent_msg = self._ui.add_message("agent", event.content)
 
-    def handle_error(self, event: ErrorEvent) -> None:
+    async def handle_error(self, event: ErrorEvent) -> None:
         self._dismiss_thinking_block()
         if self._agent_msg is None:
             self._agent_msg = self._ui.add_message("agent", "")
-        self._agent_msg.append(f"\n\n❌ {event.content}")
+        await self._agent_msg.append(f"\n\n❌ {event.content}")
 
-    def handle_exception(self, exc: Exception) -> None:
+    async def handle_exception(self, exc: Exception) -> None:
         self._dismiss_thinking_block()
         if self._agent_msg is None:
             self._agent_msg = self._ui.add_message("agent", "")
-        self._agent_msg.set_content(f"❌ **Error:** {exc}")
+        await self._agent_msg.set_content(f"❌ **Error:** {exc}")
 
     # ── Cleanup ───────────────────────────────────────────────────────────────
 
-    def cleanup(self) -> None:
+    async def cleanup(self) -> None:
         """Finalise all open UI elements (called from the run_agent finally block)."""
         self._finish_thinking()
         for e in self._ephemerals:
             e.set_done()
         if self._agent_msg is not None:
-            self._agent_msg.finish()
+            await self._agent_msg.finish()

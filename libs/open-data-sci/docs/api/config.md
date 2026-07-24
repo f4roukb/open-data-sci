@@ -82,13 +82,6 @@ config = OpenDataSciConfig.from_yaml("opendatasci_config.yaml")
 | `midturn_compaction_threshold` | `MIDTURN_COMPACTION_THRESHOLD` | `96000` | Token count after which the agent's context is compacted mid-turn |
 | `worker_timeout_seconds` | `WORKER_TIMEOUT_SECONDS` | `300.0` | Max seconds for all spawned workers to finish (`null` = no timeout) |
 
-### Web access
-
-| Field | Env var | Default | Description |
-|-------|---------|---------|-------------|
-| `extra_web_domains` | `EXTRA_FETCH_DOMAINS` | `[]` | Additional hostnames the `fetch_url` tool may access |
-| `override_web_domains` | | `None` | Replaces the built-in domain allowlist entirely when set |
-
 ### Skills
 
 | Field | Env var | Default | Description |
@@ -138,10 +131,6 @@ secondary_model: gpt-5.6-luna
 temperature: 0.1
 
 name: Sai
-
-extra_web_domains:
-  - arxiv.org
-  - huggingface.co
 
 worker_timeout_seconds: 600
 midturn_compaction_threshold: 80000

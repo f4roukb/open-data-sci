@@ -18,7 +18,7 @@ from opendatasci.configs import DEFAULT_MODEL, DEFAULT_SECONDARY_MODEL, OpenData
 from opendatasci.models.providers import Provider
 
 from . import theme as _theme
-from .adapter import UIAdapter
+from .adapter import SubmitAction
 from .controller import CLIController
 from .widgets import (
     AppHeader,
@@ -32,6 +32,8 @@ from .widgets import (
     ToolCallBlock,
     TurnStatusBar,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _print_providers() -> None:
@@ -47,9 +49,7 @@ def _get_version() -> str:
     try:
         return importlib.metadata.version("open-data-sci")
     except importlib.metadata.PackageNotFoundError:
-        logging.getLogger(__name__).warning(
-            "open-data-sci package not found; falling back to hardcoded version '0.2.0'"
-        )
+        logger.warning("open-data-sci package not found; falling back to hardcoded version '0.2.0'")
         return "0.2.0"
 
 
@@ -200,14 +200,14 @@ class OpenDataSciApp(App[None]):
             self.query_one("#user-input", SmartInput).push_history(raw)
         self.query_one("#user-input", Input).value = ""
         action, query = await self._controller.on_submit(raw)
-        if action == "run":
+        if action is SubmitAction.RUN:
             self._run_agent(query)
-        elif action == "quit":
+        elif action is SubmitAction.QUIT:
             self.exit()
 
     @on(CommandApprovalPrompt.Decision)
-    def on_approval_decision(self, event: CommandApprovalPrompt.Decision) -> None:
-        resume_input = self._controller.resolve_approval(event.approved)
+    async def on_approval_decision(self, event: CommandApprovalPrompt.Decision) -> None:
+        resume_input = await self._controller.resolve_approval(event.approved)
         self.query_one("#user-input", Input).focus()
         self._run_agent(resume_input)
 
@@ -224,12 +224,12 @@ class OpenDataSciApp(App[None]):
                 event.stop()
                 event.prevent_default()
         else:
-            self._controller._completing = True  # suppress Input.Changed fired by value update
+            self._controller.suppress_next_input_change()  # value update fires Input.Changed
             if self.query_one("#user-input", SmartInput).navigate_history(direction):
                 event.stop()
                 event.prevent_default()
             else:
-                self._controller._completing = False
+                self._controller.cancel_input_change_suppression()
 
     # ── @work wrappers ────────────────────────────────────────────────────────
 
@@ -284,7 +284,7 @@ class OpenDataSciApp(App[None]):
         self._controller.hide_completion()
         self._controller.clear_paste_attachment()
         if self._controller.awaiting_choice:
-            resume_input = self._controller.cancel_choice()
+            resume_input = await self._controller.cancel_choice()
             if resume_input is not None:
                 self._run_agent(resume_input)
         elif not had_completion and not had_paste and self._controller.agent_running:
@@ -452,11 +452,6 @@ Examples:
         datasci_config=datasci_config,
         theme=args.theme,
     ).run()
-
-
-# Register OpenDataSciApp as a virtual subclass of UIAdapter to avoid the metaclass
-# conflict between Textual's _MessagePumpMeta and ABCMeta.
-UIAdapter.register(OpenDataSciApp)
 
 
 if __name__ == "__main__":

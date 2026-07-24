@@ -11,9 +11,9 @@ from opendatasci.configs import OpenDataSciConfig
 
 def _make_message_handle() -> MagicMock:
     handle = MagicMock()
-    handle.append = MagicMock()
-    handle.set_content = MagicMock()
-    handle.finish = MagicMock()
+    handle.append = AsyncMock()
+    handle.set_content = AsyncMock()
+    handle.finish = AsyncMock()
     return handle
 
 

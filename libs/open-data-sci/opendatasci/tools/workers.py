@@ -158,12 +158,7 @@ Args:
                 *create_skill_tools(self.store),
             ]
             if subtask.allow_web_tools:
-                tools.extend(
-                    create_web_tools(
-                        datasci_config.extra_web_domains,
-                        datasci_config.override_web_domains,
-                    )
-                )
+                tools.extend(create_web_tools())
             from opendatasci.agents.agents import (
                 ConcurrentWorkerAgent,
             )  # local import breaks circular dependency

@@ -91,6 +91,18 @@ _SENSITIVE_READ_PATHS: tuple[str, ...] = (
     "~/.kube",
     "~/.docker",
     "~/.netrc",
+    "~/.config/gh",
+)
+
+# Domains the sandboxed ``gh`` CLI (see ``execute_cli_command``) is permitted to
+# reach. Scoped narrowly to GitHub's own hosts rather than opening network
+# access generally; every other sandboxed command remains fully offline.
+_CLI_ALLOWED_NETWORK_DOMAINS: tuple[str, ...] = (
+    "github.com",
+    "api.github.com",
+    "codeload.github.com",
+    "objects.githubusercontent.com",
+    "raw.githubusercontent.com",
 )
 
 # Allowlist of host environment variables propagated into the sandboxed
@@ -195,6 +207,7 @@ class SRTSandbox(BaseSandbox):
         self._results: dict[str, str] = {}
         self._var_info: dict[str, str] = {}
         self._sandbox_config: SandboxRuntimeConfig | None = None
+        self._cli_sandbox_config: SandboxRuntimeConfig | None = None
         self._initialized = False
         # Set by reset(); consumed under _lock at the start of the next execute
         # so the on-disk wipe happens inside the serialized critical section.
@@ -281,7 +294,7 @@ class SRTSandbox(BaseSandbox):
 
                 workspace = str(self._workspace_path or self._session_dir)
                 wrapped = await SandboxManager.wrap_with_sandbox(
-                    command, custom_config=self._make_config()
+                    command, custom_config=self._make_cli_config()
                 )
                 stdout_str, stderr_str, exit_code = await self._run_subprocess(
                     wrapped, env=_base_sandbox_env(), cwd=workspace
@@ -356,6 +369,33 @@ class SRTSandbox(BaseSandbox):
                 },
             )
         return self._sandbox_config
+
+    def _make_cli_config(self) -> SandboxRuntimeConfig:
+        """Config for :meth:`execute_cli`: identical to :meth:`_make_config` except
+        network access is scoped to GitHub's hosts, for the ``gh`` CLI.
+
+        Kept separate from ``_make_config`` (used by :meth:`execute`) so Python
+        code execution remains fully network-isolated; only CLI commands (which
+        pass through the ``ALLOWED_CLI_COMMANDS`` allowlist) get this narrower
+        network exception.
+        """
+        if self._cli_sandbox_config is None:
+            workspace = str(self._workspace_path or self._session_dir)
+            deny_read = [
+                os.path.realpath(os.path.expanduser(path)) for path in _SENSITIVE_READ_PATHS
+            ]
+            self._cli_sandbox_config = SandboxRuntimeConfig(
+                network={
+                    "allowed_domains": list(_CLI_ALLOWED_NETWORK_DOMAINS),
+                    "denied_domains": [],
+                },
+                filesystem={
+                    "deny_read": deny_read,
+                    "allow_write": [workspace, str(self._session_dir)],
+                    "deny_write": [],
+                },
+            )
+        return self._cli_sandbox_config
 
     async def _run_subprocess(
         self, command: str, env: dict[str, str], cwd: str

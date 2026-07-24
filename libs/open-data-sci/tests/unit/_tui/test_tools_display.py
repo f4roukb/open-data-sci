@@ -130,7 +130,7 @@ class TestRegistryContents:
         assert REGISTRY["execute_cli_command"].label == "Command"
 
     def test_execute_cli_icon(self) -> None:
-        assert REGISTRY["execute_cli_command"].icon == "⌨️"
+        assert REGISTRY["execute_cli_command"].icon == "💻"
 
     def test_execute_cli_summary_arg(self) -> None:
         assert REGISTRY["execute_cli_command"].summary_arg == "summary"
@@ -144,19 +144,19 @@ class TestRegistryContents:
     def test_list_python_libs_summary_arg(self) -> None:
         assert REGISTRY["list_python_libs"].summary_arg == "summary"
 
-    # ── Planning ──────────────────────────────────────────────────────────────
+    # ── Modes ─────────────────────────────────────────────────────────────────
 
-    def test_enter_plan_mode_label(self) -> None:
-        assert REGISTRY["enter_plan_mode"].label == "Planning the next steps"
+    def test_switch_agentic_mode_label(self) -> None:
+        assert REGISTRY["switch_agentic_mode"].label == "Switching mode"
 
-    def test_enter_plan_mode_icon(self) -> None:
-        assert REGISTRY["enter_plan_mode"].icon == "🎯"
+    def test_switch_agentic_mode_icon(self) -> None:
+        assert REGISTRY["switch_agentic_mode"].icon == "🔀"
 
     def test_exit_plan_mode_label(self) -> None:
         assert REGISTRY["exit_plan_mode"].label == "Planning complete"
 
     def test_exit_plan_mode_icon(self) -> None:
-        assert REGISTRY["exit_plan_mode"].icon == "✅"
+        assert REGISTRY["exit_plan_mode"].icon == "🏁"
 
     # ── Skills ────────────────────────────────────────────────────────────────
 
@@ -177,14 +177,14 @@ class TestRegistryContents:
 
     # ── Workers ───────────────────────────────────────────────────────────────
 
-    def test_spawn_workers_label(self) -> None:
-        assert REGISTRY["spawn_workers"].label == "Spawning workers"
+    def test_task_label(self) -> None:
+        assert REGISTRY["task"].label == "Spawning workers"
 
-    def test_spawn_workers_icon(self) -> None:
-        assert REGISTRY["spawn_workers"].icon == "⚙️"
+    def test_task_icon(self) -> None:
+        assert REGISTRY["task"].icon == "👥"
 
-    def test_spawn_workers_summary_arg(self) -> None:
-        assert REGISTRY["spawn_workers"].summary_arg == "summary"
+    def test_task_summary_arg(self) -> None:
+        assert REGISTRY["task"].summary_arg == "summary"
 
     # ── Dataset ───────────────────────────────────────────────────────────────
 
@@ -247,12 +247,6 @@ class TestRegistryContents:
 
     # ── Self-review ───────────────────────────────────────────────────────────
 
-    def test_enter_self_review_mode_label(self) -> None:
-        assert REGISTRY["enter_self_review_mode"].label == "Reviewing progress so far"
-
-    def test_enter_self_review_mode_icon(self) -> None:
-        assert REGISTRY["enter_self_review_mode"].icon == "🔍"
-
     def test_exit_self_review_mode_label(self) -> None:
         assert REGISTRY["exit_self_review_mode"].label == "Done reviewing progress"
 
@@ -260,7 +254,7 @@ class TestRegistryContents:
         assert REGISTRY["verify_python_code"].label == "Reviewing code"
 
     def test_verify_python_code_icon(self) -> None:
-        assert REGISTRY["verify_python_code"].icon == "🔎"
+        assert REGISTRY["verify_python_code"].icon == "🧪"
 
 
 # ---------------------------------------------------------------------------

@@ -137,9 +137,9 @@ class TestAgentConfigFromYaml:
 
     def test_loads_list_fields(self, tmp_path: Path) -> None:
         f = tmp_path / "cfg.yaml"
-        f.write_text("extra_web_domains:\n  - arxiv.org\n  - kaggle.com\n")
+        f.write_text("mcp_servers:\n  - http://localhost:1234\n  - http://localhost:5678\n")
         cfg = OpenDataSciConfig.from_yaml(f)
-        assert cfg.extra_web_domains == ["arxiv.org", "kaggle.com"]
+        assert cfg.mcp_servers == ["http://localhost:1234", "http://localhost:5678"]
 
     def test_empty_yaml_yields_defaults(self, tmp_path: Path) -> None:
         f = tmp_path / "cfg.yaml"

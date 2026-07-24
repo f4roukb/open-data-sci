@@ -4,8 +4,8 @@ Each test mocks at the LLM/sandbox boundary and exercises an end-to-end flow
 that involves several real subsystems wired together:
 
 * ``task`` → ``ConcurrentWorkerAgent`` lifecycle (queues, sub-agent events, redactor)
-* Plan-mode round-trip (``enter_plan_mode`` → ``exit_plan_mode``, ``LocalContextStore``)
-* Self-review-mode round-trip (``enter_self_review_mode`` → ``exit_self_review_mode``)
+* Plan-mode round-trip (``switch_agentic_mode`` → ``exit_plan_mode``, ``LocalContextStore``)
+* Self-review-mode round-trip (``switch_agentic_mode`` → ``exit_self_review_mode``)
 * Turn summarization (``TurnSummarizer`` writing to ``ChatMemory``)
 """
 
@@ -110,9 +110,9 @@ class TestSpawnWorkersFlow:
 
 
 class TestPlanModeFlow:
-    """enter_plan_mode → exit_plan_mode round-trip.
+    """switch_agentic_mode(mode="plan") → exit_plan_mode round-trip.
 
-    Exercises tools/planning.py, context/local.py (LocalContextStore), and the
+    Exercises tools/modes.py, context/local.py (LocalContextStore), and the
     plan-mode branch of SystemPromptBuilder via mode flag mutation.
     """
 
@@ -120,8 +120,8 @@ class TestPlanModeFlow:
         svc = await loaded_scripted_service(
             [
                 _ai_with_tool_call(
-                    "enter_plan_mode",
-                    {"summary": "Planning task", "communication": "Need to plan first."},
+                    "switch_agentic_mode",
+                    {"mode": "plan", "summary": "Planning task", "communication": "Need to plan first."},
                     call_id="ep1",
                 ),
                 _ai_with_tool_call(
@@ -147,10 +147,10 @@ class TestPlanModeFlow:
         assert plan is not None
         assert plan.content == "1. Profile the data\n2. Compute revenue"
 
-        # Two tool_call events fired (enter + exit).
+        # Two tool_call events fired (switch + exit).
         tool_calls = [e for e in events if e.type == "tool_call"]
         assert {e.tool for e in tool_calls} == {
-            "enter_plan_mode",
+            "switch_agentic_mode",
             "exit_plan_mode",
         }
 
@@ -190,14 +190,19 @@ class TestPlanModeFlow:
 
 
 class TestSelfReviewModeFlow:
-    """enter_self_review_mode → exit_self_review_mode round-trip."""
+    """switch_agentic_mode(mode="self_review") → exit_self_review_mode round-trip."""
 
     async def test_self_review_round_trip_fires_tool_events(self, loaded_scripted_service):
         svc = await loaded_scripted_service(
             [
                 _ai_with_tool_call(
-                    "enter_self_review_mode",
-                    {"summary": "Reviewing work", "communication": "Reviewing.", "skill": None},
+                    "switch_agentic_mode",
+                    {
+                        "mode": "self_review",
+                        "summary": "Reviewing work",
+                        "communication": "Reviewing.",
+                        "skill": None,
+                    },
                     call_id="sr1",
                 ),
                 _ai_with_tool_call(
@@ -218,26 +223,32 @@ class TestSelfReviewModeFlow:
 
         tool_calls = [e for e in events if e.type == "tool_call"]
         assert {e.tool for e in tool_calls} == {
-            "enter_self_review_mode",
+            "switch_agentic_mode",
             "exit_self_review_mode",
         }
 
     async def test_self_review_blocked_while_in_plan_mode(self, loaded_scripted_service):
-        """The critic tool refuses to enter self-review while plan mode is active.
+        """switch_agentic_mode refuses to enter self-review while plan mode is active.
 
-        Plan mode is established by scripting enter_plan_mode first so the
-        is_plan_mode flag is set in LangGraph state before enter_self_review_mode runs.
+        Plan mode is established by scripting a first switch_agentic_mode call
+        so the is_plan_mode flag is set in LangGraph state before the second
+        switch_agentic_mode(mode="self_review") call runs.
         """
         svc = await loaded_scripted_service(
             [
                 _ai_with_tool_call(
-                    "enter_plan_mode",
-                    {"summary": "Planning task", "communication": "planning first"},
+                    "switch_agentic_mode",
+                    {"mode": "plan", "summary": "Planning task", "communication": "planning first"},
                     call_id="ep1",
                 ),
                 _ai_with_tool_call(
-                    "enter_self_review_mode",
-                    {"summary": "Reviewing work", "communication": "Reviewing.", "skill": None},
+                    "switch_agentic_mode",
+                    {
+                        "mode": "self_review",
+                        "summary": "Reviewing work",
+                        "communication": "Reviewing.",
+                        "skill": None,
+                    },
                     call_id="sr_blocked",
                 ),
                 AIMessage(content="OK."),
@@ -248,10 +259,9 @@ class TestSelfReviewModeFlow:
         await asyncio.sleep(0)
 
         tool_results = [e for e in events if e.type == "tool_result"]
-        # Pick the self-review tool's result specifically (the enter_plan_mode
-        # result also mentions "plan mode"), then assert it reports the block.
-        blocked = next(r for r in tool_results if "self-review" in r.content.lower())
-        assert "plan mode is active" in blocked.content.lower()
+        # The second switch_agentic_mode call is the one that gets blocked.
+        blocked = tool_results[1]
+        assert "already in plan mode" in blocked.content.lower()
 
 
 # ---------------------------------------------------------------------------

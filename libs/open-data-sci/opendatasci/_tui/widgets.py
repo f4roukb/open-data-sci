@@ -1,5 +1,6 @@
 """Textual widgets for OpenDataSci TUI v2."""
 
+import asyncio
 import bisect
 import logging
 import math
@@ -14,40 +15,28 @@ from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer, Vertical
+from textual.css.query import NoMatches
 from textual.message import Message
 from textual.timer import Timer
 from textual.widget import Widget
 from textual.widgets import Input, Static
 from textual.widgets import Markdown as TUIMarkdown
+from textual.widgets.markdown import MarkdownStream
 
 try:
     from textual.widgets import Image as _TUIImage  # type: ignore[attr-defined]
 except ImportError:
     _TUIImage = None
 
-from .adapter import (
-    EphemeralHandle,
-    MessageHandle,
-    PendingMessageHandle,
-    ThinkingHandle,
-    TurnStatusHandle,
-)
 from .commands import SLASH_COMMANDS, _fmt_model
 from .models import SPINNER, SPINNER_INTERVAL
 from .theme import active as theme
 
 logger = logging.getLogger(__name__)
 
-_BUBBLE_FLUSH_INTERVAL = 0.25  # seconds — caps Markdown rebuilds at 4/sec during streaming
-_AUTOSCROLL_INTERVAL = 0.1  # seconds — cadence of the #messages bottom-anchor check
-
 
 def _scroll_is_at_bottom(container: ScrollableContainer) -> bool:
-    """True when *container* is scrolled to (within one row of) the bottom.
-
-    Used to implement auto-scroll with a releasable anchor: new content only
-    pins the view to the bottom while the user hasn't scrolled up.
-    """
+    """True when *container* is scrolled to (within one row of) the bottom."""
     return container.scroll_offset.y >= container.max_scroll_y - 1
 
 
@@ -187,7 +176,7 @@ class TurnStatusBar(Static):
     @staticmethod
     def _fmt_tokens(n: int) -> str:
         """Format token count as truncated-to-one-decimal thousands, e.g. 3250 → '3.2k'."""
-        k = math.floor(n / 100) / 10
+        k = (n // 100) / 10
         return f"{k:.1f}k"
 
     def _context_suffix(self) -> str:
@@ -236,26 +225,41 @@ class TurnStatusBar(Static):
 
 
 class MessageBubble(Widget):
-    """A single chat message — user, agent (streaming), or question."""
+    """A single chat message — user, agent (streaming), or question.
+
+    Agent-role bubbles stream their Markdown through Textual's own
+    ``Markdown.get_stream()`` (``MarkdownStream``), which owns the
+    coalescing/backpressure that used to be hand-rolled here with a flush
+    timer and a dirty flag.
+
+    Two invariants keep this race-free:
+
+    - ``_ready`` (set once ``on_mount`` has created the stream) makes
+      ``append``/``set_content``/``finish`` safe to call at any point,
+      including synchronously right after construction, before Textual has
+      even mounted the widget — the original source of the "empty agent
+      bubble" bug this class used to work around with ``_dirty``.
+    - ``_written_len`` is a cursor into ``_content``: only the *unwritten*
+      tail is ever sent to the stream, and ``_write_lock`` serialises all
+      writers (the mount-time bootstrap and any concurrent
+      append/set_content/finish call) so content set at construction and a
+      call arriving immediately after can never be double-written.
+    """
 
     def __init__(self, role: str, content: str = "") -> None:
         super().__init__()
         self._role = role
         self._content = content
         self._inner: Static | TUIMarkdown | None = None
-        self._flush_timer: Timer | None = None  # rate-limit Markdown rebuilds
-        self._dirty: bool = False
-        self._flush_scheduled: bool = False  # at most one call_after_refresh pending
+        self._stream: MarkdownStream | None = None
+        self._written_len = 0  # how much of self._content has reached the stream
+        self._write_lock = asyncio.Lock()
+        self._ready = asyncio.Event()  # set once the stream exists (post on_mount)
         self.add_class(role)
 
     def compose(self) -> ComposeResult:
         inner: Static | TUIMarkdown
         if self._role == "agent":
-            # Always start with an empty Markdown widget. All rendering goes
-            # through _flush_agent so there is only ever one update() task in
-            # flight, avoiding the race where TUIMarkdown._on_mount's own
-            # update() task and _flush_agent's update() task both mount content
-            # and produce duplicate text.
             md = TUIMarkdown("")
             md.code_dark_theme = "github-dark"  # type: ignore[attr-defined]
             inner = md
@@ -266,17 +270,49 @@ class MessageBubble(Widget):
 
     def on_mount(self) -> None:
         self._refresh_content()
-        # If the bubble already has content (set before mount completed) mark it
-        # dirty so the flush below will render it.  This covers the common
-        # pattern add_message("agent", text).finish() where finish() runs before
-        # compose/on_mount, as well as the response-event path where the full
-        # answer is passed directly to the constructor.
         if self._role == "agent":
-            if self._content:
-                self._dirty = True
-            if self._dirty:
-                self._flush_scheduled = False  # force a new call even if one was pending
-                self._schedule_final_flush()
+            self.run_worker(self._bootstrap_stream(), exit_on_error=False)
+        else:
+            self._ready.set()
+
+    async def _bootstrap_stream(self) -> None:
+        """Create the stream and flush any content set before mount, then open the gate."""
+        try:
+            async with self._write_lock:
+                await self._open_stream_locked()
+                await self._write_pending_locked()
+        except Exception:
+            logger.exception("MessageBubble stream bootstrap failed — agent content may be stale")
+        finally:
+            self._ready.set()
+
+    async def _open_stream_locked(self) -> None:
+        """Create a fresh MarkdownStream and let its background task take its first step.
+
+        A task cancelled before it has ever run doesn't reach the
+        try/except around ``MarkdownStream._run``'s loop, so
+        ``MarkdownStream.stop()`` re-raises ``CancelledError`` instead of
+        absorbing it. The ``sleep(0)`` yield lets the task start so a later
+        stop() (e.g. from ``finish()`` right after ``_bootstrap_stream``, with
+        nothing ever written) is clean. Caller holds ``_write_lock``.
+        """
+        assert isinstance(self._inner, TUIMarkdown)
+        self._stream = TUIMarkdown.get_stream(self._inner)
+        await asyncio.sleep(0)
+
+    async def _ensure_stream_locked(self) -> None:
+        """Open a stream if one isn't already open. Caller holds ``_write_lock``."""
+        if self._stream is None:
+            await self._open_stream_locked()
+
+    async def _write_pending_locked(self) -> None:
+        """Send whatever of self._content hasn't reached the stream yet. Caller holds the lock."""
+        if self._stream is None:
+            return
+        pending = self._content[self._written_len :]
+        if pending:
+            self._written_len = len(self._content)
+            await self._stream.write(pending)
 
     def _refresh_content(self) -> None:
         inner = self._inner
@@ -284,17 +320,7 @@ class MessageBubble(Widget):
             return
         role = self._role
         content = self._content
-        if role == "agent":
-            # Agent rendering happens in two places:
-            #   1. compose() seeds the Markdown widget with self._content so
-            #      content present at construction (or accumulated before
-            #      compose ran) is rendered automatically by Markdown's own
-            #      mount hook.
-            #   2. _flush_agent() applies subsequent updates (streaming tokens,
-            #      set_content, finish) at most once per _BUBBLE_FLUSH_INTERVAL.
-            # No work to do from _refresh_content itself.
-            pass
-        elif role == "user":
+        if role == "user":
             assert isinstance(inner, Static)
             inner.update(Text.from_markup(content))
         elif role == "question":
@@ -303,91 +329,50 @@ class MessageBubble(Widget):
                 inner.update(Text.from_markup(content))
             except Exception:
                 inner.update(Text(content))
+        # "agent" rendering is handled entirely by the MarkdownStream.
 
-    def _schedule_final_flush(self) -> None:
-        """Schedule one awaited Markdown rebuild via call_after_refresh (deduped)."""
-        if not self._flush_scheduled:
-            self._flush_scheduled = True
-            self.call_after_refresh(self._flush_agent)
-
-    def set_content(self, text: str) -> None:
-        self._content = text
-        if self._role == "agent":
-            self._stop_flush_timer()
-            self._dirty = True
-            self._schedule_final_flush()
-        else:
+    async def append(self, chunk: str) -> None:
+        if self._role != "agent":
+            self._content += chunk
             self._refresh_content()
+            return
+        await self._ready.wait()
+        async with self._write_lock:
+            await self._ensure_stream_locked()
+            self._content += chunk
+            await self._write_pending_locked()
 
-    def append(self, chunk: str) -> None:
-        self._content += chunk
-        if self._role == "agent":
-            # Buffer tokens; the flush timer does a single awaited rebuild
-            # once per _BUBBLE_FLUSH_INTERVAL.
-            self._dirty = True
-            if self._flush_timer is None:
-                self._flush_timer = self.set_interval(_BUBBLE_FLUSH_INTERVAL, self._flush_agent)
-        else:
+    async def set_content(self, text: str) -> None:
+        if self._role != "agent":
+            self._content = text
             self._refresh_content()
+            return
+        await self._ready.wait()
+        async with self._write_lock:
+            assert isinstance(self._inner, TUIMarkdown)
+            # MarkdownStream only appends; a wholesale replace stops the
+            # current stream and rewrites the widget directly. No fresh
+            # stream is opened here — every current caller follows
+            # set_content() with finish() and nothing else, so eagerly
+            # reopening one would just be cancelled unused. append()
+            # reopens lazily via _ensure_stream_locked() if it's ever
+            # called after a set_content().
+            if self._stream is not None:
+                await self._stream.stop()
+                self._stream = None
+            self._content = text
+            await self._inner.update(text)
+            self._written_len = len(text)
 
-    def _stop_flush_timer(self) -> None:
-        if self._flush_timer is not None:
-            self._flush_timer.stop()
-            self._flush_timer = None
-
-    async def _flush_agent(self) -> None:
-        """Flush buffered tokens to the Markdown widget (at most once per
-        _BUBBLE_FLUSH_INTERVAL).
-
-        Awaiting inner.update() serialises rebuilds so they can never race each
-        other.
-
-        If the bubble is not yet fully mounted (``_inner`` is None or
-        ``is_mounted`` is False), this returns early WITHOUT clearing
-        ``_dirty``.  ``on_mount`` then schedules another flush once mount has
-        completed, guaranteeing the buffered content eventually renders.
-
-        Any exception is caught here rather than propagated: if Textual's
-        Markdown widget raises (e.g. during the async DOM operations inside
-        update()) the exception would otherwise travel through on_idle →
-        _handle_exception and exit the entire app.  We log and swallow it so
-        the app stays alive; the worst case is stale rendered content.
-        """
-        try:
-            self._flush_scheduled = False
-            if not self._dirty:
-                return
-            inner = self._inner
-            if inner is None or not self.is_mounted:
-                # Leave _dirty=True so on_mount or the streaming timer retries.
-                return
-            assert isinstance(inner, TUIMarkdown)
-            # Snapshot content and clear _dirty BEFORE the await.  If any
-            # append()/set_content()/finish() call arrives while
-            # inner.update() is suspended, it will set _dirty=True again and
-            # the next tick (or the final flush scheduled by finish()) will
-            # pick up the newer content.  Clearing _dirty after the await
-            # would overwrite that flag and silently drop those tokens.
-            content = self._content
-            self._dirty = False
-            try:
-                await inner.update(content)  # type: ignore[misc]
-            except Exception:
-                self._dirty = True  # render failed; retry on the next tick
-                raise
-        except Exception:
-            logger.exception("_flush_agent failed — bubble content may be stale")
-
-    def finish(self) -> None:
-        if self._role == "agent":
-            self._dirty = True
-            self._stop_flush_timer()
-            # Bypass the dedup guard: finish() is the authoritative "done" signal
-            # and must always schedule a render regardless of prior pending flushes.
-            self._flush_scheduled = False
-            self._schedule_final_flush()
-        else:
+    async def finish(self) -> None:
+        if self._role != "agent":
             self._refresh_content()
+            return
+        await self._ready.wait()
+        async with self._write_lock:
+            await self._write_pending_locked()
+            if self._stream is not None:
+                await self._stream.stop()
 
 
 class CompletionPopup(Static):
@@ -655,8 +640,8 @@ class WorkspacePanel(Widget):
         self._files = []
         try:
             self.app.query_one("#user-input", Input).focus()
-        except Exception:
-            pass
+        except NoMatches:
+            logger.debug("action_close_panel: #user-input not found, skipping focus")
 
 
 class CommandApprovalPrompt(Widget):
@@ -874,38 +859,17 @@ class PendingMessagePanel(Vertical):
 class MessagesContainer(ScrollableContainer):
     """Message-history scroller with a releasable bottom anchor.
 
-    While anchored, new content keeps the view pinned to the bottom (an
-    interval timer re-pins after asynchronous Markdown reflows, which can't
-    be hooked at mount time). Scrolling up releases the anchor; scrolling
-    back down to the bottom re-arms it. The distinction between a user
-    scroll and content growth is made in ``watch_scroll_y``: growth changes
-    ``max_scroll_y``, never ``scroll_y``, and the only programmatic scroll
-    ever issued here targets the bottom.
+    Delegates entirely to Textual's built-in scroll anchoring
+    (``Widget.anchor()``): while armed, the compositor re-pins the view to
+    the bottom on every layout pass (which is what actually solves the
+    "reflow after an async Markdown update" problem — no polling timer
+    needed). Any user-initiated scroll releases the anchor automatically;
+    scrolling back down to the bottom re-arms it. See
+    ``textual.widget.Widget.anchor``/``release_anchor``/``is_anchored``.
     """
 
-    _anchored: bool = True
-
     def on_mount(self) -> None:
-        self.set_interval(_AUTOSCROLL_INTERVAL, self._anchor_tick)
-
-    def _anchor_tick(self) -> None:
-        if self._anchored and not _scroll_is_at_bottom(self):
-            self.scroll_end(animate=False)
-
-    def pin_if_anchored(self) -> None:
-        """Scroll to the bottom now unless the user has scrolled up."""
-        if self._anchored:
-            self.scroll_end(animate=False)
-
-    def watch_scroll_y(self, old_value: float, new_value: float) -> None:
-        super().watch_scroll_y(old_value, new_value)
-        self._update_anchor(old_value, new_value)
-
-    def _update_anchor(self, old_value: float, new_value: float) -> None:
-        if new_value >= self.max_scroll_y:
-            self._anchored = True  # reached the bottom — (re-)arm
-        elif new_value < old_value:
-            self._anchored = False  # scrolled up away from the bottom — release
+        self.anchor()
 
 
 class ChatPane(Widget):
@@ -925,14 +889,14 @@ class ChatPane(Widget):
         yield WorkspacePanel(id="workspace-panel")
 
     def _mount_in_messages(self, widget: Widget) -> None:
-        """Mount *widget* in #messages, keeping the view pinned to the bottom.
+        """Mount *widget* in #messages.
 
-        The scroll only follows new content while the anchor is armed; a user
-        who scrolled up keeps their position.
+        The view follows new content while Textual's scroll anchor is armed
+        (see ``MessagesContainer``); a user who scrolled up keeps their
+        position.
         """
         container = self.query_one("#messages", MessagesContainer)
         container.mount(widget)
-        container.pin_if_anchored()
 
     def add_message(self, role: str, content: str = "") -> MessageBubble:
         bubble = MessageBubble(role, content)
@@ -991,7 +955,7 @@ class ToolCallBlock(Static):
 
     Shows blue while the tool is running; call ``set_done()`` to turn green.
     Call ``dismiss()`` to remove from the DOM entirely.
-    For ``spawn_workers``, pass ``worker_summaries`` to get one status line per worker.
+    For ``task``, pass ``worker_summaries`` to get one status line per worker.
     Worker rows can be individually marked done (green ✓) or error (red ✗).
 
     When both ``label`` and ``summary`` are empty the block is
@@ -1165,13 +1129,3 @@ class ToolCallBlock(Static):
 
     def dismiss(self) -> None:
         self.remove()
-
-
-# Register Textual widget implementations as virtual subclasses of their ABCs.
-# Direct inheritance is not possible due to a metaclass conflict between
-# Textual's _MessagePumpMeta and ABCMeta.
-MessageHandle.register(MessageBubble)
-EphemeralHandle.register(ToolCallBlock)
-TurnStatusHandle.register(TurnStatusBar)
-ThinkingHandle.register(ThinkingBlock)
-PendingMessageHandle.register(PendingMessageBubble)

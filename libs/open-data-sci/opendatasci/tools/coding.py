@@ -165,14 +165,19 @@ class ExecuteCliCommandTool(OpenDataSciBaseTool):
 Run a read-oriented TUI command inside the active workspace directory.
 
 Useful for inspecting the workspace without Python: listing files,
-searching for patterns, counting lines, or diffing outputs.
+searching for patterns, counting lines, or diffing outputs. ``gh`` is also
+available for read-oriented GitHub lookups (``gh repo view``, ``gh issue
+list``, ``gh pr diff``, ``gh search ...``, ``gh api``) — see the
+``github.com`` skill domain; it is the only command with network access,
+and that access is scoped to GitHub's own hosts.
 
 # Permitted commands
 ``ls``, ``cat``, ``grep``, ``wc``, ``find``, ``head``, ``tail``, ``cut``,
-``diff``, and others in the safe set. ``|`` and ``&&`` are allowed.
+``diff``, ``gh``, and others in the safe set. ``|`` and ``&&`` are allowed.
 
 # When NOT to use this tool
-- For write operations (file creation, deletion, or modification) — not permitted.
+- For write operations (file creation, deletion, or modification) — not permitted,
+  including ``gh`` write subcommands (``create``, ``merge``, ``delete``, etc.).
 - When ``list_workspace_files`` already covers the need.
 
 Args:
@@ -210,14 +215,19 @@ class ExecuteCliCommandWithApprovalTool(OpenDataSciBaseTool):
 Run a read-oriented TUI command inside the active workspace directory.
 
 Useful for inspecting the workspace without Python: listing files,
-searching for patterns, counting lines, or diffing outputs.
+searching for patterns, counting lines, or diffing outputs. ``gh`` is also
+available for read-oriented GitHub lookups (``gh repo view``, ``gh issue
+list``, ``gh pr diff``, ``gh search ...``, ``gh api``) — see the
+``github.com`` skill domain; it is the only command with network access,
+and that access is scoped to GitHub's own hosts.
 
 # Permitted commands
 ``ls``, ``cat``, ``grep``, ``wc``, ``find``, ``head``, ``tail``, ``cut``,
-``diff``, and others in the safe set. ``|`` and ``&&`` are allowed.
+``diff``, ``gh``, and others in the safe set. ``|`` and ``&&`` are allowed.
 
 # When NOT to use this tool
-- For write operations (file creation, deletion, or modification) — not permitted.
+- For write operations (file creation, deletion, or modification) — not permitted,
+  including ``gh`` write subcommands (``create``, ``merge``, ``delete``, etc.).
 - When ``list_workspace_files`` already covers the need.
 
 Args:

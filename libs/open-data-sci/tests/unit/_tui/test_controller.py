@@ -369,10 +369,10 @@ class TestOnInputChanged:
     def test_completing_flag_skips_and_resets(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        controller._completing = True
+        controller.suppress_next_input_change()
         result = controller.on_input_changed("anything")
         assert result is True
-        assert controller._completing is False
+        assert controller.is_suppressing_input_change is False
         mock_ui.show_completion.assert_not_called()
 
     def test_slash_fragment_shows_completion(
@@ -380,13 +380,22 @@ class TestOnInputChanged:
     ) -> None:
         controller.on_input_changed("/cl")
         mock_ui.show_completion.assert_called_once()
-        assert controller._comp_mode == "slash"
+        assert controller.has_completion_matches
+        # Cycling replaces the whole input with the matched command, which is
+        # slash-mode behavior (file-mode only inserts at the "@" position) —
+        # a behavioral stand-in for asserting the internal mode directly.
+        controller.cycle_completion("/cl", direction=1)
+        new_value = mock_ui.set_input_value.call_args.args[0]
+        assert new_value.startswith("/cl")
 
     def test_exact_slash_command_hides_completion(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        # Simulate the popup being visible from a previous partial match.
-        controller._comp_matches = ["/clear", "/compact"]
+        # Popup visible from a previous partial fragment ("/c" matches several).
+        controller.on_input_changed("/c")
+        assert controller.has_completion_matches
+        mock_ui.reset_mock()
+        # Finishing the exact, unique command should hide the popup.
         controller.on_input_changed("/clear")
         mock_ui.hide_completion.assert_called()
 
@@ -397,13 +406,20 @@ class TestOnInputChanged:
         with patch("opendatasci._tui.completion._discover_files", return_value=["data.csv"]):
             controller.on_input_changed("@data")
         mock_ui.show_completion.assert_called_once()
-        assert controller._comp_mode == "file"
+        assert controller.has_completion_matches
+        # Cycling inserts the match at the "@" position rather than replacing
+        # the whole input, which is file-mode behavior.
+        controller.cycle_completion("@data", direction=1)
+        mock_ui.set_input_value.assert_called_with("@data.csv", 9)
 
     def test_at_fragment_no_matches_hides_completion(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        # Simulate the popup being visible from a previous @-scan that had results.
-        controller._comp_matches = ["data.csv"]
+        # Popup visible from a previous @-scan that had results.
+        with patch("opendatasci._tui.completion._discover_files", return_value=["data.csv"]):
+            controller.on_input_changed("@data")
+        assert controller.has_completion_matches
+        mock_ui.reset_mock()
         with patch("opendatasci._tui.completion._discover_files", return_value=[]):
             controller.on_input_changed("@nonexistent")
         mock_ui.hide_completion.assert_called()
@@ -411,8 +427,11 @@ class TestOnInputChanged:
     def test_plain_text_hides_completion(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        # Simulate the popup being visible before the user switches to plain text.
-        controller._comp_matches = ["data.csv"]
+        # Popup visible before the user switches to plain text.
+        with patch("opendatasci._tui.completion._discover_files", return_value=["data.csv"]):
+            controller.on_input_changed("@data")
+        assert controller.has_completion_matches
+        mock_ui.reset_mock()
         controller.on_input_changed("hello world")
         mock_ui.hide_completion.assert_called()
 
@@ -435,8 +454,10 @@ class TestCompletion:
     def test_has_completion_matches_false_when_empty(self, controller: CLIController) -> None:
         assert controller.has_completion_matches is False
 
-    def test_has_completion_matches_true_when_populated(self, controller: CLIController) -> None:
-        controller._comp_matches = ["/clear", "/reset"]
+    def test_has_completion_matches_true_when_populated(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        controller.on_input_changed("/c")
         assert controller.has_completion_matches is True
 
     def test_cycle_completion_no_matches_returns_false(self, controller: CLIController) -> None:
@@ -445,45 +466,38 @@ class TestCompletion:
     def test_cycle_completion_slash_mode_sets_input(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        controller._comp_matches = ["/clear", "/compact"]
-        controller._comp_displays = ["/clear  ...", "/compact  ..."]
-        controller._comp_mode = "slash"
-        controller.cycle_completion("", direction=1)
-        mock_ui.set_input_value.assert_called_once_with("/clear", 6)
-        assert controller._completing is True
+        # "/c" matches (in registry order): cancel-all-messages, cancel-message,
+        # clear, compact.
+        controller.on_input_changed("/c")
+        controller.cycle_completion("/c", direction=1)
+        mock_ui.set_input_value.assert_called_once_with(
+            "/cancel-all-messages", len("/cancel-all-messages")
+        )
+        assert controller.is_suppressing_input_change is True
 
     def test_cycle_completion_up_from_start_wraps_to_last(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        controller._comp_matches = ["/clear", "/compact", "/help"]
-        controller._comp_displays = controller._comp_matches
-        controller._comp_mode = "slash"
-        controller._comp_idx = -1
-        controller.cycle_completion("", direction=-1)
-        assert controller._comp_idx == 2  # wraps to last
+        controller.on_input_changed("/c")
+        controller.cycle_completion("/c", direction=-1)
+        # Wrapping up from the start selects the last of the 4 matches.
+        mock_ui.set_input_value.assert_called_once_with("/compact", len("/compact"))
 
     def test_cycle_completion_file_mode_updates_input(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        controller._comp_matches = ["data.csv"]
-        controller._comp_mode = "file"
-        controller._comp_at_pos = 0  # @ at position 0
+        with patch("opendatasci._tui.completion._discover_files", return_value=["data.csv"]):
+            controller.on_input_changed("@")  # "@" at position 0
         controller.cycle_completion("@", direction=1)
         mock_ui.set_input_value.assert_called_once_with("@data.csv", 9)
 
     def test_hide_completion_clears_all_state(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        controller._comp_matches = ["/clear"]
-        controller._comp_displays = ["/clear  ..."]
-        controller._comp_idx = 0
-        controller._comp_at_pos = 2
-        controller._comp_mode = "slash"
+        controller.on_input_changed("/c")
+        assert controller.has_completion_matches
         controller.hide_completion()
-        assert controller._comp_matches == []
-        assert controller._comp_idx == -1
-        assert controller._comp_at_pos == -1
-        assert controller._comp_mode == "file"
+        assert controller.has_completion_matches is False
         mock_ui.hide_completion.assert_called_once()
 
     def test_hide_completion_swallows_ui_error(
@@ -586,34 +600,34 @@ class TestOnSubmit:
 
 
 class TestApprovalFlow:
-    def _dispatch(self, controller: CLIController, heads_up: str = "") -> None:
+    async def _dispatch(self, controller: CLIController, heads_up: str = "") -> None:
         event = ApprovalRequiredEvent(
             command="rm tmp.txt", description="Deletes tmp.txt.", heads_up=heads_up
         )
-        controller._dispatch_stream_event(event, MagicMock())
+        await controller._dispatch_stream_event(event, MagicMock())
 
-    def test_approval_event_shows_prompt_and_sets_flag(
+    async def test_approval_event_shows_prompt_and_sets_flag(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        self._dispatch(controller, heads_up="File is gone for good.")
+        await self._dispatch(controller, heads_up="File is gone for good.")
         mock_ui.show_approval_prompt.assert_called_once_with(
             "Deletes tmp.txt.", "File is gone for good."
         )
         assert controller.awaiting_approval is True
 
-    def test_resolve_approval_yes_returns_yes(
+    async def test_resolve_approval_yes_returns_yes(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        self._dispatch(controller)
-        assert controller.resolve_approval(True) == "yes"
+        await self._dispatch(controller)
+        assert await controller.resolve_approval(True) == "yes"
         assert controller.awaiting_approval is False
         mock_ui.add_message.assert_called_with("user", "Yes")
 
-    def test_resolve_approval_no_returns_no(
+    async def test_resolve_approval_no_returns_no(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        self._dispatch(controller)
-        assert controller.resolve_approval(False) == "no"
+        await self._dispatch(controller)
+        assert await controller.resolve_approval(False) == "no"
         assert controller.awaiting_approval is False
         mock_ui.add_message.assert_called_with("user", "No")
 
@@ -737,10 +751,10 @@ class TestCompact:
 
 
 class TestShowHelp:
-    def test_show_help_includes_all_commands(
+    async def test_show_help_includes_all_commands(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        controller.show_help()
+        await controller.show_help()
         content = mock_ui.add_message.call_args[0][1]
         for cmd in [
             "/help",
@@ -757,14 +771,14 @@ class TestShowHelp:
 
 
 class TestShowThemes:
-    def test_show_themes_lists_all_palettes_and_marks_active(
+    async def test_show_themes_lists_all_palettes_and_marks_active(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         from opendatasci._tui import theme as _theme
 
         _theme.active_name = "dracula"
         try:
-            controller.show_themes()
+            await controller.show_themes()
         finally:
             _theme.active_name = "default"
         content = mock_ui.add_message.call_args[0][1]
@@ -777,15 +791,15 @@ class TestShowThemes:
 
 
 class TestShowModels:
-    def test_show_models_shows_model_info(
+    async def test_show_models_shows_model_info(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        controller.show_models()
+        await controller.show_models()
         content = mock_ui.add_message.call_args[0][1]
         assert "Model" in content
         assert "Secondary Model" in content
 
-    def test_show_models_uses_stored_cfg(
+    async def test_show_models_uses_stored_cfg(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         cfg = MagicMock(spec=OpenDataSciConfig)
@@ -794,28 +808,30 @@ class TestShowModels:
         cfg.secondary_provider = "anthropic"
         cfg.secondary_model = "claude-haiku-4-5"
         controller._cfg = cfg
-        controller.show_models()
+        await controller.show_models()
         content = mock_ui.add_message.call_args[0][1]
         assert "Claude" in content
 
 
 class TestLsWorkspace:
-    def test_ls_workspace_no_service(self, controller: CLIController, mock_ui: MagicMock) -> None:
-        controller.ls_workspace()
+    async def test_ls_workspace_no_service(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await controller.ls_workspace()
         mock_ui.add_message.assert_called_with("agent", "_Not loaded yet._")
 
-    def test_ls_workspace_shows_panel(
+    async def test_ls_workspace_shows_panel(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
         mock_service.get_workspace_files.return_value = ["a.csv", "b.csv"]
-        loaded_controller.ls_workspace()
+        await loaded_controller.ls_workspace()
         mock_ui.show_workspace_panel.assert_called_once_with(["a.csv", "b.csv"])
 
-    def test_ls_workspace_error_shows_message(
+    async def test_ls_workspace_error_shows_message(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
         mock_service.get_workspace_files.side_effect = RuntimeError("permission denied")
-        loaded_controller.ls_workspace()
+        await loaded_controller.ls_workspace()
         content = mock_ui.add_message.call_args[0][1]
         assert "permission denied" in content
 
@@ -826,56 +842,56 @@ class TestLsWorkspace:
 
 
 class TestChoiceHandling:
-    def test_show_choice_prompt_enters_awaiting_state(
+    async def test_show_choice_prompt_enters_awaiting_state(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        controller._show_choice_prompt("Pick one?", ["Alpha", "Beta"])
+        await controller._show_choice_prompt("Pick one?", ["Alpha", "Beta"])
         assert controller._awaiting_choice is True
         assert controller._pending_choices == ["Alpha", "Beta"]
         mock_ui.add_input_class.assert_called_with("awaiting-choice")
 
-    def test_handle_user_choice_by_letter_resolves_to_text(
+    async def test_handle_user_choice_by_letter_resolves_to_text(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         controller._pending_choices = ["yes", "no"]
         controller._awaiting_choice = True
         controller._other_choice_label = None
-        result = controller._handle_user_choice("A")
+        result = await controller._handle_user_choice("A")
         assert result == "yes"
 
-    def test_handle_user_choice_freeform_text_sent_as_is(
+    async def test_handle_user_choice_freeform_text_sent_as_is(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         controller._pending_choices = ["yes", "no"]
         controller._awaiting_choice = True
         controller._other_choice_label = None
-        result = controller._handle_user_choice("maybe later")
+        result = await controller._handle_user_choice("maybe later")
         assert result == "maybe later"
 
-    def test_handle_user_choice_other_label_prompts_custom_input(
+    async def test_handle_user_choice_other_label_prompts_custom_input(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         controller._pending_choices = ["yes", "no"]
         controller._awaiting_choice = True
         controller._other_choice_label = "C"
         controller._awaiting_custom_choice_input = False
-        controller._handle_user_choice("C")
+        await controller._handle_user_choice("C")
         assert controller._awaiting_custom_choice_input is True
 
-    def test_cancel_choice_exits_mode_and_returns_cancel(
+    async def test_cancel_choice_exits_mode_and_returns_cancel(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         controller._awaiting_choice = True
         controller._pending_choices = ["yes"]
-        result = controller.cancel_choice()
+        result = await controller.cancel_choice()
         assert controller._awaiting_choice is False
         assert result == "cancel"
 
-    def test_cancel_choice_no_op_when_not_awaiting(
+    async def test_cancel_choice_no_op_when_not_awaiting(
         self, controller: CLIController
     ) -> None:
         controller._awaiting_choice = False
-        result = controller.cancel_choice()
+        result = await controller.cancel_choice()
         assert result is None
 
 
@@ -998,13 +1014,13 @@ class TestRunAgent:
         await loaded_controller.run_agent("q")
         mock_ui.add_divider.assert_called_once()
 
-    async def test_run_agent_spawn_workers_block_marked_done_on_tool_result(
+    async def test_run_agent_task_block_marked_done_on_tool_result(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
-        """Worker block turns green (set_done) when spawn_workers tool_result arrives."""
+        """Worker block turns green (set_done) when task tool_result arrives."""
         wb = mock_ui.add_worker_block.return_value
         events = [
-            ToolCallEvent(tool="spawn_workers", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
+            ToolCallEvent(tool="task", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
             WorkerDoneEvent(worker_idx=0, success=True),
             WorkerDoneEvent(worker_idx=1, success=True),
             ToolResultEvent(content="done", tool_call_id="sw1"),
@@ -1013,13 +1029,13 @@ class TestRunAgent:
         await loaded_controller.run_agent("q")
         wb.set_done.assert_called()
 
-    async def test_run_agent_spawn_workers_worker_done_updates_block(
+    async def test_run_agent_task_worker_done_updates_block(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
         """Each worker_done event calls mark_worker_done on the worker block."""
         wb = mock_ui.add_worker_block.return_value
         events = [
-            ToolCallEvent(tool="spawn_workers", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
+            ToolCallEvent(tool="task", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
             WorkerDoneEvent(worker_idx=0, success=True),
             WorkerDoneEvent(worker_idx=1, success=True),
             ToolResultEvent(content="done", tool_call_id="sw1"),
@@ -1029,7 +1045,7 @@ class TestRunAgent:
         wb.mark_worker_done.assert_any_call(0)
         wb.mark_worker_done.assert_any_call(1)
 
-    async def test_run_agent_spawn_workers_worker_done_not_lost_when_parallel_tool_result_fires_first(
+    async def test_run_agent_task_worker_done_not_lost_when_parallel_tool_result_fires_first(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
         """Regression: when a parallel tool's tool_result fires before worker_done events,
@@ -1039,11 +1055,11 @@ class TestRunAgent:
         subsequent worker_done events to be silently dropped — leaving the block blue.
         """
         wb = mock_ui.add_worker_block.return_value
-        # Simulate: Tool A and spawn_workers called in parallel.
+        # Simulate: Tool A and task called in parallel.
         # Tool A's tool_result arrives BEFORE the worker_done events (Tool A was faster).
         events = [
             ToolCallEvent(tool="execute_python_code", tool_call_id="tc_a"),
-            ToolCallEvent(tool="spawn_workers", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
+            ToolCallEvent(tool="task", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
             # Tool A finishes first — its tool_result arrives before worker_done
             ToolResultEvent(content="result", tool_call_id="tc_a"),
             # Workers complete after Tool A's result
@@ -1540,7 +1556,7 @@ class TestSlashCommandArguments:
     async def test_awaiting_choice_exit_with_trailing_text_quits(
         self, controller: CLIController
     ) -> None:
-        controller._show_choice_prompt("Pick one", ["a", "b"])
+        await controller._show_choice_prompt("Pick one", ["a", "b"])
         action, _ = await controller.on_submit("/exit now")
         assert action == "quit"
 

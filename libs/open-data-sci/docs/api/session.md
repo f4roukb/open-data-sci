@@ -34,6 +34,9 @@ The agent can also run read-only shell commands via `sandbox.execute_cli()`. Onl
 | Structured / binary | `jq`, `xxd`, `od` |
 | Output / info | `echo`, `printf`, `date`, `uname`, `printenv`, `env` |
 | Archive inspection | `unzip`, `tar`, `zip` |
+| GitHub CLI | `gh` |
+
+Every command above runs fully offline except `gh`, which is the sole exception: its network access is scoped to GitHub's own hosts (`github.com`, `api.github.com`, `codeload.github.com`, `objects.githubusercontent.com`, `raw.githubusercontent.com`). It also runs unauthenticated — the sandbox denies read access to `~/.config/gh`, so it can't pick up a host `gh auth login` session.
 
 ## Custom sandbox
 

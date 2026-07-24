@@ -10,7 +10,13 @@ from opendatasci.context.base import BaseContextStore
 from opendatasci.human_inputs.human_approval import HumanApprovalBaseManager
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory
 from opendatasci.skills.base import BaseSkillStore
-from opendatasci.tools.factory import ToolName, create_agent_tools, create_worker_agent_tools
+from opendatasci.tools.factory import (
+    ToolName,
+    create_execution_mode_tools,
+    create_plan_mode_tools,
+    create_self_review_mode_tools,
+    create_worker_agent_tools,
+)
 from opendatasci.workspace.base import BaseWorkspace
 from opendatasci.workspace.local import LocalWorkspace
 
@@ -35,9 +41,8 @@ class TestToolName:
             "execute_cli_command",
             "load_skill",
             "list_skills",
-            "enter_plan_mode",
+            "switch_agentic_mode",
             "exit_plan_mode",
-            "enter_self_review_mode",
             "exit_self_review_mode",
             "task",
             "get_task_status",
@@ -181,14 +186,13 @@ class TestWorkerToolSetExact:
         assert "web_search" not in names
         assert "fetch_url" not in names
 
-    def test_excludes_planning_tools(self) -> None:
+    def test_excludes_mode_switching_tool(self) -> None:
         names = {t.name for t in create_worker_agent_tools(_make_workspace(), None, sandbox=_make_sandbox())}
-        assert "enter_plan_mode" not in names
-        assert "exit_plan_mode" not in names
+        assert "switch_agentic_mode" not in names
 
-    def test_excludes_self_review_tools(self) -> None:
+    def test_excludes_plan_and_self_review_exit_tools(self) -> None:
         names = {t.name for t in create_worker_agent_tools(_make_workspace(), None, sandbox=_make_sandbox())}
-        assert "enter_self_review_mode" not in names
+        assert "exit_plan_mode" not in names
         assert "exit_self_review_mode" not in names
 
     def test_excludes_ask_user_mcq(self) -> None:
@@ -201,7 +205,7 @@ class TestWorkerToolSetExact:
 
 
 # ---------------------------------------------------------------------------
-# create_agent_tools
+# create_execution_mode_tools
 # ---------------------------------------------------------------------------
 
 
@@ -218,29 +222,29 @@ class TestCreateMainAgentTools:
             yield
 
     def test_includes_cli_tool_via_base(self) -> None:
-        tools = create_agent_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())
+        tools = create_execution_mode_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())
         names = {t.name for t in tools}
         assert "execute_cli_command" in names
 
     def test_includes_task(self) -> None:
-        tools = create_agent_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())
+        tools = create_execution_mode_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())
         names = {t.name for t in tools}
         assert "task" in names
 
     def test_includes_task_management_tools(self) -> None:
-        tools = create_agent_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())
+        tools = create_execution_mode_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())
         names = {t.name for t in tools}
         assert "get_task_status" in names
         assert "cancel_task" in names
 
     def test_includes_web_tools(self) -> None:
-        tools = create_agent_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())
+        tools = create_execution_mode_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())
         names = {t.name for t in tools}
         assert "web_search" in names
         assert "fetch_url" in names
 
-    def test_includes_planning_tools_when_context_and_session_id_provided(self) -> None:
-        tools = create_agent_tools(
+    def test_includes_exit_plan_mode_when_context_and_session_id_provided(self) -> None:
+        tools = create_execution_mode_tools(
             _make_workspace(),
             _make_sandbox(),
             MagicMock(spec=BaseContextStore),
@@ -249,19 +253,19 @@ class TestCreateMainAgentTools:
             store=MagicMock(spec=BaseSkillStore),
         )
         names = {t.name for t in tools}
-        assert "enter_plan_mode" in names
+        assert "switch_agentic_mode" in names
         assert "exit_plan_mode" in names
 
-    def test_excludes_planning_tools_when_no_context(self) -> None:
-        tools = create_agent_tools(
+    def test_excludes_exit_plan_mode_when_no_context(self) -> None:
+        tools = create_execution_mode_tools(
             _make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory(), session_id="sess1"
         )
         names = {t.name for t in tools}
-        assert "enter_plan_mode" not in names
+        assert "switch_agentic_mode" in names
         assert "exit_plan_mode" not in names
 
-    def test_excludes_planning_tools_when_no_session_id(self) -> None:
-        tools = create_agent_tools(
+    def test_excludes_exit_plan_mode_when_no_session_id(self) -> None:
+        tools = create_execution_mode_tools(
             _make_workspace(),
             _make_sandbox(),
             MagicMock(spec=BaseContextStore),
@@ -269,11 +273,11 @@ class TestCreateMainAgentTools:
             store=MagicMock(spec=BaseSkillStore),
         )
         names = {t.name for t in tools}
-        assert "enter_plan_mode" not in names
+        assert "switch_agentic_mode" in names
         assert "exit_plan_mode" not in names
 
     def test_includes_ask_user_mcq(self) -> None:
-        tools = create_agent_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())
+        tools = create_execution_mode_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())
         names = {t.name for t in tools}
         assert "ask_user_mcq" in names
 
@@ -290,7 +294,7 @@ class TestCreateMainAgentTools:
                 return_value=MagicMock(spec=HumanApprovalBaseManager),
             ),
         ):
-            tools = create_agent_tools(_make_workspace(), _make_sandbox(), None, datasci_config=config, sandbox_factory=_make_sandbox_factory())
+            tools = create_execution_mode_tools(_make_workspace(), _make_sandbox(), None, datasci_config=config, sandbox_factory=_make_sandbox_factory())
         names = {t.name for t in tools}
         assert "mcp" not in " ".join(names).lower()
 
@@ -300,14 +304,79 @@ class TestCreateMainAgentTools:
             "opendatasci.tools.factory.HumanApprovalManager",
             return_value=MagicMock(spec=HumanApprovalBaseManager),
         ) as mock_manager_cls:
-            tools = create_agent_tools(_make_workspace(), _make_sandbox(), None, datasci_config=config, sandbox_factory=_make_sandbox_factory())
+            tools = create_execution_mode_tools(_make_workspace(), _make_sandbox(), None, datasci_config=config, sandbox_factory=_make_sandbox_factory())
         mock_manager_cls.assert_called_once_with(config)
         cli_tool = next(t for t in tools if t.name == ToolName.EXECUTE_CLI)
         assert "request_approval" in cli_tool.args
 
-    def test_includes_critic_tools_unconditionally(self) -> None:
-        tools = create_agent_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())
+    def test_includes_mode_tools_unconditionally(self) -> None:
+        tools = create_execution_mode_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())
         names = {t.name for t in tools}
-        assert "enter_self_review_mode" in names
+        assert "switch_agentic_mode" in names
         assert "exit_self_review_mode" in names
+
+
+# ---------------------------------------------------------------------------
+# create_plan_mode_tools / create_self_review_mode_tools
+# ---------------------------------------------------------------------------
+
+
+def _fake_tools(*names: str) -> list[MagicMock]:
+    tools = []
+    for name in names:
+        tool = MagicMock()
+        tool.name = name
+        tools.append(tool)
+    return tools
+
+
+_FULL_TOOL_SET = _fake_tools(
+    "execute_python_code",
+    "task",
+    "switch_agentic_mode",
+    "exit_plan_mode",
+    "exit_self_review_mode",
+)
+
+
+class TestCreatePlanModeTools:
+    def test_keeps_execution_and_exit_plan_mode_tools(self) -> None:
+        names = {t.name for t in create_plan_mode_tools(_FULL_TOOL_SET)}
+        assert names == {"execute_python_code", "exit_plan_mode"}
+
+    def test_excludes_task(self) -> None:
+        names = {t.name for t in create_plan_mode_tools(_FULL_TOOL_SET)}
+        assert "task" not in names
+
+    def test_excludes_switch_agentic_mode(self) -> None:
+        names = {t.name for t in create_plan_mode_tools(_FULL_TOOL_SET)}
+        assert "switch_agentic_mode" not in names
+
+    def test_excludes_exit_self_review_mode(self) -> None:
+        names = {t.name for t in create_plan_mode_tools(_FULL_TOOL_SET)}
+        assert "exit_self_review_mode" not in names
+
+    def test_absent_exit_plan_mode_stays_absent(self) -> None:
+        """If plan mode was never wired up (no context store), there is nothing to add back in."""
+        tools = _fake_tools("execute_python_code", "task", "switch_agentic_mode")
+        names = {t.name for t in create_plan_mode_tools(tools)}
+        assert "exit_plan_mode" not in names
+
+
+class TestCreateSelfReviewModeTools:
+    def test_keeps_execution_and_exit_self_review_mode_tools(self) -> None:
+        names = {t.name for t in create_self_review_mode_tools(_FULL_TOOL_SET)}
+        assert names == {"execute_python_code", "exit_self_review_mode"}
+
+    def test_excludes_task(self) -> None:
+        names = {t.name for t in create_self_review_mode_tools(_FULL_TOOL_SET)}
+        assert "task" not in names
+
+    def test_excludes_switch_agentic_mode(self) -> None:
+        names = {t.name for t in create_self_review_mode_tools(_FULL_TOOL_SET)}
+        assert "switch_agentic_mode" not in names
+
+    def test_excludes_exit_plan_mode(self) -> None:
+        names = {t.name for t in create_self_review_mode_tools(_FULL_TOOL_SET)}
+        assert "exit_plan_mode" not in names
 
