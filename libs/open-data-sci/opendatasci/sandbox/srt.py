@@ -8,6 +8,7 @@ Windows; this class is therefore exercised only under mocks on such hosts.
 
 import asyncio
 import base64
+import glob
 import json
 import logging
 import os
@@ -79,20 +80,21 @@ def check_sandbox_dependencies() -> None:
 
 _RUNNER_SRC = Path(__file__).parent / "_runner.py"
 
-# Sensitive host locations the sandbox must never expose to model-generated
-# code. These are expanded to absolute, symlink-resolved paths before being
-# handed to SRT, which resolves deny rules relative to the workspace cwd and
-# does *not* expand ``~`` itself.
-_SENSITIVE_READ_PATHS: tuple[str, ...] = (
-    "~/.ssh",
-    "~/.aws",
-    "~/.gnupg",
-    "~/.config/gcloud",
-    "~/.kube",
-    "~/.docker",
-    "~/.netrc",
-    "~/.config/gh",
-)
+
+def _home_dotfile_deny_paths() -> list[str]:
+    """Every existing top-level dotfile/dotdir directly under the home directory.
+
+    Blanket-denies credential stores by naming convention (``~/.ssh``, ``~/.aws``,
+    ``~/.netrc``, ``~/.config`` and everything under it, etc.) rather than an
+    explicit allowlist of known tools, so it also catches ones we haven't
+    enumerated. Resolved to absolute, symlink-resolved paths since SRT does not
+    expand ``~`` itself and resolves deny rules relative to the workspace cwd.
+    Only reaches one level deep (``~/.foo``, not ``~/projects/.env``), same as
+    the explicit list this replaced.
+    """
+    home = os.path.expanduser("~")
+    return [os.path.realpath(path) for path in glob.glob(os.path.join(home, ".*"))]
+
 
 # Domains the sandboxed ``gh`` CLI (see ``execute_cli_command``) is permitted to
 # reach. Scoped narrowly to GitHub's own hosts rather than opening network
@@ -357,13 +359,10 @@ class SRTSandbox(BaseSandbox):
     def _make_config(self) -> SandboxRuntimeConfig:
         if self._sandbox_config is None:
             workspace = str(self._workspace_path or self._session_dir)
-            deny_read = [
-                os.path.realpath(os.path.expanduser(path)) for path in _SENSITIVE_READ_PATHS
-            ]
             self._sandbox_config = SandboxRuntimeConfig(
                 network={"allowed_domains": [], "denied_domains": []},
                 filesystem={
-                    "deny_read": deny_read,
+                    "deny_read": _home_dotfile_deny_paths(),
                     "allow_write": [workspace, str(self._session_dir)],
                     "deny_write": [],
                 },
@@ -381,16 +380,13 @@ class SRTSandbox(BaseSandbox):
         """
         if self._cli_sandbox_config is None:
             workspace = str(self._workspace_path or self._session_dir)
-            deny_read = [
-                os.path.realpath(os.path.expanduser(path)) for path in _SENSITIVE_READ_PATHS
-            ]
             self._cli_sandbox_config = SandboxRuntimeConfig(
                 network={
                     "allowed_domains": list(_CLI_ALLOWED_NETWORK_DOMAINS),
                     "denied_domains": [],
                 },
                 filesystem={
-                    "deny_read": deny_read,
+                    "deny_read": _home_dotfile_deny_paths(),
                     "allow_write": [workspace, str(self._session_dir)],
                     "deny_write": [],
                 },

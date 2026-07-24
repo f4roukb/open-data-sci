@@ -2,8 +2,9 @@
 
 import asyncio
 import logging
+from enum import StrEnum, auto
 from pathlib import Path
-from typing import Annotated, Any, Callable, Coroutine, Literal, override
+from typing import Annotated, Any, override
 
 from annotated_types import MaxLen, MinLen
 from langchain_core.callbacks.manager import adispatch_custom_event
@@ -22,10 +23,16 @@ from opendatasci.tools.base import OpenDataSciBaseTool
 from opendatasci.tools.coding import create_cli_tools, create_coding_tools
 from opendatasci.tools.skills import create_skill_tools
 from opendatasci.tools.web import create_web_tools
-from opendatasci.workers import BaseWorker, ConcurrentWorker, ParallelWorker
 from opendatasci.workspace.base import BaseWorkspace
 
 logger = logging.getLogger(__name__)
+
+
+class SynchMode(StrEnum):
+    """Whether the ``task`` tool waits for results or schedules them in the background."""
+
+    SYNC = auto()
+    ASYNC = auto()
 
 
 class SpawnWorkersTool(OpenDataSciBaseTool):
@@ -49,7 +56,7 @@ class SpawnWorkersTool(OpenDataSciBaseTool):
         subtasks: Annotated[list["SpawnWorkersTool.TaskDetails"], MinLen(1), MaxLen(3)]
         summary: str
         communication: str
-        synch_mode: Literal["sync", "async"] = "sync"
+        synch_mode: SynchMode = SynchMode.SYNC
 
     name: str = "task"
     description: str = """
@@ -94,32 +101,14 @@ Args:
     sandbox_factory: BaseSandboxFactory
     store: BaseSkillStore
     task_manager: BaseTaskManager
-    run_mode: Literal["parallel", "concurrent"] = "concurrent"
 
     async def _arun_one(
         self,
         idx: int,
         subtask: TaskDetails,
         outer_config: RunnableConfig,
-        schedule: "Callable[[Coroutine[Any, Any, None]], Any] | None" = None,
     ) -> str:
-        """Run a single worker subtask inside its own sandbox.
-
-        Args:
-            idx:          Zero-based worker index used to tag emitted events.
-            subtask:      Subtask descriptor including instructions and options.
-            outer_config: LangChain config from the calling graph, captured before
-                          any inner graph run can overwrite the context var — ensures
-                          ``adispatch_custom_event`` always targets the right callback
-                          chain regardless of which async context is active at fire time.
-            schedule:     How to schedule the ``adispatch_custom_event`` coroutine.
-                          ``None`` schedules it on the currently running loop (the
-                          worker's own loop, whether that's the shared concurrent
-                          loop or this worker's dedicated parallel-mode loop). When
-                          running in parallel mode, this is instead
-                          ``run_coroutine_threadsafe`` targeting the caller's loop,
-                          since the callback machinery in *outer_config* lives there.
-        """
+        """Run a single worker subtask inside its own sandbox."""
         initial_skill = None
         if subtask.skill is not None:
             initial_skill = self.store.load(subtask.skill)
@@ -140,10 +129,7 @@ Args:
                 },
                 config=outer_config,
             )
-            if schedule is not None:
-                schedule(coro)
-            else:
-                asyncio.get_running_loop().create_task(coro)
+            asyncio.get_running_loop().create_task(coro)
 
         cancelled = False
         exc_info: BaseException | None = None
@@ -188,9 +174,6 @@ Args:
                     emit("worker_finished", subtask.summary, {"success": success})
                     emit("worker_done", subtask.summary, {"success": success})
 
-    def _make_worker(self) -> BaseWorker:
-        return ParallelWorker() if self.run_mode == "parallel" else ConcurrentWorker()
-
     async def _run_to_completion(
         self,
         subtasks: list[TaskDetails],
@@ -198,7 +181,10 @@ Args:
     ) -> str:
         timeout = (self.datasci_config or OpenDataSciConfig()).worker_timeout_seconds
         results = await asyncio.wait_for(
-            self._make_worker().run(subtasks, outer_config, self._arun_one),
+            asyncio.gather(
+                *[self._arun_one(i, t, outer_config) for i, t in enumerate(subtasks)],
+                return_exceptions=True,
+            ),
             timeout=timeout,
         )
 
@@ -224,12 +210,12 @@ Args:
         subtasks: Annotated[list[TaskDetails], MinLen(1), MaxLen(3)],
         summary: str,
         communication: str,
-        synch_mode: Literal["sync", "async"] = "sync",
+        synch_mode: SynchMode = SynchMode.SYNC,
         **kwargs: Any,
     ) -> str:
         outer_config = ensure_config()
 
-        if synch_mode == "async":
+        if synch_mode == SynchMode.ASYNC:
             task_id = await self.task_manager.submit(
                 lambda: self._run_to_completion(subtasks, outer_config),
                 summary=summary,
@@ -251,7 +237,6 @@ def create_worker_tools(
     sandbox_factory: BaseSandboxFactory,
     task_manager: BaseTaskManager,
     store: BaseSkillStore | None = None,
-    run_mode: Literal["parallel", "concurrent"] = "concurrent",
 ) -> list[BaseTool]:
     """Return the task tool.
 
@@ -274,10 +259,6 @@ def create_worker_tools(
         store:           Skill store shared across all spawned workers.  Defaults
                          to a :class:`~opendatasci.skills.local.LocalSkillStore`
                          rooted at ``<context.root>/skills``.
-        run_mode:        ``"concurrent"`` (default) runs subtasks cooperatively on a
-                         single event loop, as before. ``"parallel"`` runs each
-                         subtask on its own OS thread with a dedicated event loop
-                         for true parallel execution.
     """
     if store is None:
         user_skills_dir = Path(context.root) / "skills" if context is not None else None
@@ -294,6 +275,5 @@ def create_worker_tools(
             sandbox_factory=sandbox_factory,
             store=store,
             task_manager=task_manager,
-            run_mode=run_mode,
         )
     ]

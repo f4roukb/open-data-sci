@@ -67,9 +67,8 @@ class CancelTaskTool(OpenDataSciBaseTool):
     description: str = """
 Cancel a background task previously scheduled via the `task` tool with `synch_mode="async"`.
 
-Cancellation is best-effort: work already running on a dedicated OS thread (`run_mode="parallel"`
-in the `task` tool) may keep running to completion in the background even after cancellation is
-requested; its result is simply discarded.
+Cancellation is best-effort: a worker deep inside a tool call may take a moment to unwind, and its
+result is discarded once cancelled.
 
 Args:
     task_id: The task ID returned when the background task was scheduled.
