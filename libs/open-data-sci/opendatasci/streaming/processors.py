@@ -255,7 +255,7 @@ class AgentTurnStreamProcessor:
         return out
 
     def _handle_tool_call(self, tc: Any) -> list[AgentStreamEvent]:
-        from opendatasci.tools import ToolName  # local import breaks circular dependency
+        from opendatasci.tools.factory import ToolName  # local import breaks circular dependency
 
         name = tc["name"]
         args = tc["args"] if isinstance(tc["args"], dict) else {}

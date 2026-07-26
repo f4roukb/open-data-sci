@@ -275,14 +275,14 @@ Args:
 """
     args_schema: type[BaseModel] = CallArgs
 
-    context: BaseContextStore | None
+    context_store: BaseContextStore | None
 
     @override
     async def _arun(self, path: str, summary: str, communication: str, **kwargs: Any) -> str:
-        if self.context is None:
+        if self.context_store is None:
             return "Error: No workspace path available."
         try:
-            return await self.context.read_dataset_info(path)
+            return await self.context_store.read_dataset_info(path)
         except FileNotFoundError as exc:
             return f"Error: {exc}"
         except Exception as exc:
@@ -320,16 +320,16 @@ Args:
 """
     args_schema: type[BaseModel] = CallArgs
 
-    context: BaseContextStore | None
+    context_store: BaseContextStore | None
     sandbox: BaseSandbox
     persist: bool = True
 
     @override
     async def _arun(self, path: str, summary: str, communication: str, **kwargs: Any) -> str:
-        if self.context is None:
+        if self.context_store is None:
             return "Error: No workspace path available."
         try:
-            resolved, hash_hex, existing = await self.context.get_profile_info(path)
+            resolved, hash_hex, existing = await self.context_store.get_profile_info(path)
 
             if existing is not None:
                 return existing
@@ -348,7 +348,7 @@ Args:
                 return content[len("__PROFILE_SKIP__") :]
 
             if self.persist:
-                self.context.save_dataset_profile(hash_hex, content)
+                self.context_store.save_dataset_profile(hash_hex, content)
             return content
 
         except FileNotFoundError as exc:
@@ -392,7 +392,7 @@ Args:
 """
     args_schema: type[BaseModel] = CallArgs
 
-    context: BaseContextStore | None
+    context_store: BaseContextStore | None
 
     @override
     async def _arun(
@@ -404,48 +404,48 @@ Args:
         merge: bool = False,
         **kwargs: Any,
     ) -> str:
-        if self.context is None:
+        if self.context_store is None:
             return "Error: No workspace path available."
         try:
-            return await self.context.update_dataset_info(path, update, merge=merge)
+            return await self.context_store.update_dataset_info(path, update, merge=merge)
         except FileNotFoundError as exc:
             return f"Error: {exc}"
         except Exception as exc:
             return f"Error updating dataset info: {type(exc).__name__}: {exc}"
 
 
-def create_read_dataset_info_tools(context: BaseContextStore | None) -> list[BaseTool]:
-    """Return the ``read_dataset_info`` tool bound to *context*."""
-    return [ReadDatasetInfoTool(context=context)]
+def create_read_dataset_info_tools(context_store: BaseContextStore | None) -> list[BaseTool]:
+    """Return the ``read_dataset_info`` tool bound to *context_store*."""
+    return [ReadDatasetInfoTool(context_store=context_store)]
 
 
 def create_profile_dataset_tools(
-    context: BaseContextStore | None, sandbox: BaseSandbox, persist: bool = True
+    context_store: BaseContextStore | None, sandbox: BaseSandbox, persist: bool = True
 ) -> list[BaseTool]:
-    """Return the ``profile_dataset`` tool bound to *context* and *sandbox*."""
-    return [ProfileDatasetTool(context=context, sandbox=sandbox, persist=persist)]
+    """Return the ``profile_dataset`` tool bound to *context_store* and *sandbox*."""
+    return [ProfileDatasetTool(context_store=context_store, sandbox=sandbox, persist=persist)]
 
 
-def create_update_dataset_info_tools(context: BaseContextStore | None) -> list[BaseTool]:
-    """Return the ``update_dataset_info`` tool bound to *context*."""
-    return [UpdateDatasetInfoTool(context=context)]
+def create_update_dataset_info_tools(context_store: BaseContextStore | None) -> list[BaseTool]:
+    """Return the ``update_dataset_info`` tool bound to *context_store*."""
+    return [UpdateDatasetInfoTool(context_store=context_store)]
 
 
 def create_data_context_tools(
-    context: BaseContextStore | None, sandbox: BaseSandbox, persist: bool = True
+    context_store: BaseContextStore | None, sandbox: BaseSandbox, persist: bool = True
 ) -> list[BaseTool]:
-    """Return dataset-context tools bound to *context* and *sandbox*.
+    """Return dataset-context tools bound to *context_store* and *sandbox*.
 
     Args:
-        context: I/O boundary for dataset notes and profiles.
+        context_store: I/O boundary for dataset notes and profiles.
         sandbox:      Execution sandbox used by ``profile_dataset``.
         persist:      When ``False``, ``update_dataset_info`` is excluded and
                       ``profile_dataset`` will not write profiles to disk.
     """
     tools = [
-        *create_read_dataset_info_tools(context),
-        *create_profile_dataset_tools(context, sandbox, persist=persist),
+        *create_read_dataset_info_tools(context_store),
+        *create_profile_dataset_tools(context_store, sandbox, persist=persist),
     ]
     if persist:
-        tools.extend(create_update_dataset_info_tools(context))
+        tools.extend(create_update_dataset_info_tools(context_store))
     return tools

@@ -252,7 +252,7 @@ class TestCreateMainAgentTools:
             MagicMock(spec=BaseContextStore),
             sandbox_factory=_make_sandbox_factory(),
             session_id="sess1",
-            store=MagicMock(spec=BaseSkillStore),
+            skill_store=MagicMock(spec=BaseSkillStore),
         )
         names = {t.name for t in tools}
         assert "switch_agentic_mode" in names
@@ -272,7 +272,7 @@ class TestCreateMainAgentTools:
             _make_sandbox(),
             MagicMock(spec=BaseContextStore),
             sandbox_factory=_make_sandbox_factory(),
-            store=MagicMock(spec=BaseSkillStore),
+            skill_store=MagicMock(spec=BaseSkillStore),
         )
         names = {t.name for t in tools}
         assert "switch_agentic_mode" in names

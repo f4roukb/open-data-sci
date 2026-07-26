@@ -45,6 +45,8 @@ from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory
 from opendatasci.sandbox.srt import SRTSandboxFactory
 from opendatasci.session import BaseSessionManager, LocalSessionManager
 from opendatasci.skills import BaseSkillStore, LocalSkillStore
+from opendatasci.tasks.base import AgentTaskManagerBase
+from opendatasci.tasks.local import LocalAgentTaskManager
 from opendatasci.streaming import (
     AgentStreamEvent,
     AgentTurnStreamProcessor,
@@ -54,7 +56,7 @@ from opendatasci.streaming import (
     MessageEvent,
     ResponseEvent,
 )
-from opendatasci.tools import (
+from opendatasci.tools.factory import (
     create_execution_mode_tools,
     create_plan_mode_tools,
     create_self_review_mode_tools,
@@ -102,6 +104,8 @@ class Agent(BaseOpenDataSciAgent):
             local file-based store is created when omitted.
         skill_store: Registry that the agent queries to resolve named skills
             at runtime.  Defaults to the built-in :class:`LocalSkillStore`.
+        agent_task_manager: Tracks background tasks spawned via the ``task``
+            tool.  Defaults to a file-backed :class:`LocalAgentTaskManager`.
         session_manager: Tracks the session's conversation threads in the
             graph checkpointer; clearing the conversation creates a new
             thread.  Defaults to a file-backed :class:`LocalSessionManager`.
@@ -122,6 +126,7 @@ class Agent(BaseOpenDataSciAgent):
         workspace: BaseWorkspace,
         context_store: BaseContextStore | None = None,
         skill_store: BaseSkillStore | None = None,
+        agent_task_manager: AgentTaskManagerBase | None = None,
         sandbox_factory: BaseSandboxFactory | None = None,
         checkpointer: BaseCheckpointSaver[Any] | None = None,
         tools: list[BaseTool] | None = None,
@@ -135,6 +140,7 @@ class Agent(BaseOpenDataSciAgent):
         self._tools = tools
         self._sandbox_factory = sandbox_factory
         self._skill_store = skill_store
+        self._agent_task_manager = agent_task_manager
         self._context_store = context_store
         self._session_manager = session_manager
         self._checkpointer = checkpointer
@@ -151,6 +157,9 @@ class Agent(BaseOpenDataSciAgent):
         if self._context_store is None:
             workspace_path = Path(self._workspace.get_reference())
             self._context_store = LocalContextStore(workspace_path=workspace_path)
+        if self._agent_task_manager is None:
+            output_root = Path(self._context_store.root) / "workers" / "outputs"
+            self._agent_task_manager = LocalAgentTaskManager(output_root=output_root)
         if self._session_manager is None:
             self._session_manager = LocalSessionManager(
                 workspace_path=Path(self._workspace.get_reference()),
@@ -172,8 +181,9 @@ class Agent(BaseOpenDataSciAgent):
                 self._context_store,
                 self._sandbox_factory,
                 session_id=self._session_id,
-                store=self._skill_store,
+                skill_store=self._skill_store,
                 datasci_config=self._config,
+                agent_task_manager=self._agent_task_manager,
             )
 
         self._tools_in_plan_mode: list[BaseTool] = create_plan_mode_tools(self._tools)

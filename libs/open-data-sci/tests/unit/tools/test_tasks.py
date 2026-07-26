@@ -10,7 +10,7 @@ import pytest
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory
 from opendatasci.skills.base import BaseSkillStore
-from opendatasci.tasks.base import TaskProgressReport, TaskProgressUpdate
+from opendatasci.tasks.base import AgentTaskProgressReport, AgentTaskProgressUpdate
 from opendatasci.tasks.local import LocalAgentTaskManager
 from opendatasci.tools.tasks import (
     CancelTaskTool,
@@ -37,7 +37,7 @@ class TestCreateTaskManagementTools:
 class TestCheckTaskTool:
     @pytest.mark.asyncio
     async def test_unknown_task_id(self) -> None:
-        tool = CheckTaskTool(task_manager=LocalAgentTaskManager())
+        tool = CheckTaskTool(agent_task_manager=LocalAgentTaskManager())
         unknown_id = uuid4()
         result = await tool.ainvoke({"task_id": str(unknown_id)})
         assert str(unknown_id) in result
@@ -53,7 +53,7 @@ class TestCheckTaskTool:
         task_id = await manager.submit_task(_work, summary="s")
         await asyncio.sleep(0)
 
-        tool = CheckTaskTool(task_manager=manager)
+        tool = CheckTaskTool(agent_task_manager=manager)
         result = await tool.ainvoke({"task_id": str(task_id)})
         payload = json.loads(result)
         assert payload["status"] == "completed"
@@ -69,7 +69,7 @@ class TestCheckTaskTool:
         task_id = await manager.submit_task(_work, summary="s")
         await asyncio.sleep(0)
 
-        tool = CheckTaskTool(task_manager=manager)
+        tool = CheckTaskTool(agent_task_manager=manager)
         result = await tool.ainvoke({"task_id": str(task_id)})
         payload = json.loads(result)
         assert payload["status"] == "failed"
@@ -86,13 +86,13 @@ class TestCheckTaskTool:
         task_id = await manager.submit_task(_work, summary="s")
         record = await manager.get_task(task_id)
         record.progress.append(
-            TaskProgressReport(
-                progress_update=TaskProgressUpdate(done="a", ongoing="b", blockers="c"),
+            AgentTaskProgressReport(
+                progress_update=AgentTaskProgressUpdate(done="a", ongoing="b", blockers="c"),
                 eta_seconds=15.0,
             ),
         )
 
-        tool = CheckTaskTool(task_manager=manager)
+        tool = CheckTaskTool(agent_task_manager=manager)
         result = await tool.ainvoke({"task_id": str(task_id)})
         payload = json.loads(result)
         assert payload["progress"] == [
@@ -124,7 +124,7 @@ class TestListTasksTool:
         done_id = await manager.submit_task(_fast, summary="done one")
         await asyncio.sleep(0)
 
-        tool = ListTasksTool(task_manager=manager)
+        tool = ListTasksTool(agent_task_manager=manager)
         result = await tool.ainvoke({})
         assert str(running_id) in result
         assert str(done_id) not in result
@@ -141,13 +141,13 @@ class TestListTasksTool:
         task_id = await manager.submit_task(_work, summary="s")
         await asyncio.sleep(0)
 
-        tool = ListTasksTool(task_manager=manager)
+        tool = ListTasksTool(agent_task_manager=manager)
         result = await tool.ainvoke({"status_in": ["completed"]})
         assert str(task_id) in result
 
     @pytest.mark.asyncio
     async def test_no_matches_reports_empty(self) -> None:
-        tool = ListTasksTool(task_manager=LocalAgentTaskManager())
+        tool = ListTasksTool(agent_task_manager=LocalAgentTaskManager())
         result = await tool.ainvoke({})
         assert "no background tasks" in result.lower()
 
@@ -155,7 +155,7 @@ class TestListTasksTool:
 class TestCancelTaskTool:
     @pytest.mark.asyncio
     async def test_unknown_task_id(self) -> None:
-        tool = CancelTaskTool(task_manager=LocalAgentTaskManager())
+        tool = CancelTaskTool(agent_task_manager=LocalAgentTaskManager())
         result = await tool.ainvoke({"task_id": str(uuid4())})
         assert "no background task found" in result.lower()
 
@@ -172,7 +172,7 @@ class TestCancelTaskTool:
         task_id = await manager.submit_task(_work, summary="s")
         await asyncio.wait_for(started.wait(), timeout=1)
 
-        tool = CancelTaskTool(task_manager=manager)
+        tool = CancelTaskTool(agent_task_manager=manager)
         result = await tool.ainvoke({"task_id": str(task_id)})
         assert "cancellation requested" in result.lower()
         assert str(task_id) in result
@@ -244,20 +244,20 @@ class TestCreateTaskToolsStructure:
     def test_returns_list_with_one_tool(self) -> None:
         tools = create_task_tools(
             _make_workspace(),
-            None,
-            datasci_config=None,
+            datasci_config=OpenDataSciConfig(),
             sandbox_factory=_make_sandbox_factory(),
-            task_manager=LocalAgentTaskManager(),
+            agent_task_manager=LocalAgentTaskManager(),
+            skill_store=_make_store(),
         )
         assert len(tools) == 1
 
     def test_tool_name_is_task(self) -> None:
         tools = create_task_tools(
             _make_workspace(),
-            None,
-            datasci_config=None,
+            datasci_config=OpenDataSciConfig(),
             sandbox_factory=_make_sandbox_factory(),
-            task_manager=LocalAgentTaskManager(),
+            agent_task_manager=LocalAgentTaskManager(),
+            skill_store=_make_store(),
         )
         assert tools[0].name == "task"
 
@@ -268,10 +268,10 @@ _AGENT_PATCH = "opendatasci.tools.tasks.WorkerAgent"
 def _make_tool(**overrides) -> TaskTool:
     kwargs = {
         "workspace": _make_workspace(),
-        "datasci_config": None,
+        "datasci_config": OpenDataSciConfig(),
         "sandbox_factory": _make_sandbox_factory(),
-        "store": _make_store(),
-        "task_manager": LocalAgentTaskManager(),
+        "skill_store": _make_store(),
+        "agent_task_manager": LocalAgentTaskManager(),
         **overrides,
     }
     return TaskTool(**kwargs)
@@ -308,7 +308,7 @@ class TestRunOne:
     async def test_skill_resolved_from_store(self) -> None:
         store = _make_store()
         store.load = MagicMock(return_value="skill_obj")
-        tool = _make_tool(store=store)
+        tool = _make_tool(skill_store=store)
         with patch(_AGENT_PATCH) as MockAgent:
             MockAgent.return_value.ainvoke = AsyncMock(return_value="ok")
             await tool._arun_one(
@@ -328,11 +328,10 @@ class TestTaskTool:
     ):
         tools = create_task_tools(
             _make_workspace(),
-            None,
             datasci_config=datasci_config or OpenDataSciConfig(),
             sandbox_factory=_make_sandbox_factory(),
-            store=store,
-            task_manager=LocalAgentTaskManager(),
+            skill_store=store or _make_store(),
+            agent_task_manager=LocalAgentTaskManager(),
         )
         return tools[0]
 
@@ -453,11 +452,10 @@ class TestTaskTool:
         mock_store.load = MagicMock(return_value=None)
         tools = create_task_tools(
             _make_workspace(),
-            None,
             datasci_config=OpenDataSciConfig(),
             sandbox_factory=_make_sandbox_factory(),
-            store=mock_store,
-            task_manager=LocalAgentTaskManager(),
+            skill_store=mock_store,
+            agent_task_manager=LocalAgentTaskManager(),
         )
         tool = tools[0]
         with patch(_AGENT_PATCH) as MockAgent:
@@ -532,12 +530,12 @@ class TestRunMode:
             )
 
         assert "scheduled" in result.lower()
-        records = await tool.task_manager.list_tasks()
+        records = await tool.agent_task_manager.list_tasks()
         assert len(records) == 1
         for record in records:
-            await tool.task_manager.cancel_task(record.task_id)
+            await tool.agent_task_manager.cancel_task(record.task_id)
         await asyncio.gather(
-            *(t for t in tool.task_manager._tasks.values()), return_exceptions=True
+            *(t for t in tool.agent_task_manager._tasks.values()), return_exceptions=True
         )
 
     @pytest.mark.asyncio
@@ -566,15 +564,15 @@ class TestRunMode:
             )
 
         assert "scheduled 2 background task" in result.lower()
-        records = await tool.task_manager.list_tasks()
+        records = await tool.agent_task_manager.list_tasks()
         assert len(records) == 2
         assert {r.summary for r in records} == {"A", "B"}
         assert len({r.task_id for r in records}) == 2
 
         for record in records:
-            await tool.task_manager.cancel_task(record.task_id)
+            await tool.agent_task_manager.cancel_task(record.task_id)
         await asyncio.gather(
-            *(t for t in tool.task_manager._tasks.values()), return_exceptions=True
+            *(t for t in tool.agent_task_manager._tasks.values()), return_exceptions=True
         )
 
     @pytest.mark.asyncio

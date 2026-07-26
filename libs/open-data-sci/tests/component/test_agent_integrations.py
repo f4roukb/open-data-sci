@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, patch
 from langchain_core.messages import AIMessage, ToolMessage
 
 from opendatasci.agents.states import AgentState
-from opendatasci.tools import ToolName
+from opendatasci.tools.factory import ToolName
 
 
 def _ai_with_tool_call(name: str, args: dict, call_id: str = "call_1") -> AIMessage:

@@ -76,7 +76,7 @@ Args:
 """
     args_schema: type[BaseModel] = CallArgs
 
-    store: BaseSkillStore
+    skill_store: BaseSkillStore
     context_store: BaseContextStore | None = None
     session_id: str | None = None
 
@@ -146,9 +146,9 @@ Args:
     def _enter_self_review_mode(self, skill: str | None, tool_call_id: str) -> Command[AgentState]:
         state_update: dict[str, Any] = {"is_self_review_mode": True}
         if skill is not None:
-            loaded = self.store.load(skill)
+            loaded = self.skill_store.load(skill)
             if loaded is None:
-                available = ", ".join(sorted(self.store.list_skills()))
+                available = ", ".join(sorted(self.skill_store.list_skills()))
                 return Command(
                     update={
                         "messages": [
@@ -271,7 +271,7 @@ Args:
 
 
 def create_mode_tools(
-    store: BaseSkillStore,
+    skill_store: BaseSkillStore,
     context_store: BaseContextStore | None = None,
     session_id: str | None = None,
 ) -> list[BaseTool]:
@@ -283,12 +283,12 @@ def create_mode_tools(
     somewhere.
 
     Args:
-        store:         Skill store used to resolve the optional ``skill`` argument.
+        skill_store:   Skill store used to resolve the optional ``skill`` argument.
         context_store: Where completed plans are persisted, if available.
         session_id:    Current session id, used as the plan's storage key.
     """
     tools: list[BaseTool] = [
-        SwitchAgentModeTool(store=store, context_store=context_store, session_id=session_id),
+        SwitchAgentModeTool(skill_store=skill_store, context_store=context_store, session_id=session_id),
         ExitSelfReviewModeTool(),
     ]
     if context_store is not None and session_id is not None:

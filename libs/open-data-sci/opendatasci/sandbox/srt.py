@@ -5,16 +5,43 @@ Linux. Windows is unsupported: ``sandbox_runtime`` imports the Unix-only
 ``resource`` module at import time, so this module fails to import at all on
 Windows; this class is therefore exercised only under mocks on such hosts.
 
-No GPU/NPU access: sandboxed code never has a path to accelerator hardware.
-On Linux, ``sandbox_runtime`` unconditionally runs ``bwrap --dev /dev``, which
-mounts a fresh devtmpfs containing only the standard nodes (``null``, ``zero``,
-``random``, etc.) — no ``/dev/nvidia*`` or ``/dev/dri/*``. On macOS, its
-Seatbelt profile denies IOKit access by default except a narrow allowlist that
-doesn't include the accelerator classes (e.g. ``AGXAccelerator``) Metal/MPS
-compute needs. ``sandbox_runtime`` (0.2.x) exposes no device-related config at
-all — only ``network`` and ``filesystem``. So deep learning code executed via
-:meth:`SRTSandbox.execute` always runs on CPU, regardless of installed wheels
-or host hardware, until device passthrough is added upstream.
+GPU passthrough (Linux only, opt-in via the ``[deep-learning]`` extra):
+``sandbox_runtime`` (0.2.x) unconditionally runs ``bwrap --dev /dev`` on
+Linux, which mounts a fresh devtmpfs containing only the standard nodes
+(``null``, ``zero``, ``random``, etc.) — no ``/dev/nvidia*`` or
+``/dev/dri/*``. It exposes no device-related config to work around this
+(only ``network`` and ``filesystem``), and any ``/dev/*`` path handed to it
+via ``filesystem.allow_write`` is silently dropped (its own comment assumes
+``--dev /dev`` already covers device access, which it doesn't for real
+devices). Verified experimentally (bwrap 0.8, WSL2 + RTX 5070 Ti): appending
+an explicit ``--dev-bind`` for the GPU's device node after ``--dev /dev`` is
+sufficient to restore full accelerator access with no other changes needed.
+
+``SRTSandbox`` does this itself, gated on whether a deep-learning package
+(``torch``, ``jax``, ``transformers``, ``sentence_transformers``) is
+importable — see ``_is_host_dl_extra_active`` and
+``_inject_gpu_devices``. It is off unless one of those is installed, and it
+logs a one-time warning when it activates, because it is a materially
+different risk than the rest of this sandbox's isolation:
+
+- It hands sandboxed code direct ``ioctl`` access to the **host kernel's**
+  GPU driver, not just a contained resource. NVIDIA's driver ioctl surface
+  has a real CVE history for exactly this class of issue (e.g. the
+  ``nvidia-container-toolkit`` CVEs), so a driver bug reachable from
+  sandboxed code is a host-kernel bug, not a sandbox-contained one.
+- There is no GPU equivalent of ``ResourceLimitsConfig`` (which caps
+  CPU/memory/file-size) — nothing stops sandboxed code from exhausting GPU
+  memory or compute, a DoS against anything else using that GPU.
+- Only compute-capable nodes are ever bound: ``/dev/nvidia*`` and
+  ``/dev/dri/renderD*``. ``/dev/dri/card*`` (display/KMS ioctls) is never
+  exposed, deliberately.
+
+macOS/Metal passthrough is not implemented here: it needs Seatbelt profile
+changes (allowing the ``AGXDeviceUserClient`` IOKit class and the
+``com.apple.MTLCompilerService`` mach-lookup), matching the shape of
+upstream's unmerged ``allowGPU`` proposal
+(anthropic-experimental/sandbox-runtime#181), but that's unverified here (no
+macOS hardware available) — deep learning code on macOS still runs on CPU.
 """
 
 import asyncio
@@ -38,6 +65,8 @@ from typing import Any, AsyncIterator
 from sandbox_runtime import SandboxManager, SandboxRuntimeConfig
 from sandbox_runtime.utils.platform import get_platform
 
+from opendatasci._utils.package_extras_utils import is_host_dl_extra_active
+from opendatasci._utils.gpu_utils import discover_gpu_devices
 from opendatasci.sandbox.base import (
     BaseSandbox,
     BaseSandboxFactory,
@@ -135,6 +164,67 @@ _ENV_PASSTHROUGH: tuple[str, ...] = (
     "PROCESSOR_ARCHITECTURE",
     "NUMBER_OF_PROCESSORS",
 )
+
+
+# ---------------------------------------------------------------------------
+# GPU passthrough (Linux only; opt-in via the ``[deep-learning]`` extra)
+# ---------------------------------------------------------------------------
+#
+# See the module docstring for what this does and why it's gated. Detection
+# (``is_host_dl_extra_active``/``discover_gpu_devices``, in
+# ``opendatasci._utils.package_extras_utils``) is pure and reusable; injecting the bwrap
+# args and emitting the one-time warning stay here since they're tied to this
+# module's specific wrapped-command format. The warning is cached at module
+# scope so it fires once per process, not once per sandbox instance.
+
+
+_GPU_WARNING_EMITTED: bool = False
+
+
+def _inject_gpu_devices(wrapped_command: str) -> str:
+    """Append ``--dev-bind`` for discovered GPU devices to a wrapped bwrap command.
+
+    ``sandbox_runtime`` always emits a literal ``--dev /dev`` token on Linux
+    (see module docstring), which this appends immediately after — bwrap
+    applies bind mounts in argument order, so a later ``--dev-bind`` for a
+    specific node inside ``/dev`` takes effect over the synthetic devtmpfs
+    ``--dev`` created for that same path. If the sandbox isn't restricting
+    anything (no ``--dev /dev`` in the command — e.g. no filesystem/network
+    config was passed), the command is returned unchanged: an unrestricted
+    bwrap already sees the real ``/dev``, and a raw (non-bwrap) command has
+    nothing to inject into.
+    """
+    devices = discover_gpu_devices()
+    if not devices:
+        return wrapped_command
+
+    marker = "--dev /dev"
+    if marker not in wrapped_command:
+        return wrapped_command
+
+    global _GPU_WARNING_EMITTED
+    if not _GPU_WARNING_EMITTED:
+        _GPU_WARNING_EMITTED = True
+        warnings.warn(
+            "opendatasci: a deep-learning package is installed, so GPU compute "
+            f"device(s) are being bind-mounted into the sandbox: {', '.join(devices)}. "
+            "This gives sandboxed code direct ioctl access to the host kernel's GPU "
+            "driver — a materially different risk than the sandbox's filesystem/"
+            "network isolation (real CVE history for GPU driver ioctl surfaces; no "
+            "GPU-side resource limiting). See opendatasci/sandbox/srt.py module "
+            "docstring for details. Uninstall torch/jax/transformers/"
+            "sentence-transformers to disable this.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        logger.warning(
+            "GPU passthrough active: bind-mounting %s into the sandbox "
+            "(deep-learning package detected)",
+            devices,
+        )
+
+    bind_args = " ".join(f"--dev-bind {shlex.quote(d)} {shlex.quote(d)}" for d in devices)
+    return wrapped_command.replace(marker, f"{marker} {bind_args}", 1)
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +330,8 @@ class SRTSandbox(BaseSandbox):
                 wrapped = await SandboxManager.wrap_with_sandbox(
                     command, custom_config=self._make_config()
                 )
+                if is_host_dl_extra_active():
+                    wrapped = _inject_gpu_devices(wrapped)
                 stdout_str, stderr_str, _ = await self._run_subprocess(
                     wrapped, env=env, cwd=workspace
                 )

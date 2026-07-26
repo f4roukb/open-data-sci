@@ -19,16 +19,13 @@ from pydantic import BaseModel, Field
 
 from opendatasci.agents.workers import WorkerAgent
 from opendatasci.configs import OpenDataSciConfig
-from opendatasci.context.base import BaseContextStore
 from opendatasci.prompts.prompt_templates import WORKER_SYSTEM_PROMPT
 from opendatasci.sandbox.base import BaseSandboxFactory
 from opendatasci.skills import BaseSkillStore
-from opendatasci.skills.local import LocalSkillStore
-from opendatasci.tasks.base import AgentTaskManagerBase, TaskRecord, TaskStatus
+from opendatasci.tasks.base import AgentTaskManagerBase, AgentTaskRecord, AgentTaskStatus
 from opendatasci.tools.base import OpenDataSciBaseTool
 from opendatasci.tools.coding import create_cli_tools, create_coding_tools
 from opendatasci.tools.skills import create_skill_tools
-from opendatasci.tools.web import create_web_tools
 from opendatasci.workspace.base import BaseWorkspace
 
 logger = logging.getLogger(__name__)
@@ -54,9 +51,6 @@ class TaskTool(OpenDataSciBaseTool):
         skill: str | None = None
         """Optional skill profile to preload before the subtask runs
         (e.g. ``'data_science'``, ``'ml_engineering'``). ``None`` = no skill."""
-        allow_web_tools: bool = False
-        """When ``True``, the worker can use ``web_search`` and ``fetch_url``
-        to look up documentation, papers, or API references."""
 
     class CallArgs(BaseModel):
         subtasks: Annotated[list["TaskTool.TaskDetails"], MinLen(1), MaxLen(3)]
@@ -104,10 +98,10 @@ Args:
     args_schema: type[BaseModel] = CallArgs
 
     workspace: BaseWorkspace
-    datasci_config: OpenDataSciConfig | None
+    datasci_config: OpenDataSciConfig
     sandbox_factory: BaseSandboxFactory
-    store: BaseSkillStore
-    task_manager: AgentTaskManagerBase
+    skill_store: BaseSkillStore
+    agent_task_manager: AgentTaskManagerBase
 
     async def _arun_one(
         self,
@@ -123,7 +117,7 @@ Args:
         """
         initial_skill = None
         if subtask.skill is not None:
-            initial_skill = self.store.load(subtask.skill)
+            initial_skill = self.skill_store.load(subtask.skill)
             if initial_skill is None:
                 logger.warning(
                     idx,
@@ -145,7 +139,6 @@ Args:
 
         cancelled = False
         exc_info: BaseException | None = None
-        datasci_config = self.datasci_config or OpenDataSciConfig()
 
         async with self.sandbox_factory.create(
             workspace_path=Path(self.workspace.get_reference())
@@ -153,12 +146,10 @@ Args:
             tools: list[BaseTool] = [
                 *create_coding_tools(worker_sandbox),
                 *create_cli_tools(worker_sandbox),
-                *create_skill_tools(self.store),
+                *create_skill_tools(self.skill_store),
             ]
-            if subtask.allow_web_tools:
-                tools.extend(create_web_tools())
 
-            agent = WorkerAgent(tools=tools, config=datasci_config)
+            agent = WorkerAgent(tools=tools, config=self.datasci_config)
             emit("task_started", subtask.summary)
 
             try:
@@ -188,7 +179,7 @@ Args:
         subtasks: list[TaskDetails],
         outer_config: RunnableConfig,
     ) -> str:
-        timeout = (self.datasci_config or OpenDataSciConfig()).worker_timeout_seconds
+        timeout = self.datasci_config.worker_timeout_seconds
         results = await asyncio.wait_for(
             asyncio.gather(
                 *[self._arun_one(i, t, None, outer_config) for i, t in enumerate(subtasks)],
@@ -227,7 +218,7 @@ Args:
         if run_mode == RunMode.BACKGROUND:
             scheduled: list[tuple[UUID, str]] = []
             for i, subtask in enumerate(subtasks):
-                task_id = await self.task_manager.submit_task(
+                task_id = await self.agent_task_manager.submit_task(
                     lambda tid, i=i, subtask=subtask: self._arun_one(i, subtask, tid, outer_config),
                     summary=subtask.summary,
                 )
@@ -244,11 +235,10 @@ Args:
 
 def create_task_tools(
     workspace: BaseWorkspace,
-    context: BaseContextStore | None,
-    datasci_config: OpenDataSciConfig | None,
+    datasci_config: OpenDataSciConfig,
     sandbox_factory: BaseSandboxFactory,
-    task_manager: AgentTaskManagerBase,
-    store: BaseSkillStore | None = None,
+    agent_task_manager: AgentTaskManagerBase,
+    skill_store: BaseSkillStore,
 ) -> list[BaseTool]:
     """Return the ``task`` tool — task creation only.
 
@@ -260,33 +250,21 @@ def create_task_tools(
 
     Args:
         workspace:       Workspace the workers operate on.
-        context:         Work context from the main agent; used to resolve the
-                         skills directory.
         datasci_config:  LLM configuration forwarded to each worker.
         sandbox_factory: Factory used to create an isolated sandbox for each worker.
-        task_manager:    Shared task manager used to submit and track background
+        agent_task_manager:    Shared task manager used to submit and track background
                          (``run_mode="background"``) task runs. Callers should share
                          the same instance with :func:`create_task_management_tools`
                          so ``check_task``/``list_tasks``/``cancel_task`` can see these tasks.
-        store:           Skill store shared across all spawned workers.  Defaults
-                         to a :class:`~opendatasci.skills.local.LocalSkillStore`
-                         rooted at ``<context.root>/skills``.
+        skill_store:     Skill store shared across all spawned workers.
     """
-    if store is None:
-        user_skills_dir = Path(context.root) / "skills" if context is not None else None
-        user_domains_dir = Path(context.root) / "skill_domains" if context is not None else None
-        store = LocalSkillStore(
-            [user_skills_dir] if user_skills_dir is not None else None,
-            [user_domains_dir] if user_domains_dir is not None else None,
-        )
-
     return [
         TaskTool(
             workspace=workspace,
             datasci_config=datasci_config,
             sandbox_factory=sandbox_factory,
-            store=store,
-            task_manager=task_manager,
+            skill_store=skill_store,
+            agent_task_manager=agent_task_manager,
         )
     ]
 
@@ -296,7 +274,7 @@ def _isoformat(timestamp: float | None) -> str | None:
     return datetime.fromtimestamp(timestamp).isoformat() if timestamp is not None else None
 
 
-def _record_to_dict(record: TaskRecord) -> dict[str, Any]:
+def _record_to_dict(record: AgentTaskRecord) -> dict[str, Any]:
     data: dict[str, Any] = {
         "task_id": str(record.task_id),
         "summary": record.summary,
@@ -314,9 +292,9 @@ def _record_to_dict(record: TaskRecord) -> dict[str, Any]:
             for report in record.progress
         ],
     }
-    if record.status == TaskStatus.COMPLETED:
+    if record.status == AgentTaskStatus.COMPLETED:
         data["result"] = record.result
-    elif record.status == TaskStatus.FAILED:
+    elif record.status == AgentTaskStatus.FAILED:
         data["error"] = record.error
     return data
 
@@ -339,11 +317,11 @@ Args:
 
     args_schema: type[BaseModel] = CallArgs
 
-    task_manager: AgentTaskManagerBase
+    agent_task_manager: AgentTaskManagerBase
 
     @override
     async def _arun(self, task_id: UUID, **kwargs: Any) -> str:
-        record = await self.task_manager.get_task(task_id)
+        record = await self.agent_task_manager.get_task(task_id)
         if record is None:
             return f"No background task found with task_id={task_id}."
         return json.dumps(_record_to_dict(record), indent=2, default=str)
@@ -353,7 +331,7 @@ class ListTasksTool(OpenDataSciBaseTool):
     """List previously scheduled background tasks, filtered by status."""
 
     class CallArgs(BaseModel):
-        status_in: set[TaskStatus] = Field(default_factory=lambda: {TaskStatus.RUNNING})
+        status_in: set[AgentTaskStatus] = Field(default_factory=lambda: {AgentTaskStatus.RUNNING})
 
     name: str = "list_tasks"
     description: str = """
@@ -367,12 +345,12 @@ Args:
 
     args_schema: type[BaseModel] = CallArgs
 
-    task_manager: AgentTaskManagerBase
+    agent_task_manager: AgentTaskManagerBase
 
     @override
-    async def _arun(self, status_in: set[TaskStatus] | None = None, **kwargs: Any) -> str:
-        status_in = status_in or {TaskStatus.RUNNING}
-        records = [r for r in await self.task_manager.list_tasks() if r.status in status_in]
+    async def _arun(self, status_in: set[AgentTaskStatus] | None = None, **kwargs: Any) -> str:
+        status_in = status_in or {AgentTaskStatus.RUNNING}
+        records = [r for r in await self.agent_task_manager.list_tasks() if r.status in status_in]
         if not records:
             return "No background tasks match the given status filter."
 
@@ -404,24 +382,24 @@ Args:
 
     args_schema: type[BaseModel] = CallArgs
 
-    task_manager: AgentTaskManagerBase
+    agent_task_manager: AgentTaskManagerBase
 
     @override
     async def _arun(self, task_id: UUID, **kwargs: Any) -> str:
-        cancelled = await self.task_manager.cancel_task(task_id)
+        cancelled = await self.agent_task_manager.cancel_task(task_id)
         if not cancelled:
             return f"No background task found with task_id={task_id}."
         return f"Cancellation requested for task_id={task_id}."
 
 
-def create_task_management_tools(task_manager: AgentTaskManagerBase) -> list[BaseTool]:
+def create_task_management_tools(agent_task_manager: AgentTaskManagerBase) -> list[BaseTool]:
     """Return the ``check_task``, ``list_tasks``, and ``cancel_task`` tools.
 
-    *task_manager* must be the same instance passed to :func:`create_task_tools`
+    *agent_task_manager* must be the same instance passed to :func:`create_task_tools`
     so these tools can see the background tasks scheduled by the ``task`` tool.
     """
     return [
-        CheckTaskTool(task_manager=task_manager),
-        ListTasksTool(task_manager=task_manager),
-        CancelTaskTool(task_manager=task_manager),
+        CheckTaskTool(agent_task_manager=agent_task_manager),
+        ListTasksTool(agent_task_manager=agent_task_manager),
+        CancelTaskTool(agent_task_manager=agent_task_manager),
     ]

@@ -65,7 +65,7 @@ from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.local import LocalContextStore
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory, SandboxExecResult
 from opendatasci.skills.local import LocalSkillStore
-from opendatasci.tools import create_execution_mode_tools
+from opendatasci.tools.factory import create_execution_mode_tools
 from opendatasci.workspace.local import LocalWorkspace
 from opendatasci._tui.service import OpenDataSciTuiService
 
@@ -255,7 +255,7 @@ async def _build_entered_service(
             context_store,
             sandbox_factory=factory,
             session_id=session_id,
-            store=skill_store,
+            skill_store=skill_store,
             datasci_config=config,
         )
 

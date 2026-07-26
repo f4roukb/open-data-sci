@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 from uuid import UUID, uuid4
 
-from opendatasci.tasks.base import AgentTaskManagerBase, TaskRecord, TaskStatus
+from opendatasci.tasks.base import AgentTaskManagerBase, AgentTaskRecord, AgentTaskStatus
 
 logger = logging.getLogger(__name__)
 
@@ -21,29 +21,29 @@ class LocalAgentTaskManager(AgentTaskManagerBase):
     """
 
     def __init__(self, output_root: Path | None = None) -> None:
-        self._records: dict[UUID, TaskRecord] = {}
+        self._records: dict[UUID, AgentTaskRecord] = {}
         self._tasks: dict[UUID, asyncio.tasks[Any]] = {}
         self._output_root = output_root
 
     async def submit_task(self, work: Callable[[UUID], Awaitable[Any]], summary: str) -> UUID:
         task_id = uuid4()
-        record = TaskRecord(task_id=task_id, summary=summary, status=TaskStatus.RUNNING)
+        record = AgentTaskRecord(task_id=task_id, summary=summary, status=AgentTaskStatus.RUNNING)
         self._records[task_id] = record
 
         async def _run() -> None:
             try:
                 result = await work(task_id)
             except asyncio.CancelledError:
-                record.status = TaskStatus.CANCELLED
+                record.status = AgentTaskStatus.CANCELLED
                 record.finished_at = time.time()
                 raise
             except Exception as exc:
                 logger.exception("Background task %s (%s) failed", task_id, summary)
-                record.status = TaskStatus.FAILED
+                record.status = AgentTaskStatus.FAILED
                 record.error = str(exc)
                 record.finished_at = time.time()
             else:
-                record.status = TaskStatus.COMPLETED
+                record.status = AgentTaskStatus.COMPLETED
                 record.result = result
                 record.finished_at = time.time()
                 await self._publish_task_result(task_id, record)
@@ -51,7 +51,7 @@ class LocalAgentTaskManager(AgentTaskManagerBase):
         self._tasks[task_id] = asyncio.create_task(_run())
         return task_id
 
-    async def _publish_task_result(self, task_id: UUID, record: TaskRecord) -> None:
+    async def _publish_task_result(self, task_id: UUID, record: AgentTaskRecord) -> None:
         if self._output_root is None:
             return
         output_path = self._output_root / f"{task_id}.md"
@@ -66,10 +66,10 @@ class LocalAgentTaskManager(AgentTaskManagerBase):
 
         await asyncio.to_thread(_write)
 
-    async def get_task(self, task_id: UUID) -> TaskRecord | None:
+    async def get_task(self, task_id: UUID) -> AgentTaskRecord | None:
         return self._records.get(task_id)
 
-    async def list_tasks(self) -> list[TaskRecord]:
+    async def list_tasks(self) -> list[AgentTaskRecord]:
         return list(self._records.values())
 
     async def cancel_task(self, task_id: UUID) -> bool:

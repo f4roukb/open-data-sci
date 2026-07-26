@@ -35,7 +35,7 @@ def _make_context_store() -> MagicMock:
 def _switch_tool(
     *, context_store: MagicMock | None = None, session_id: str | None = _SESSION_ID
 ) -> SwitchAgentModeTool:
-    return SwitchAgentModeTool(store=_STORE, context_store=context_store, session_id=session_id)
+    return SwitchAgentModeTool(skill_store=_STORE, context_store=context_store, session_id=session_id)
 
 
 async def _invoke_switch(

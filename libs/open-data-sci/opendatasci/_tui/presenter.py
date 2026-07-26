@@ -20,7 +20,7 @@ from opendatasci.streaming.events import (
     ToolResultEvent,
     UsageEvent,
 )
-from opendatasci.tools import ToolName
+from opendatasci.tools.factory import ToolName
 
 from .adapter import EphemeralHandle, MessageHandle, ThinkingHandle, TurnStatusHandle, UIAdapter
 from .tools_display import REGISTRY, ToolDisplay

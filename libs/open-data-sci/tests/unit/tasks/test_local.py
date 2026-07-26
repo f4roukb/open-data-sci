@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from opendatasci.tasks.base import TaskStatus
+from opendatasci.tasks.base import AgentTaskStatus
 from opendatasci.tasks.local import LocalAgentTaskManager
 
 
@@ -22,7 +22,7 @@ class TestSubmitAndStatus:
 
         record = await manager.get_task(task_id)
         assert record is not None
-        assert record.status == TaskStatus.COMPLETED
+        assert record.status == AgentTaskStatus.COMPLETED
         assert record.result == "done"
         assert record.error is None
         assert record.finished_at is not None
@@ -39,7 +39,7 @@ class TestSubmitAndStatus:
 
         record = await manager.get_task(task_id)
         assert record is not None
-        assert record.status == TaskStatus.FAILED
+        assert record.status == AgentTaskStatus.FAILED
         assert record.error == "boom"
         assert record.result is None
 
@@ -58,7 +58,7 @@ class TestSubmitAndStatus:
 
         record = await manager.get_task(task_id)
         assert record is not None
-        assert record.status == TaskStatus.RUNNING
+        assert record.status == AgentTaskStatus.RUNNING
 
         await manager.cancel_task(task_id)
 
@@ -125,7 +125,7 @@ class TestCancel:
 
         record = await manager.get_task(task_id)
         assert record is not None
-        assert record.status == TaskStatus.CANCELLED
+        assert record.status == AgentTaskStatus.CANCELLED
 
     @pytest.mark.asyncio
     async def test_cancel_unknown_task_id_returns_false(self) -> None:
@@ -148,7 +148,7 @@ class TestCancel:
         assert await manager.cancel_task(task_id) is True
         record = await manager.get_task(task_id)
         assert record is not None
-        assert record.status == TaskStatus.COMPLETED
+        assert record.status == AgentTaskStatus.COMPLETED
 
 
 class TestPublishResult:

@@ -1041,7 +1041,7 @@ class TestSpawnWorkersToolCall:
         return AgentTurnStreamProcessor()
 
     def test_task_emits_tool_call_with_task_metadata(self) -> None:
-        from opendatasci.tools import ToolName
+        from opendatasci.tools.factory import ToolName
 
         tc = {
             "name": ToolName.TASK,
@@ -1059,7 +1059,7 @@ class TestSpawnWorkersToolCall:
         presenter does ``str(event.tool)`` before comparing against
         ``ToolName.TASK`` — storing the enum here would cause that
         comparison to silently fail and the worker rows would never render."""
-        from opendatasci.tools import ToolName
+        from opendatasci.tools.factory import ToolName
 
         tc = {
             "name": ToolName.TASK,
@@ -1072,7 +1072,7 @@ class TestSpawnWorkersToolCall:
         assert str(tool_call.tool) == ToolName.TASK
 
     def test_task_extracts_summaries_from_subtasks(self) -> None:
-        from opendatasci.tools import ToolName
+        from opendatasci.tools.factory import ToolName
 
         tc = {
             "name": ToolName.TASK,
@@ -1085,7 +1085,7 @@ class TestSpawnWorkersToolCall:
 
     def test_task_fills_default_summary_when_missing(self) -> None:
         """A subtask dict without ``summary`` must fall back to ``WorkerAgent {i+1}``."""
-        from opendatasci.tools import ToolName
+        from opendatasci.tools.factory import ToolName
 
         tc = {
             "name": ToolName.TASK,
@@ -1098,7 +1098,7 @@ class TestSpawnWorkersToolCall:
 
     def test_task_non_dict_subtask_falls_back_to_default(self) -> None:
         """If ``subtasks`` contains non-dict entries the placeholder name is used."""
-        from opendatasci.tools import ToolName
+        from opendatasci.tools.factory import ToolName
 
         tc = {
             "name": ToolName.TASK,
@@ -1110,7 +1110,7 @@ class TestSpawnWorkersToolCall:
         assert tool_call.task_summaries == ["WorkerAgent 1"]
 
     def test_task_empty_subtasks_yields_empty_summaries(self) -> None:
-        from opendatasci.tools import ToolName
+        from opendatasci.tools.factory import ToolName
 
         tc = {
             "name": ToolName.TASK,
@@ -1122,7 +1122,7 @@ class TestSpawnWorkersToolCall:
         assert tool_call.task_summaries == []
 
     def test_task_metadata_carries_tool_call_id(self) -> None:
-        from opendatasci.tools import ToolName
+        from opendatasci.tools.factory import ToolName
 
         tc = {
             "name": ToolName.TASK,
@@ -1136,7 +1136,7 @@ class TestSpawnWorkersToolCall:
     def test_task_no_summary_key_in_metadata(self) -> None:
         """The task branch returns early before the generic ``summary``
         is computed — only ``task_summaries`` should be present."""
-        from opendatasci.tools import ToolName
+        from opendatasci.tools.factory import ToolName
 
         tc = {
             "name": ToolName.TASK,

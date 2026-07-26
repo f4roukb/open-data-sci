@@ -6,9 +6,9 @@ This background-scheduling layer is backed by `opendatasci.tasks`.
 
 ## Data model
 
-- **`TaskRecord`** — a point-in-time snapshot of one background task: its `summary`, `status`, timestamps, any `TaskProgressReport`s recorded against it, and its `result` or `error` once it reaches a terminal state.
-- **`TaskStatus`** — `running`, `completed`, `failed`, or `cancelled`.
-- **`TaskProgressUpdate`** / **`TaskProgressReport`** — an incremental progress checkpoint (what's done, what's ongoing, blockers, and an ETA) that can be appended to `TaskRecord.progress`, in call order, so a caller can see how a long-running task is progressing without waiting for it to finish. Nothing currently populates these automatically.
+- **`AgentTaskRecord`** — a point-in-time snapshot of one background task: its `summary`, `status`, timestamps, any `AgentTaskProgressReport`s recorded against it, and its `result` or `error` once it reaches a terminal state.
+- **`AgentTaskStatus`** — `running`, `completed`, `failed`, or `cancelled`.
+- **`AgentTaskProgressUpdate`** / **`AgentTaskProgressReport`** — an incremental progress checkpoint (what's done, what's ongoing, blockers, and an ETA) that can be appended to `AgentTaskRecord.progress`, in call order, so a caller can see how a long-running task is progressing without waiting for it to finish. Nothing currently populates these automatically.
 
 ## Task manager
 
@@ -20,28 +20,28 @@ The agent constructs its own `LocalAgentTaskManager` internally as part of its t
 
 ## Reference
 
-::: opendatasci.tasks.base.TaskStatus
+::: opendatasci.tasks.base.AgentTaskStatus
     options:
       show_root_heading: true
       show_source: false
 
 ---
 
-::: opendatasci.tasks.base.TaskProgressUpdate
+::: opendatasci.tasks.base.AgentTaskProgressUpdate
     options:
       show_root_heading: true
       show_source: false
 
 ---
 
-::: opendatasci.tasks.base.TaskProgressReport
+::: opendatasci.tasks.base.AgentTaskProgressReport
     options:
       show_root_heading: true
       show_source: false
 
 ---
 
-::: opendatasci.tasks.base.TaskRecord
+::: opendatasci.tasks.base.AgentTaskRecord
     options:
       show_root_heading: true
       show_source: false
