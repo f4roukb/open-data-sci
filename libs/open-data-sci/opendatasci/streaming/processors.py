@@ -10,12 +10,12 @@ from opendatasci.streaming.events import (
     MessageEvent,
     ReasoningEvent,
     SubagentEvent,
+    TaskDoneEvent,
     TokenEvent,
     ToolCallEvent,
     ToolCommunicationEvent,
     ToolResultEvent,
     UsageEvent,
-    WorkerDoneEvent,
 )
 
 logger = logging.getLogger(__name__)
@@ -52,10 +52,10 @@ class AgentTurnStreamProcessor:
 
     def process_event(self, event: dict[str, Any]) -> list[AgentStreamEvent]:
         """Process one raw graph event and return any StreamEvents to emit."""
-        # Drop events that bubbled up from a sub-agent (ConcurrentWorkerAgent) so the
+        # Drop events that bubbled up from a sub-agent (WorkerAgent) so the
         # TUI sees only the main agent's narration, tool calls, and the
-        # high-level worker progress signals. Worker activity is surfaced via
-        # ``SubagentEvent``/``WorkerDoneEvent`` events instead.
+        # high-level task progress signals. Task activity is surfaced via
+        # ``SubagentEvent``/``TaskDoneEvent`` events instead.
         if SUBAGENT_TAG in (event.get("tags") or ()):
             return []
         kind = event.get("event", "")
@@ -69,8 +69,8 @@ class AgentTurnStreamProcessor:
             return self._handle_tool_error(event)
         if kind == "on_chat_model_end":
             return self._handle_model_end(event)
-        if kind == "on_custom_event" and event.get("name") == "worker_event":
-            return self._handle_worker_event(event)
+        if kind == "on_custom_event" and event.get("name") == "task_event":
+            return self._handle_task_event(event)
         return []
 
     def _handle_stream(self, event: dict[str, Any]) -> list[AgentStreamEvent]:
@@ -280,13 +280,13 @@ class AgentTurnStreamProcessor:
                 )
             )
 
-        # task carries worker_summaries instead of a plain summary.
+        # task carries task_summaries instead of a plain summary.
         if name == ToolName.TASK:
             tasks_arg = args.get("subtasks", [])
-            worker_summaries = [
-                t.get("summary", f"ConcurrentWorkerAgent {i + 1}")
+            task_summaries = [
+                t.get("summary", f"WorkerAgent {i + 1}")
                 if isinstance(t, dict)
-                else f"ConcurrentWorkerAgent {i + 1}"
+                else f"WorkerAgent {i + 1}"
                 for i, t in enumerate(tasks_arg)
             ]
             events.append(
@@ -299,7 +299,7 @@ class AgentTurnStreamProcessor:
                     # comparing, so storing the enum here breaks its task detection.
                     tool=name,
                     tool_call_id=tc.get("id"),
-                    worker_summaries=worker_summaries,
+                    task_summaries=task_summaries,
                 )
             )
             return events
@@ -314,21 +314,21 @@ class AgentTurnStreamProcessor:
         )
         return events
 
-    def _handle_worker_event(self, event: dict[str, Any]) -> list[AgentStreamEvent]:
+    def _handle_task_event(self, event: dict[str, Any]) -> list[AgentStreamEvent]:
         data = event.get("data", {})
         event_type = data.get("event_type", "")
-        worker_idx = data.get("worker_idx")
-        if event_type == "worker_done":
+        task_idx = data.get("task_idx")
+        if event_type == "task_done":
             return [
-                WorkerDoneEvent(
-                    worker_idx=worker_idx,
+                TaskDoneEvent(
+                    task_idx=task_idx,
                     success=data.get("success", True),
                 )
             ]
         return [
             SubagentEvent(
                 content=data.get("content", ""),
-                worker_idx=worker_idx,
+                task_idx=task_idx,
                 event_type=event_type,
                 success=data.get("success", True),
                 summary=data.get("summary", ""),

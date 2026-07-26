@@ -40,4 +40,5 @@ from opendatasci import (
 | [Workspace](workbench.md) | `BaseWorkspace`, `LocalWorkspace` |
 | [Skills](skills.md) | `Skill`, `SkillDomain`, `BaseSkillStore`, `LocalSkillStore` |
 | [Sandbox & Execution](session.md) | `BaseSandbox`, `SandboxExecResult`, TUI command allowlist |
+| [Background Tasks](tasks.md) | `BaseTaskManager`, `LocalTaskManager`, `TaskRecord`, `TaskStatus`, `TaskProgressReport` — the data model behind background-scheduled worker subtasks |
 | [Events & Types](types.md) | `AgentStreamEvent` — all event types explained |

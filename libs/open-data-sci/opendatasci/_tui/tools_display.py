@@ -75,8 +75,12 @@ register(
 )
 register("task", ToolDisplay(label="Spawning workers", icon="👥", summary_arg="summary"))
 register(
-    "get_task_status",
+    "check_task",
     ToolDisplay(label="Checking task status", icon="📋", summary_arg="summary"),
+)
+register(
+    "list_tasks",
+    ToolDisplay(label="Listing background tasks", icon="📋", summary_arg="summary"),
 )
 register("cancel_task", ToolDisplay(label="Cancelling task", icon="🛑", summary_arg="summary"))
 register(

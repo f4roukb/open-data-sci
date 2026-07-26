@@ -30,7 +30,7 @@ class TestToolName:
         assert ToolName.EXECUTE_PYTHON_CODE == "execute_python_code"
 
     def test_execute_cli_value(self) -> None:
-        assert ToolName.EXECUTE_CLI == "execute_cli_command"
+        assert ToolName.EXECUTE_CLI_COMMAND == "execute_cli_command"
 
     def test_is_string_subclass(self) -> None:
         assert isinstance(ToolName.EXECUTE_PYTHON_CODE, str)
@@ -45,7 +45,8 @@ class TestToolName:
             "exit_plan_mode",
             "exit_self_review_mode",
             "task",
-            "get_task_status",
+            "check_task",
+            "list_tasks",
             "cancel_task",
             "read_dataset_info",
             "update_dataset_info",
@@ -95,7 +96,7 @@ class TestCreateWorkerAgentTools:
         # Worker graphs have no checkpointer, so approval interrupts are
         # impossible there; workers must get the plain CLI tool.
         tools = create_worker_agent_tools(_make_workspace(), None, sandbox=_make_sandbox())
-        cli_tool = next(t for t in tools if t.name == ToolName.EXECUTE_CLI)
+        cli_tool = next(t for t in tools if t.name == ToolName.EXECUTE_CLI_COMMAND)
         assert "request_approval" not in cli_tool.args
 
     def test_returns_list_of_tools(self) -> None:
@@ -231,10 +232,11 @@ class TestCreateMainAgentTools:
         names = {t.name for t in tools}
         assert "task" in names
 
-    def test_includes_task_management_tools(self) -> None:
+    def test_includes_task_tools(self) -> None:
         tools = create_execution_mode_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())
         names = {t.name for t in tools}
-        assert "get_task_status" in names
+        assert "check_task" in names
+        assert "list_tasks" in names
         assert "cancel_task" in names
 
     def test_includes_web_tools(self) -> None:
@@ -306,7 +308,7 @@ class TestCreateMainAgentTools:
         ) as mock_manager_cls:
             tools = create_execution_mode_tools(_make_workspace(), _make_sandbox(), None, datasci_config=config, sandbox_factory=_make_sandbox_factory())
         mock_manager_cls.assert_called_once_with(config)
-        cli_tool = next(t for t in tools if t.name == ToolName.EXECUTE_CLI)
+        cli_tool = next(t for t in tools if t.name == ToolName.EXECUTE_CLI_COMMAND)
         assert "request_approval" in cli_tool.args
 
     def test_includes_mode_tools_unconditionally(self) -> None:

@@ -16,7 +16,7 @@ from opendatasci.streaming import (
     ToolCallEvent,
     ToolResultEvent,
     UsageEvent,
-    WorkerDoneEvent,
+    TaskDoneEvent,
 )
 from opendatasci._tui.controller import CLIController
 from opendatasci._tui.file_refs import (
@@ -1018,60 +1018,60 @@ class TestRunAgent:
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
         """Worker block turns green (set_done) when task tool_result arrives."""
-        wb = mock_ui.add_worker_block.return_value
+        wb = mock_ui.add_task_block.return_value
         events = [
-            ToolCallEvent(tool="task", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
-            WorkerDoneEvent(worker_idx=0, success=True),
-            WorkerDoneEvent(worker_idx=1, success=True),
+            ToolCallEvent(tool="task", tool_call_id="sw1", task_summaries=["Task A", "Task B"]),
+            TaskDoneEvent(task_idx=0, success=True),
+            TaskDoneEvent(task_idx=1, success=True),
             ToolResultEvent(content="done", tool_call_id="sw1"),
         ]
         mock_service.astream.return_value = _aiter(*events)
         await loaded_controller.run_agent("q")
         wb.set_done.assert_called()
 
-    async def test_run_agent_task_worker_done_updates_block(
+    async def test_run_agent_task_task_done_updates_block(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
-        """Each worker_done event calls mark_worker_done on the worker block."""
-        wb = mock_ui.add_worker_block.return_value
+        """Each task_done event calls mark_task_done on the worker block."""
+        wb = mock_ui.add_task_block.return_value
         events = [
-            ToolCallEvent(tool="task", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
-            WorkerDoneEvent(worker_idx=0, success=True),
-            WorkerDoneEvent(worker_idx=1, success=True),
+            ToolCallEvent(tool="task", tool_call_id="sw1", task_summaries=["Task A", "Task B"]),
+            TaskDoneEvent(task_idx=0, success=True),
+            TaskDoneEvent(task_idx=1, success=True),
             ToolResultEvent(content="done", tool_call_id="sw1"),
         ]
         mock_service.astream.return_value = _aiter(*events)
         await loaded_controller.run_agent("q")
-        wb.mark_worker_done.assert_any_call(0)
-        wb.mark_worker_done.assert_any_call(1)
+        wb.mark_task_done.assert_any_call(0)
+        wb.mark_task_done.assert_any_call(1)
 
-    async def test_run_agent_task_worker_done_not_lost_when_parallel_tool_result_fires_first(
+    async def test_run_agent_task_task_done_not_lost_when_parallel_tool_result_fires_first(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
-        """Regression: when a parallel tool's tool_result fires before worker_done events,
-        the worker block must still receive mark_worker_done for each completing worker.
+        """Regression: when a parallel tool's tool_result fires before task_done events,
+        the worker block must still receive mark_task_done for each completing worker.
 
-        Without the fix, the tool_result handler reset _worker_block to None, causing
-        subsequent worker_done events to be silently dropped — leaving the block blue.
+        Without the fix, the tool_result handler reset _task_block to None, causing
+        subsequent task_done events to be silently dropped — leaving the block blue.
         """
-        wb = mock_ui.add_worker_block.return_value
+        wb = mock_ui.add_task_block.return_value
         # Simulate: Tool A and task called in parallel.
-        # Tool A's tool_result arrives BEFORE the worker_done events (Tool A was faster).
+        # Tool A's tool_result arrives BEFORE the task_done events (Tool A was faster).
         events = [
             ToolCallEvent(tool="execute_python_code", tool_call_id="tc_a"),
-            ToolCallEvent(tool="task", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
-            # Tool A finishes first — its tool_result arrives before worker_done
+            ToolCallEvent(tool="task", tool_call_id="sw1", task_summaries=["Task A", "Task B"]),
+            # Tool A finishes first — its tool_result arrives before task_done
             ToolResultEvent(content="result", tool_call_id="tc_a"),
             # Workers complete after Tool A's result
-            WorkerDoneEvent(worker_idx=0, success=True),
-            WorkerDoneEvent(worker_idx=1, success=True),
+            TaskDoneEvent(task_idx=0, success=True),
+            TaskDoneEvent(task_idx=1, success=True),
             ToolResultEvent(content="done", tool_call_id="sw1"),
         ]
         mock_service.astream.return_value = _aiter(*events)
         await loaded_controller.run_agent("q")
         # Both workers must be individually marked done despite Tool A's result firing first
-        wb.mark_worker_done.assert_any_call(0)
-        wb.mark_worker_done.assert_any_call(1)
+        wb.mark_task_done.assert_any_call(0)
+        wb.mark_task_done.assert_any_call(1)
         # And the block itself must be set done
         wb.set_done.assert_called()
 

@@ -132,8 +132,8 @@ class OpenDataSciApp(App[None]):
     def add_ephemeral_block(self, communication: str, label: str, summary: str) -> ToolCallBlock:
         return self.query_one(ChatPane).add_ephemeral_block(communication, label, summary)
 
-    def add_worker_block(self, communication: str, worker_summaries: list[str]) -> ToolCallBlock:
-        return self.query_one(ChatPane).add_worker_block(communication, worker_summaries)
+    def add_task_block(self, communication: str, task_summaries: list[str]) -> ToolCallBlock:
+        return self.query_one(ChatPane).add_task_block(communication, task_summaries)
 
     def add_thinking_block(self) -> ThinkingBlock:
         return self.query_one(ChatPane).add_thinking_block()

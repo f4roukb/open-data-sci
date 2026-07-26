@@ -81,21 +81,6 @@ def check_sandbox_dependencies() -> None:
 _RUNNER_SRC = Path(__file__).parent / "_runner.py"
 
 
-def _home_dotfile_deny_paths() -> list[str]:
-    """Every existing top-level dotfile/dotdir directly under the home directory.
-
-    Blanket-denies credential stores by naming convention (``~/.ssh``, ``~/.aws``,
-    ``~/.netrc``, ``~/.config`` and everything under it, etc.) rather than an
-    explicit allowlist of known tools, so it also catches ones we haven't
-    enumerated. Resolved to absolute, symlink-resolved paths since SRT does not
-    expand ``~`` itself and resolves deny rules relative to the workspace cwd.
-    Only reaches one level deep (``~/.foo``, not ``~/projects/.env``), same as
-    the explicit list this replaced.
-    """
-    home = os.path.expanduser("~")
-    return [os.path.realpath(path) for path in glob.glob(os.path.join(home, ".*"))]
-
-
 # Domains the sandboxed ``gh`` CLI (see ``execute_cli_command``) is permitted to
 # reach. Scoped narrowly to GitHub's own hosts rather than opening network
 # access generally; every other sandboxed command remains fully offline.
@@ -356,13 +341,37 @@ class SRTSandbox(BaseSandbox):
         shutil.copy2(_RUNNER_SRC, self._runner_path)
         self._initialized = True
 
+    def _credential_deny_paths(self) -> list[str]:
+        """Builds paths to deny IO operations on common credential paths. Not comprehensive."""
+        home = os.path.expanduser("~")
+        candidates: list[str] = []
+
+        # Every top-level dotfile/dotdir directly under the home directory:
+        # ``~/.ssh``, ``~/.aws``, ``~/.netrc``, ``~/.config`` (and everything
+        # under it), etc. Blanket-denies by naming convention rather than an
+        # explicit allowlist of known tools, so it also catches ones we haven't
+        # enumerated. Only reaches one level deep (``~/.foo``, not
+        # ``~/projects/.env``).
+        candidates.extend(glob.glob(os.path.join(home, ".*")))
+
+        # macOS Keychain: the platform's primary credential store. Not a dotfile
+        # (lives under ``~/Library``), so the glob above never reaches it.
+        candidates.append(os.path.join(home, "Library", "Keychains"))
+
+        # macOS browser/WebKit cookie jars, which commonly hold live session
+        # tokens and likewise live outside ``~/Library``'s non-dot prefix.
+        candidates.append(os.path.join(home, "Library", "Cookies"))
+        candidates.append(os.path.join(home, "Library", "HTTPStorages"))
+
+        return [os.path.realpath(path) for path in candidates if os.path.exists(path)]
+
     def _make_config(self) -> SandboxRuntimeConfig:
         if self._sandbox_config is None:
             workspace = str(self._workspace_path or self._session_dir)
             self._sandbox_config = SandboxRuntimeConfig(
                 network={"allowed_domains": [], "denied_domains": []},
                 filesystem={
-                    "deny_read": _home_dotfile_deny_paths(),
+                    "deny_read": self._credential_deny_paths(),
                     "allow_write": [workspace, str(self._session_dir)],
                     "deny_write": [],
                 },
@@ -386,7 +395,7 @@ class SRTSandbox(BaseSandbox):
                     "denied_domains": [],
                 },
                 filesystem={
-                    "deny_read": _home_dotfile_deny_paths(),
+                    "deny_read": self._credential_deny_paths(),
                     "allow_write": [workspace, str(self._session_dir)],
                     "deny_write": [],
                 },
@@ -416,10 +425,18 @@ class SRTSandbox(BaseSandbox):
                 cwd=cwd,
                 **spawn_kwargs,
             )
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(),
-                timeout=self._command_timeout,
-            )
+            try:
+                stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                    proc.communicate(),
+                    timeout=self._command_timeout,
+                )
+            except asyncio.CancelledError:
+                # Cancellation (e.g. via cancel_task) throws in here without ever
+                # raising TimeoutError, so without this handler the wrapped
+                # subprocess (shell -> bwrap/sandbox-exec -> python) would be
+                # orphaned rather than killed.
+                await self._terminate_process_tree(proc)
+                raise
             returncode = proc.returncode
             if returncode is None:
                 # Should not happen after communicate(); surface it as a failure

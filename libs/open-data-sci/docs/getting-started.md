@@ -62,14 +62,14 @@ The default installation includes the Anthropic and OpenAI clients. Install addi
 ### Capability extras
 
 ```bash
-pip install "open-data-sci[jax]"       # Deep learning — JAX, Flax, Optax
-pip install "open-data-sci[finance]"   # Finance data — yfinance
+pip install "open-data-sci[deep-learning]" # Deep learning — PyTorch, JAX, Transformers, Sentence-Transformers
+pip install "open-data-sci[finance]"       # Finance data — yfinance
 ```
 
-The `[jax]` extra is required for the built-in **Deep Learning** skill; `[finance]` for the built-in **`finance.yahoo.com`** skill. Combine extras freely:
+The `[deep-learning]` extra is required for the built-in **Deep Learning** skill; `[finance]` for the built-in **`finance.yahoo.com`** skill. Combine extras freely:
 
 ```bash
-pip install "open-data-sci[aws,gemini,jax,finance]"
+pip install "open-data-sci[aws,gemini,deep-learning,finance]"
 ```
 
 ---
@@ -254,8 +254,8 @@ async for event in agent.astream(query):
             print(f"\n[tool] {event.content}")
         case "tool_result":
             pass
-        case "worker_done":
-            idx = event.metadata["worker_idx"]
+        case "task_done":
+            idx = event.metadata["task_idx"]
             ok = event.metadata["success"]
             print(f"\n[worker {idx}] {'ok' if ok else 'failed'}")
         case "input_required":

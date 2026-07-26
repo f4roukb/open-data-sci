@@ -3,8 +3,9 @@
 import asyncio
 import logging
 import time
-import uuid
+from pathlib import Path
 from typing import Any, Awaitable, Callable
+from uuid import UUID, uuid4
 
 from opendatasci.tasks.base import BaseTaskManager, TaskRecord, TaskStatus
 
@@ -12,50 +13,67 @@ logger = logging.getLogger(__name__)
 
 
 class LocalTaskManager(BaseTaskManager):
-    """Runs submitted work as ``asyncio.Task`` objects on the current event loop.
+    """Runs submitted work as ``asyncio.tasks`` objects on the current event loop.
 
     Records are kept for the lifetime of this manager instance (i.e. for as long
-    as the owning agent session is alive) so that ``get_status``/``list`` remain
-    answerable after a task finishes.
+    as the owning agent session is alive) so that ``get_task``/``list_tasks``
+    remain answerable after a task finishes.
     """
 
-    def __init__(self) -> None:
-        self._records: dict[str, TaskRecord] = {}
-        self._asyncio_tasks: dict[str, asyncio.Task[Any]] = {}
+    def __init__(self, output_root: Path | None = None) -> None:
+        self._records: dict[UUID, TaskRecord] = {}
+        self._tasks: dict[UUID, asyncio.tasks[Any]] = {}
+        self._output_root = output_root
 
-    async def submit(self, work: Callable[[], Awaitable[Any]], summary: str) -> str:
-        task_id = uuid.uuid4().hex
+    async def submit_task(self, work: Callable[[UUID], Awaitable[Any]], summary: str) -> UUID:
+        task_id = uuid4()
         record = TaskRecord(task_id=task_id, summary=summary, status=TaskStatus.RUNNING)
         self._records[task_id] = record
 
         async def _run() -> None:
             try:
-                result = await work()
+                result = await work(task_id)
             except asyncio.CancelledError:
                 record.status = TaskStatus.CANCELLED
-                record.finished_at = time.monotonic()
+                record.finished_at = time.time()
                 raise
             except Exception as exc:
                 logger.exception("Background task %s (%s) failed", task_id, summary)
                 record.status = TaskStatus.FAILED
                 record.error = str(exc)
-                record.finished_at = time.monotonic()
+                record.finished_at = time.time()
             else:
                 record.status = TaskStatus.COMPLETED
                 record.result = result
-                record.finished_at = time.monotonic()
+                record.finished_at = time.time()
+                await self._publish_task_result(task_id, record)
 
-        self._asyncio_tasks[task_id] = asyncio.create_task(_run())
+        self._tasks[task_id] = asyncio.create_task(_run())
         return task_id
 
-    async def get_status(self, task_id: str) -> TaskRecord | None:
+    async def _publish_task_result(self, task_id: UUID, record: TaskRecord) -> None:
+        if self._output_root is None:
+            return
+        output_path = self._output_root / f"{task_id}.md"
+        content = (
+            f"# {record.summary}\n\ntask_id: {task_id}\nstatus: {record.status.value}\n\n"
+            f"## Result\n\n{record.result}\n"
+        )
+
+        def _write() -> None:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(content, encoding="utf-8")
+
+        await asyncio.to_thread(_write)
+
+    async def get_task(self, task_id: UUID) -> TaskRecord | None:
         return self._records.get(task_id)
 
-    async def list(self) -> list[TaskRecord]:
+    async def list_tasks(self) -> list[TaskRecord]:
         return list(self._records.values())
 
-    async def cancel(self, task_id: str) -> bool:
-        task = self._asyncio_tasks.get(task_id)
+    async def cancel_task(self, task_id: UUID) -> bool:
+        task = self._tasks.get(task_id)
         if task is None:
             return False
         task.cancel()

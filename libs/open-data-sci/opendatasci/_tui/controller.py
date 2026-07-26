@@ -35,12 +35,12 @@ from opendatasci.streaming.events import (
     ReasoningEvent,
     ResponseEvent,
     SubagentEvent,
+    TaskDoneEvent,
     TokenEvent,
     ToolCallEvent,
     ToolCommunicationEvent,
     ToolResultEvent,
     UsageEvent,
-    WorkerDoneEvent,
 )
 from opendatasci.tools.mcp import load_mcp_servers
 
@@ -403,8 +403,8 @@ class CLIController:
             presenter.handle_tool_communication(event)
         elif isinstance(event, ToolCallEvent):
             await presenter.handle_tool_call(event)
-        elif isinstance(event, WorkerDoneEvent):
-            presenter.handle_worker_done(event)
+        elif isinstance(event, TaskDoneEvent):
+            presenter.handle_task_done(event)
         elif isinstance(event, SubagentEvent):
             presenter.handle_subagent_event(event)
         elif isinstance(event, ToolResultEvent):

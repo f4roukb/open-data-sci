@@ -1,6 +1,6 @@
 """Tool factories: assemble the right tool sets for main and worker agents."""
 
-from enum import Enum
+from enum import StrEnum, auto
 from pathlib import Path
 
 from langchain_core.tools import BaseTool
@@ -24,37 +24,37 @@ from opendatasci.tools.dataset_info import create_data_context_tools
 from opendatasci.tools.mcp import create_mcp_tools
 from opendatasci.tools.modes import create_mode_tools
 from opendatasci.tools.skills import create_skill_tools
-from opendatasci.tools.task_management import create_task_management_tools
+from opendatasci.tools.tasks import create_task_management_tools, create_task_tools
 from opendatasci.tools.user_interaction import create_user_interaction_tools
 from opendatasci.tools.web import create_web_tools
-from opendatasci.tools.workers import create_worker_tools
 from opendatasci.tools.workspace import create_workspace_tools
 from opendatasci.workspace.base import BaseWorkspace
 from opendatasci.workspace.local import LocalWorkspace
 
 
-class ToolName(str, Enum):
+class ToolName(StrEnum):
     """Canonical names for all agent tools."""
 
-    EXECUTE_PYTHON_CODE = "execute_python_code"
-    EXECUTE_CLI = "execute_cli_command"
-    LIST_PYTHON_LIBS = "list_python_libs"
-    LOAD_SKILL = "load_skill"
-    LIST_SKILLS = "list_skills"
-    SWITCH_AGENTIC_MODE = "switch_agentic_mode"
-    EXIT_PLAN_MODE = "exit_plan_mode"
-    EXIT_SELF_REVIEW_MODE = "exit_self_review_mode"
-    TASK = "task"
-    GET_TASK_STATUS = "get_task_status"
-    CANCEL_TASK = "cancel_task"
-    READ_DATASET_INFO = "read_dataset_info"
-    UPDATE_DATASET_INFO = "update_dataset_info"
-    PROFILE_DATASET = "profile_dataset"
-    LIST_WORKSPACE_FILES = "list_workspace_files"
-    WEB_SEARCH = "web_search"
-    FETCH_URL = "fetch_url"
-    ASK_USER_MCQ = "ask_user_mcq"
-    VERIFY_PYTHON_CODE = "verify_python_code"
+    EXECUTE_PYTHON_CODE = auto()
+    EXECUTE_CLI_COMMAND = auto()
+    LIST_PYTHON_LIBS = auto()
+    LOAD_SKILL = auto()
+    LIST_SKILLS = auto()
+    SWITCH_AGENTIC_MODE = auto()
+    EXIT_PLAN_MODE = auto()
+    EXIT_SELF_REVIEW_MODE = auto()
+    TASK = auto()
+    CHECK_TASK = auto()
+    LIST_TASKS = auto()
+    CANCEL_TASK = auto()
+    READ_DATASET_INFO = auto()
+    UPDATE_DATASET_INFO = auto()
+    PROFILE_DATASET = auto()
+    LIST_WORKSPACE_FILES = auto()
+    WEB_SEARCH = auto()
+    FETCH_URL = auto()
+    ASK_USER_MCQ = auto()
+    VERIFY_PYTHON_CODE = auto()
 
 
 def _base_tools(
@@ -134,9 +134,10 @@ def create_execution_mode_tools(
     tools = _base_tools(workspace, sandbox, context, store, approval_manager=approval_manager)
     tools.extend(create_code_verification_tools(datasci_config))
     tools.extend(create_mode_tools(store, context, session_id))
-    task_manager = LocalTaskManager()
+    output_root = Path(context.root) / "workers" / "outputs" if context is not None else None
+    task_manager = LocalTaskManager(output_root=output_root)
     tools.extend(
-        create_worker_tools(
+        create_task_tools(
             workspace,
             context,
             datasci_config,

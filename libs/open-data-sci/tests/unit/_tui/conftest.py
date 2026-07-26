@@ -22,9 +22,9 @@ def _make_ephemeral_handle() -> MagicMock:
     handle.dismiss = MagicMock()
     handle.set_done = MagicMock()
     handle.is_running = MagicMock(return_value=True)
-    handle.mark_worker_done = MagicMock()
-    handle.mark_worker_error = MagicMock()
-    handle.update_worker_activity = MagicMock()
+    handle.mark_task_done = MagicMock()
+    handle.mark_task_error = MagicMock()
+    handle.update_task_activity = MagicMock()
     handle.set_communication = MagicMock()
     handle.upgrade = MagicMock()
     return handle
@@ -44,7 +44,7 @@ def mock_ui() -> MagicMock:
     ui.add_message.return_value = _make_message_handle()
     ui.add_turn_status_bar.return_value = _make_timer_handle()
     ui.add_ephemeral_block.return_value = _make_ephemeral_handle()
-    ui.add_worker_block.return_value = _make_ephemeral_handle()
+    ui.add_task_block.return_value = _make_ephemeral_handle()
     ui.stop_agent = MagicMock()
     return ui
 

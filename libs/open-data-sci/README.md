@@ -82,16 +82,16 @@ pip install "open-data-sci[ollama]"    # Ollama (local models)
 ### Capability extras
 
 ```bash
-pip install "open-data-sci[jax]"       # Deep learning — JAX, Flax, Optax
-pip install "open-data-sci[finance]"   # Finance data — yfinance
+pip install "open-data-sci[deep-learning]" # Deep learning — PyTorch, JAX, Transformers, Sentence-Transformers
+pip install "open-data-sci[finance]"       # Finance data — yfinance
 ```
 
-The `[jax]` extra is required to use the **Deep Learning** skill; without it, the agent's sandboxed Python environment has no training framework available. The `[finance]` extra is required to use the **`finance.yahoo.com`** skill.
+The `[deep-learning]` extra is required to use the **Deep Learning** skill; without it, the agent's sandboxed Python environment has no training framework available. The `[finance]` extra is required to use the **`finance.yahoo.com`** skill.
 
 Multiple extras can be combined:
 
 ```bash
-pip install "open-data-sci[aws,gemini,jax,finance]"
+pip install "open-data-sci[aws,gemini,deep-learning,finance]"
 ```
 
 ---

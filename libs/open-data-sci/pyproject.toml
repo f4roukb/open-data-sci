@@ -91,10 +91,13 @@ azure = [
 ollama = [
     "langchain-ollama>=1.0.0,<2.0.0",
 ]
-jax = [
+deep-learning = [
+    "torch>=2.0.0,<3.0.0",
     "jax[cpu]>=0.4.0,<1.0.0",
     "flax>=0.8.0,<1.0.0",
     "optax>=0.2.0,<1.0.0",
+    "transformers>=4.0.0,<5.0.0",
+    "sentence-transformers>=3.0.0,<4.0.0",
 ]
 finance = [
     "yfinance>=0.2.0,<1.0.0",
@@ -210,9 +213,12 @@ module = [
     "catboost.*",
     "lightgbm.*",
     "xgboost.*",
+    "torch.*",
     "jax.*",
     "flax.*",
     "optax.*",
+    "transformers.*",
+    "sentence_transformers.*",
     "optuna.*",
     "prophet.*",
     "umap.*",

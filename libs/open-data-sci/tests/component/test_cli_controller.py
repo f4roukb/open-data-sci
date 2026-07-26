@@ -30,7 +30,7 @@ from opendatasci.streaming.events import (
     ToolCommunicationEvent,
     ToolResultEvent,
     UsageEvent,
-    WorkerDoneEvent,
+    TaskDoneEvent,
 )
 from opendatasci._tui.adapter import (
     EphemeralHandle,
@@ -75,7 +75,7 @@ class _RecordingEphemeral(EphemeralHandle):
         self.dismissed = False
         self.communication: str | None = None
         self.upgraded: tuple[str, str] | None = None
-        self.worker_done_indices: list[int] = []
+        self.task_done_indices: list[int] = []
 
     def dismiss(self) -> None:
         self.dismissed = True
@@ -89,13 +89,13 @@ class _RecordingEphemeral(EphemeralHandle):
     def is_running(self) -> bool:
         return not (self.done or self.error or self.dismissed)
 
-    def mark_worker_done(self, idx: int) -> None:
-        self.worker_done_indices.append(idx)
+    def mark_task_done(self, idx: int) -> None:
+        self.task_done_indices.append(idx)
 
-    def mark_worker_error(self, idx: int) -> None:
+    def mark_task_error(self, idx: int) -> None:
         pass
 
-    def update_worker_activity(self, idx: int, activity: str) -> None:
+    def update_task_activity(self, idx: int, activity: str) -> None:
         pass
 
     def set_communication(self, text: str | None) -> None:
@@ -179,7 +179,7 @@ class _RecordingUI(UIAdapter):
         self.ephemerals.append(h)
         return h
 
-    def add_worker_block(self, communication: str, worker_summaries: list[str]) -> EphemeralHandle:
+    def add_task_block(self, communication: str, task_summaries: list[str]) -> EphemeralHandle:
         h = _RecordingEphemeral()
         self.ephemerals.append(h)
         return h
@@ -533,7 +533,7 @@ class TestStreamingAllEventTypes:
     """Single end-to-end run that exercises every _TurnPresenter handler.
 
     A wide-coverage test: it feeds reasoning, tokens, tool_communication,
-    tool_call, tool_result, worker_done, subagent_event, usage, and error
+    tool_call, tool_result, task_done, subagent_event, usage, and error
     events in one stream so every dispatch branch in run_agent + presenter
     fires together.
     """
@@ -557,17 +557,17 @@ class TestStreamingAllEventTypes:
                 content="{}",
                 tool="task",
                 tool_call_id="tc2",
-                worker_summaries=["w1", "w2"],
+                task_summaries=["w1", "w2"],
             ),
             SubagentEvent(
                 content="execute_python_code",
-                worker_idx=0,
-                event_type="worker_tool_call",
+                task_idx=0,
+                event_type="task_tool_call",
                 summary="compute mean",
             ),
-            SubagentEvent(content="", worker_idx=0, event_type="worker_tool_result"),
-            WorkerDoneEvent(worker_idx=0, success=True),
-            WorkerDoneEvent(worker_idx=1, success=False),
+            SubagentEvent(content="", task_idx=0, event_type="task_tool_result"),
+            TaskDoneEvent(task_idx=0, success=True),
+            TaskDoneEvent(task_idx=1, success=False),
             ToolResultEvent(content="ok", tool_call_id="tc2", is_error=False),
             UsageEvent(
                 input_tokens=100,

@@ -3,7 +3,7 @@
 Each test mocks at the LLM/sandbox boundary and exercises an end-to-end flow
 that involves several real subsystems wired together:
 
-* ``task`` → ``ConcurrentWorkerAgent`` lifecycle (queues, sub-agent events, redactor)
+* ``task`` → ``WorkerAgent`` lifecycle (queues, sub-agent events, redactor)
 * Plan-mode round-trip (``switch_agentic_mode`` → ``exit_plan_mode``, ``LocalContextStore``)
 * Self-review-mode round-trip (``switch_agentic_mode`` → ``exit_self_review_mode``)
 * Turn summarization (``TurnSummarizer`` writing to ``ChatMemory``)
@@ -32,8 +32,8 @@ class TestSpawnWorkersFlow:
     """End-to-end task exercising tools/workers.py + agent/worker.py.
 
     Patches ``opendatasci.agents.workers.create_model`` so the spawned
-    :class:`ConcurrentWorkerAgent` uses a scripted LLM rather than calling a real provider.
-    The ConcurrentWorkerAgent has no tools required for the test — it just returns a
+    :class:`WorkerAgent` uses a scripted LLM rather than calling a real provider.
+    The WorkerAgent has no tools required for the test — it just returns a
     final text on its first LLM call.
     """
 
@@ -41,12 +41,12 @@ class TestSpawnWorkersFlow:
         from tests.component.conftest import _ScriptedChatModel  # local import to avoid cycle
 
         # The worker LLM yields a single message: a final text response with no tool_calls,
-        # so ConcurrentWorkerAgent's loop exits after one iteration.
+        # so WorkerAgent's loop exits after one iteration.
         worker_msgs = [
             AIMessage(content="Worker 1: found 2 columns."),
             AIMessage(content="Worker 2: rev=300."),
         ]
-        # `iter(worker_msgs)` is shared, but each ConcurrentWorkerAgent constructs its own
+        # `iter(worker_msgs)` is shared, but each WorkerAgent constructs its own
         # scripted model via create_model — we need a fresh scripted model per worker.
         # Use a factory side_effect.
         worker_iter = iter(worker_msgs)
@@ -55,8 +55,8 @@ class TestSpawnWorkersFlow:
             return _ScriptedChatModel(messages=iter([next(worker_iter)]))
 
         with (
-            patch("opendatasci.agents.agents.create_model", side_effect=_worker_llm),
-            patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x),
+            patch("opendatasci.agents.workers.create_model", side_effect=_worker_llm),
+            patch("opendatasci.agents.workers.with_retry", side_effect=lambda x: x),
         ):
             svc = await loaded_scripted_service(
                 [
@@ -92,12 +92,12 @@ class TestSpawnWorkersFlow:
         types = [e.type for e in events]
         # task produced a tool_call AgentStreamEvent.
         assert "tool_call" in types
-        # Both workers emitted at least one worker_done signal (consumed by orchestrator).
-        worker_done = [e for e in events if e.type == "worker_done"]
-        assert len(worker_done) >= 2
-        # Sub-agent events (worker_started, worker_finished) propagate as subagent_event.
+        # Both workers emitted at least one task_done signal (consumed by orchestrator).
+        task_done = [e for e in events if e.type == "task_done"]
+        assert len(task_done) >= 2
+        # Sub-agent events (task_started, task_finished) propagate as subagent_event.
         subagent_events = [e for e in events if e.type == "subagent_event"]
-        assert subagent_events  # at least one (worker_started or worker_finished)
+        assert subagent_events  # at least one (task_started or task_finished)
         # Final tool_result for task contains both workers' outputs.
         tool_result = next(e for e in events if e.type == "tool_result")
         assert "found 2 columns" in tool_result.content

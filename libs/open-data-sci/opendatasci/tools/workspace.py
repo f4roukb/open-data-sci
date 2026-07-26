@@ -6,10 +6,10 @@ from typing import Any, override
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel
 
-from opendatasci.tools.base import OpenDataSciSyncTool
+from opendatasci.tools.base import OpenDataSciBaseTool
 
 
-class ListWorkspaceFilesTool(OpenDataSciSyncTool):
+class ListWorkspaceFilesTool(OpenDataSciBaseTool):
     """Map the active workspace: list all files and directories with sizes."""
 
     class CallArgs(BaseModel):
@@ -34,7 +34,7 @@ Args:
     workspace_path: Path | None
 
     @override
-    def _run(self, summary: str, communication: str, **kwargs: Any) -> str:
+    async def _arun(self, summary: str, communication: str, **kwargs: Any) -> str:
         path = self.workspace_path
         if path is None:
             return "No active workspace."

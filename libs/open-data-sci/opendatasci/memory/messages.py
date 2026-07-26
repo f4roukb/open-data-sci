@@ -67,7 +67,7 @@ class CompactionMessage(HumanMessage, RenderableMessageMixin["CompactionMessage"
 
 @final
 class AgentToAgentMessage(HumanMessage, RenderableMessageMixin["AgentToAgentMessage"]):
-    """A message sent from one agent to another (e.g. orchestrator to ConcurrentWorkerAgent)."""
+    """A message sent from one agent to another."""
 
     origin: MessageOrigin
     created_at: datetime = Field(default_factory=datetime_now)

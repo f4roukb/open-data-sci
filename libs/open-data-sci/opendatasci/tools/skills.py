@@ -27,7 +27,7 @@ from opendatasci.agents.states import AgentState
 from opendatasci.skills import Skill, SkillDomain
 from opendatasci.skills.base import BaseSkillStore
 from opendatasci.skills.local import SKILL_LABELS
-from opendatasci.tools.base import OpenDataSciSyncTool
+from opendatasci.tools.base import OpenDataSciBaseTool
 
 
 def _label_for(name: str) -> str:
@@ -37,7 +37,7 @@ def _label_for(name: str) -> str:
     return tail.replace("_", " ").title()
 
 
-class LoadSkillTool(OpenDataSciSyncTool):
+class LoadSkillTool(OpenDataSciBaseTool):
     """Load a specific skill and/or a skill domain to inform your work."""
 
     class CallArgs(BaseModel):
@@ -92,7 +92,7 @@ Args:
     store: BaseSkillStore
 
     @override
-    def _run(
+    async def _arun(
         self,
         summary: str,
         communication: str,
@@ -174,7 +174,7 @@ Args:
         return Command(update=state_update)
 
 
-class ListSkillsTool(OpenDataSciSyncTool):
+class ListSkillsTool(OpenDataSciBaseTool):
     """List the skill domains and standalone skills available to load."""
 
     class CallArgs(BaseModel):
@@ -204,7 +204,7 @@ Args:
     store: BaseSkillStore
 
     @override
-    def _run(self, summary: str, communication: str, **kwargs: Any) -> str:
+    async def _arun(self, summary: str, communication: str, **kwargs: Any) -> str:
         domains = sorted(self.store.list_domains())
         standalone_skills = sorted(name for name in self.store.list_skills() if "::" not in name)
         return json.dumps({"domains": domains, "standalone_skills": standalone_skills})
