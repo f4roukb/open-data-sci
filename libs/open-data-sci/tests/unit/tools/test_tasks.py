@@ -10,15 +10,12 @@ import pytest
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory
 from opendatasci.skills.base import BaseSkillStore
-from opendatasci.agents.workers import WorkerAgent
 from opendatasci.tasks.base import TaskProgressReport, TaskProgressUpdate
-from opendatasci.tasks.local import LocalTaskManager
-from opendatasci.tools.factory import create_worker_agent_tools
+from opendatasci.tasks.local import LocalAgentTaskManager
 from opendatasci.tools.tasks import (
     CancelTaskTool,
     CheckTaskTool,
     ListTasksTool,
-    ReportProgressTool,
     TaskTool,
     create_task_management_tools,
     create_task_tools,
@@ -32,7 +29,7 @@ from opendatasci.workspace.base import BaseWorkspace
 
 class TestCreateTaskManagementTools:
     def test_returns_check_list_and_cancel_tools(self) -> None:
-        tools = create_task_management_tools(LocalTaskManager())
+        tools = create_task_management_tools(LocalAgentTaskManager())
         names = {t.name for t in tools}
         assert names == {"check_task", "list_tasks", "cancel_task"}
 
@@ -40,7 +37,7 @@ class TestCreateTaskManagementTools:
 class TestCheckTaskTool:
     @pytest.mark.asyncio
     async def test_unknown_task_id(self) -> None:
-        tool = CheckTaskTool(task_manager=LocalTaskManager())
+        tool = CheckTaskTool(task_manager=LocalAgentTaskManager())
         unknown_id = uuid4()
         result = await tool.ainvoke({"task_id": str(unknown_id)})
         assert str(unknown_id) in result
@@ -48,7 +45,7 @@ class TestCheckTaskTool:
 
     @pytest.mark.asyncio
     async def test_completed_task_reports_result(self) -> None:
-        manager = LocalTaskManager()
+        manager = LocalAgentTaskManager()
 
         async def _work(task_id: object) -> str:
             return "the answer"
@@ -64,7 +61,7 @@ class TestCheckTaskTool:
 
     @pytest.mark.asyncio
     async def test_failed_task_reports_error(self) -> None:
-        manager = LocalTaskManager()
+        manager = LocalAgentTaskManager()
 
         async def _work(task_id: object) -> str:
             raise RuntimeError("boom")
@@ -80,7 +77,7 @@ class TestCheckTaskTool:
 
     @pytest.mark.asyncio
     async def test_includes_progress_reports(self) -> None:
-        manager = LocalTaskManager()
+        manager = LocalAgentTaskManager()
 
         async def _work(task_id: object) -> str:
             await asyncio.sleep(10)
@@ -114,7 +111,7 @@ class TestCheckTaskTool:
 class TestListTasksTool:
     @pytest.mark.asyncio
     async def test_defaults_to_running_only(self) -> None:
-        manager = LocalTaskManager()
+        manager = LocalAgentTaskManager()
 
         async def _slow(task_id: object) -> str:
             await asyncio.sleep(10)
@@ -136,7 +133,7 @@ class TestListTasksTool:
 
     @pytest.mark.asyncio
     async def test_status_in_filters_explicitly(self) -> None:
-        manager = LocalTaskManager()
+        manager = LocalAgentTaskManager()
 
         async def _work(task_id: object) -> str:
             return "done"
@@ -150,7 +147,7 @@ class TestListTasksTool:
 
     @pytest.mark.asyncio
     async def test_no_matches_reports_empty(self) -> None:
-        tool = ListTasksTool(task_manager=LocalTaskManager())
+        tool = ListTasksTool(task_manager=LocalAgentTaskManager())
         result = await tool.ainvoke({})
         assert "no background tasks" in result.lower()
 
@@ -158,13 +155,13 @@ class TestListTasksTool:
 class TestCancelTaskTool:
     @pytest.mark.asyncio
     async def test_unknown_task_id(self) -> None:
-        tool = CancelTaskTool(task_manager=LocalTaskManager())
+        tool = CancelTaskTool(task_manager=LocalAgentTaskManager())
         result = await tool.ainvoke({"task_id": str(uuid4())})
         assert "no background task found" in result.lower()
 
     @pytest.mark.asyncio
     async def test_cancels_running_task(self) -> None:
-        manager = LocalTaskManager()
+        manager = LocalAgentTaskManager()
         started = asyncio.Event()
 
         async def _work(task_id: object) -> str:
@@ -250,7 +247,7 @@ class TestCreateTaskToolsStructure:
             None,
             datasci_config=None,
             sandbox_factory=_make_sandbox_factory(),
-            task_manager=LocalTaskManager(),
+            task_manager=LocalAgentTaskManager(),
         )
         assert len(tools) == 1
 
@@ -260,14 +257,11 @@ class TestCreateTaskToolsStructure:
             None,
             datasci_config=None,
             sandbox_factory=_make_sandbox_factory(),
-            task_manager=LocalTaskManager(),
+            task_manager=LocalAgentTaskManager(),
         )
         assert tools[0].name == "task"
 
 
-# WorkerAgent is imported locally inside _arun_one to break the
-# tools â†’ agents â†’ tools circular dependency, so it must be patched at its
-# definition site, not at opendatasci.tools.tasks.
 _AGENT_PATCH = "opendatasci.tools.tasks.WorkerAgent"
 
 
@@ -277,7 +271,7 @@ def _make_tool(**overrides) -> TaskTool:
         "datasci_config": None,
         "sandbox_factory": _make_sandbox_factory(),
         "store": _make_store(),
-        "task_manager": LocalTaskManager(),
+        "task_manager": LocalAgentTaskManager(),
         **overrides,
     }
     return TaskTool(**kwargs)
@@ -325,31 +319,6 @@ class TestRunOne:
             )
         store.load.assert_called_once_with("data_science")
 
-    @pytest.mark.asyncio
-    async def test_report_progress_tool_bound_to_task_id(self) -> None:
-        tool = _make_tool()
-        task_id = uuid4()
-        captured_tools = {}
-
-        def _capture(tools, **kwargs):
-            captured_tools["tools"] = tools
-            agent = MagicMock()
-            agent.ainvoke = AsyncMock(return_value="ok")
-            return agent
-
-        with patch(_AGENT_PATCH, side_effect=_capture):
-            await tool._arun_one(
-                0,
-                TaskTool.TaskDetails(subtask="T.", summary="s"),
-                task_id,
-                MagicMock(),
-            )
-
-        report_tools = [t for t in captured_tools["tools"] if t.name == "report_progress"]
-        assert len(report_tools) == 1
-        assert report_tools[0].task_id == task_id
-        assert report_tools[0].task_manager is tool.task_manager
-
 
 class TestTaskTool:
     def _get_tool(
@@ -363,7 +332,7 @@ class TestTaskTool:
             datasci_config=datasci_config or OpenDataSciConfig(),
             sandbox_factory=_make_sandbox_factory(),
             store=store,
-            task_manager=LocalTaskManager(),
+            task_manager=LocalAgentTaskManager(),
         )
         return tools[0]
 
@@ -488,7 +457,7 @@ class TestTaskTool:
             datasci_config=OpenDataSciConfig(),
             sandbox_factory=_make_sandbox_factory(),
             store=mock_store,
-            task_manager=LocalTaskManager(),
+            task_manager=LocalAgentTaskManager(),
         )
         tool = tools[0]
         with patch(_AGENT_PATCH) as MockAgent:
@@ -644,25 +613,3 @@ class TestRunMode:
             )
             assert "scheduled" in result.lower()
             await _drain_emit_tasks()
-
-
-class TestReportProgressTool:
-    @pytest.mark.asyncio
-    async def test_foreground_run_no_ops_without_task_id(self) -> None:
-        tool = ReportProgressTool(
-            task_manager=LocalTaskManager(), task_id=None, worker_agent_cls=WorkerAgent
-        )
-        result = await tool.ainvoke(
-            {"progress_update": {"done": "a", "ongoing": "b", "blockers": ""}}
-        )
-        assert "isn't tracked" in result.lower()
-
-    def test_not_present_in_main_agent_tool_set(self) -> None:
-        sandbox = MagicMock(spec=BaseSandbox)
-        tools = create_worker_agent_tools(
-            _make_workspace(),
-            None,
-            sandbox=sandbox,
-            store=_make_store(),
-        )
-        assert "report_progress" not in {t.name for t in tools}

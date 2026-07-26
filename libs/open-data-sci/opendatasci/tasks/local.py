@@ -7,12 +7,12 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 from uuid import UUID, uuid4
 
-from opendatasci.tasks.base import BaseTaskManager, TaskRecord, TaskStatus
+from opendatasci.tasks.base import AgentTaskManagerBase, TaskRecord, TaskStatus
 
 logger = logging.getLogger(__name__)
 
 
-class LocalTaskManager(BaseTaskManager):
+class LocalAgentTaskManager(AgentTaskManagerBase):
     """Runs submitted work as ``asyncio.tasks`` objects on the current event loop.
 
     Records are kept for the lifetime of this manager instance (i.e. for as long

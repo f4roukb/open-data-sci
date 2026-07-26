@@ -68,6 +68,8 @@ pip install "open-data-sci[finance]"       # Finance data — yfinance
 
 The `[deep-learning]` extra is required for the built-in **Deep Learning** skill; `[finance]` for the built-in **`finance.yahoo.com`** skill. Combine extras freely:
 
+> **No GPU/NPU acceleration inside the sandbox.** The sandboxed execution environment isolates Python from device access on both supported platforms (Linux's `bwrap` mounts a device-node-free `/dev`; macOS's `sandbox-exec` profile denies the IOKit classes GPU compute needs), so deep learning code always runs on CPU there today, regardless of which `torch`/`jax` wheels are installed.
+
 ```bash
 pip install "open-data-sci[aws,gemini,deep-learning,finance]"
 ```

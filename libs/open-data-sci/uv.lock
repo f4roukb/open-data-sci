@@ -2590,7 +2590,7 @@ requires-dist = [
     { name = "flax", marker = "extra == 'deep-learning'", specifier = ">=0.8.0,<1.0.0" },
     { name = "httpx", specifier = ">=0.27.0,<1.0.0" },
     { name = "imbalanced-learn", specifier = ">=0.12.0,<1.0.0" },
-    { name = "jax", extras = ["cpu"], marker = "extra == 'deep-learning'", specifier = ">=0.4.0,<1.0.0" },
+    { name = "jax", marker = "extra == 'deep-learning'", specifier = ">=0.4.0,<1.0.0" },
     { name = "kaggle", marker = "extra == 'dev'", specifier = ">=2.0.0,<3.0.0" },
     { name = "langchain-anthropic", specifier = ">=1.0.0,<2.0.0" },
     { name = "langchain-aws", marker = "extra == 'aws'", specifier = ">=1.0.0,<2.0.0" },

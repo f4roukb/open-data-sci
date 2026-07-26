@@ -12,7 +12,6 @@ that without resorting to a local, function-body import.
 
 import logging
 from typing import Any, Callable
-from uuid import UUID
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import SystemMessage, ToolMessage
@@ -27,7 +26,6 @@ from opendatasci.memory.messages import AgentToAgentMessage, MessageOrigin
 from opendatasci.models.factory import create_model, with_retry
 from opendatasci.prompts.caching import cached_system_prompt
 from opendatasci.skills.base import Skill, SkillDomain
-from opendatasci.tasks.base import BaseTaskManager, TaskProgressReport, TaskProgressUpdate
 
 logger = logging.getLogger(__name__)
 

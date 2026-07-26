@@ -24,7 +24,7 @@ from opendatasci.prompts.prompt_templates import WORKER_SYSTEM_PROMPT
 from opendatasci.sandbox.base import BaseSandboxFactory
 from opendatasci.skills import BaseSkillStore
 from opendatasci.skills.local import LocalSkillStore
-from opendatasci.tasks.base import BaseTaskManager, TaskProgressUpdate, TaskRecord, TaskStatus
+from opendatasci.tasks.base import AgentTaskManagerBase, TaskRecord, TaskStatus
 from opendatasci.tools.base import OpenDataSciBaseTool
 from opendatasci.tools.coding import create_cli_tools, create_coding_tools
 from opendatasci.tools.skills import create_skill_tools
@@ -39,63 +39,6 @@ class RunMode(StrEnum):
 
     FOREGROUND = auto()
     BACKGROUND = auto()
-
-
-class _TaskProgressUpdateArgs(BaseModel):
-    """Schema-only mirror of TaskProgressUpdate; docstrings here shape the tool call, not the code."""
-
-    done: str
-    """Concrete, verb-first: what you finished since your last report."""
-    ongoing: str
-    """What you're actively working on right now."""
-    blockers: str
-    """What's blocking you, or an empty string if nothing is."""
-
-
-class ReportProgressTool(OpenDataSciBaseTool):
-    """Worker-only tool for reporting progress on its own background task.
-
-    Only ever instantiated inside :meth:`TaskTool._arun_one`, bound to the
-    worker's own ``task_id`` (or ``None`` in foreground mode) — never added
-    to a main-agent tool set, so only workers can call it. Delegates the
-    actual publishing to :meth:`WorkerAgent.report_progress
-    <opendatasci.agents.workers.WorkerAgent.report_progress>` rather than
-    doing it here or on the task manager — see that method's docstring for
-    why it lives there.
-    """
-
-    class CallArgs(BaseModel):
-        progress_update: _TaskProgressUpdateArgs
-        eta_seconds: float | None = None
-        """Your best estimate of seconds remaining, or omit if you don't know yet."""
-
-    name: str = "report_progress"
-    description: str = (
-        "Report progress on your current subtask: what's done, what's ongoing, "
-        "blockers, and an ETA. Call this periodically so the main agent and the "
-        "user can monitor long-running work without waiting on your final result."
-    )
-    args_schema: type[BaseModel] = CallArgs
-
-    task_manager: BaseTaskManager
-    task_id: UUID | None
-
-    @override
-    async def _arun(
-        self,
-        progress_update: _TaskProgressUpdateArgs,
-        eta_seconds: float | None = None,
-        **kwargs: Any,
-    ) -> str:
-        if self.task_id is None:
-            return "Progress noted (this subtask is running in the foreground and isn't tracked)."
-        await WorkerAgent.report_progress(
-            self.task_manager,
-            self.task_id,
-            TaskProgressUpdate(**progress_update.model_dump()),
-            eta_seconds,
-        )
-        return "Progress recorded."
 
 
 class TaskTool(OpenDataSciBaseTool):
@@ -164,7 +107,7 @@ Args:
     datasci_config: OpenDataSciConfig | None
     sandbox_factory: BaseSandboxFactory
     store: BaseSkillStore
-    task_manager: BaseTaskManager
+    task_manager: AgentTaskManagerBase
 
     async def _arun_one(
         self,
@@ -176,8 +119,7 @@ Args:
         """Run a single worker subtask inside its own sandbox.
 
         *task_id* is the background task ID this worker is running under, or
-        ``None`` when running in the foreground (nothing to report progress
-        against in that case).
+        ``None`` when running in the foreground.
         """
         initial_skill = None
         if subtask.skill is not None:
@@ -212,7 +154,6 @@ Args:
                 *create_coding_tools(worker_sandbox),
                 *create_cli_tools(worker_sandbox),
                 *create_skill_tools(self.store),
-                ReportProgressTool(task_manager=self.task_manager, task_id=task_id),
             ]
             if subtask.allow_web_tools:
                 tools.extend(create_web_tools())
@@ -306,7 +247,7 @@ def create_task_tools(
     context: BaseContextStore | None,
     datasci_config: OpenDataSciConfig | None,
     sandbox_factory: BaseSandboxFactory,
-    task_manager: BaseTaskManager,
+    task_manager: AgentTaskManagerBase,
     store: BaseSkillStore | None = None,
 ) -> list[BaseTool]:
     """Return the ``task`` tool — task creation only.
@@ -398,7 +339,7 @@ Args:
 
     args_schema: type[BaseModel] = CallArgs
 
-    task_manager: BaseTaskManager
+    task_manager: AgentTaskManagerBase
 
     @override
     async def _arun(self, task_id: UUID, **kwargs: Any) -> str:
@@ -426,7 +367,7 @@ Args:
 
     args_schema: type[BaseModel] = CallArgs
 
-    task_manager: BaseTaskManager
+    task_manager: AgentTaskManagerBase
 
     @override
     async def _arun(self, status_in: set[TaskStatus] | None = None, **kwargs: Any) -> str:
@@ -463,7 +404,7 @@ Args:
 
     args_schema: type[BaseModel] = CallArgs
 
-    task_manager: BaseTaskManager
+    task_manager: AgentTaskManagerBase
 
     @override
     async def _arun(self, task_id: UUID, **kwargs: Any) -> str:
@@ -473,7 +414,7 @@ Args:
         return f"Cancellation requested for task_id={task_id}."
 
 
-def create_task_management_tools(task_manager: BaseTaskManager) -> list[BaseTool]:
+def create_task_management_tools(task_manager: AgentTaskManagerBase) -> list[BaseTool]:
     """Return the ``check_task``, ``list_tasks``, and ``cancel_task`` tools.
 
     *task_manager* must be the same instance passed to :func:`create_task_tools`

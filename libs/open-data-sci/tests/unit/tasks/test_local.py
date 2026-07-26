@@ -1,4 +1,4 @@
-"""Unit tests for opendatasci.tasks.local.LocalTaskManager."""
+"""Unit tests for opendatasci.tasks.local.LocalAgentTaskManager."""
 
 import asyncio
 from pathlib import Path
@@ -6,13 +6,13 @@ from pathlib import Path
 import pytest
 
 from opendatasci.tasks.base import TaskStatus
-from opendatasci.tasks.local import LocalTaskManager
+from opendatasci.tasks.local import LocalAgentTaskManager
 
 
 class TestSubmitAndStatus:
     @pytest.mark.asyncio
     async def test_completed_task_reports_result(self) -> None:
-        manager = LocalTaskManager()
+        manager = LocalAgentTaskManager()
 
         async def _work(task_id: object) -> str:
             return "done"
@@ -29,7 +29,7 @@ class TestSubmitAndStatus:
 
     @pytest.mark.asyncio
     async def test_failed_task_reports_error_not_raised(self) -> None:
-        manager = LocalTaskManager()
+        manager = LocalAgentTaskManager()
 
         async def _work(task_id: object) -> str:
             raise RuntimeError("boom")
@@ -45,7 +45,7 @@ class TestSubmitAndStatus:
 
     @pytest.mark.asyncio
     async def test_running_task_reports_running_status(self) -> None:
-        manager = LocalTaskManager()
+        manager = LocalAgentTaskManager()
         started = asyncio.Event()
 
         async def _work(task_id: object) -> str:
@@ -64,14 +64,14 @@ class TestSubmitAndStatus:
 
     @pytest.mark.asyncio
     async def test_unknown_task_id_returns_none(self) -> None:
-        manager = LocalTaskManager()
+        manager = LocalAgentTaskManager()
         assert await manager.get_task("no-such-id") is None
 
     @pytest.mark.asyncio
     async def test_work_receives_only_the_task_id(self) -> None:
         # submit_task hands `work` just the task_id, not the record — there is
-        # no BaseTaskManager method for mutating a record from outside.
-        manager = LocalTaskManager()
+        # no AgentTaskManagerBase method for mutating a record from outside.
+        manager = LocalAgentTaskManager()
         received: list[object] = []
 
         async def _work(task_id: object) -> str:
@@ -87,12 +87,12 @@ class TestSubmitAndStatus:
 class TestList:
     @pytest.mark.asyncio
     async def test_list_empty_by_default(self) -> None:
-        manager = LocalTaskManager()
+        manager = LocalAgentTaskManager()
         assert await manager.list_tasks() == []
 
     @pytest.mark.asyncio
     async def test_list_includes_all_submitted_tasks(self) -> None:
-        manager = LocalTaskManager()
+        manager = LocalAgentTaskManager()
 
         async def _work(task_id: object) -> str:
             return "done"
@@ -108,7 +108,7 @@ class TestList:
 class TestCancel:
     @pytest.mark.asyncio
     async def test_cancel_running_task_marks_cancelled(self) -> None:
-        manager = LocalTaskManager()
+        manager = LocalAgentTaskManager()
         started = asyncio.Event()
 
         async def _work(task_id: object) -> str:
@@ -129,7 +129,7 @@ class TestCancel:
 
     @pytest.mark.asyncio
     async def test_cancel_unknown_task_id_returns_false(self) -> None:
-        manager = LocalTaskManager()
+        manager = LocalAgentTaskManager()
         assert await manager.cancel_task("no-such-id") is False
 
     @pytest.mark.asyncio
@@ -137,7 +137,7 @@ class TestCancel:
         # asyncio.tasks.cancel() on an already-finished task is a no-op that
         # returns False from asyncio's perspective, but the manager only cares
         # whether the task_id was known, so it should still report True.
-        manager = LocalTaskManager()
+        manager = LocalAgentTaskManager()
 
         async def _work(task_id: object) -> str:
             return "done"
@@ -154,7 +154,7 @@ class TestCancel:
 class TestPublishResult:
     @pytest.mark.asyncio
     async def test_completed_task_written_to_output_root(self, tmp_path: Path) -> None:
-        manager = LocalTaskManager(output_root=tmp_path)
+        manager = LocalAgentTaskManager(output_root=tmp_path)
 
         async def _work(task_id: object) -> str:
             return "the answer"
@@ -170,7 +170,7 @@ class TestPublishResult:
 
     @pytest.mark.asyncio
     async def test_no_output_root_skips_publish(self, tmp_path: Path) -> None:
-        manager = LocalTaskManager()
+        manager = LocalAgentTaskManager()
 
         async def _work(task_id: object) -> str:
             return "the answer"
@@ -182,7 +182,7 @@ class TestPublishResult:
 
     @pytest.mark.asyncio
     async def test_failed_task_not_published(self, tmp_path: Path) -> None:
-        manager = LocalTaskManager(output_root=tmp_path)
+        manager = LocalAgentTaskManager(output_root=tmp_path)
 
         async def _work(task_id: object) -> str:
             raise RuntimeError("boom")

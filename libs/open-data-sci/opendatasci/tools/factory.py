@@ -14,7 +14,7 @@ from opendatasci.human_inputs.human_approval import (
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory
 from opendatasci.skills import BaseSkillStore
 from opendatasci.skills.local import LocalSkillStore
-from opendatasci.tasks.local import LocalTaskManager
+from opendatasci.tasks.local import LocalAgentTaskManager
 from opendatasci.tools.coding import (
     create_cli_tools,
     create_code_verification_tools,
@@ -135,7 +135,7 @@ def create_execution_mode_tools(
     tools.extend(create_code_verification_tools(datasci_config))
     tools.extend(create_mode_tools(store, context, session_id))
     output_root = Path(context.root) / "workers" / "outputs" if context is not None else None
-    task_manager = LocalTaskManager(output_root=output_root)
+    task_manager = LocalAgentTaskManager(output_root=output_root)
     tools.extend(
         create_task_tools(
             workspace,

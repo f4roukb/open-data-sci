@@ -48,7 +48,7 @@ class TaskRecord:
     finished_at: float | None = None
 
 
-class BaseTaskManager(ABC):
+class AgentTaskManagerBase(ABC):
     """Registers and tracks background tasks: submit, check on, cancel."""
 
     @abstractmethod
@@ -56,13 +56,9 @@ class BaseTaskManager(ABC):
         """Create a :class:`TaskRecord`, schedule *work* to run against it, and return its ID.
 
         The record is created and stored before *work* starts; *work* only
-        receives the ``task_id``, not the record itself. Recording progress
-        against the record is deliberately not part of this interface —
-        there is no method here for mutating a task's state from outside.
-        That is a concern of whatever runs the work (see
-        :meth:`~opendatasci.agents.agents.WorkerAgent.report_progress`), not
-        of the task manager: a task manager exposes reading tasks, not
-        writing to them.
+        receives the ``task_id``, not the record itself. There is no method
+        here for mutating a task's state from outside: a task manager
+        exposes reading tasks, not writing to them.
         """
         ...
 

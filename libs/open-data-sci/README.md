@@ -88,6 +88,8 @@ pip install "open-data-sci[finance]"       # Finance data — yfinance
 
 The `[deep-learning]` extra is required to use the **Deep Learning** skill; without it, the agent's sandboxed Python environment has no training framework available. The `[finance]` extra is required to use the **`finance.yahoo.com`** skill.
 
+> **No GPU/NPU acceleration inside the sandbox.** Sandboxed code execution (via `sandbox-runtime`) isolates the Python process from device access on both supported platforms — Linux's `bwrap` mounts a fresh, minimal `/dev` with no `/dev/nvidia*`/`/dev/dri/*` nodes, and macOS's `sandbox-exec` profile denies IOKit access by default except a small allowlist that excludes the GPU accelerator classes Metal/MPS needs. Installing GPU-capable `torch`/`jax` wheels doesn't change this — deep learning code run through the sandbox always executes on CPU today, regardless of what hardware is available on the host.
+
 Multiple extras can be combined:
 
 ```bash

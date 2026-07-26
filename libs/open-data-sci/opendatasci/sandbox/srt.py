@@ -4,6 +4,17 @@ Platform support: the underlying Sandbox Runtime only sandboxes on macOS and
 Linux. Windows is unsupported: ``sandbox_runtime`` imports the Unix-only
 ``resource`` module at import time, so this module fails to import at all on
 Windows; this class is therefore exercised only under mocks on such hosts.
+
+No GPU/NPU access: sandboxed code never has a path to accelerator hardware.
+On Linux, ``sandbox_runtime`` unconditionally runs ``bwrap --dev /dev``, which
+mounts a fresh devtmpfs containing only the standard nodes (``null``, ``zero``,
+``random``, etc.) — no ``/dev/nvidia*`` or ``/dev/dri/*``. On macOS, its
+Seatbelt profile denies IOKit access by default except a narrow allowlist that
+doesn't include the accelerator classes (e.g. ``AGXAccelerator``) Metal/MPS
+compute needs. ``sandbox_runtime`` (0.2.x) exposes no device-related config at
+all — only ``network`` and ``filesystem``. So deep learning code executed via
+:meth:`SRTSandbox.execute` always runs on CPU, regardless of installed wheels
+or host hardware, until device passthrough is added upstream.
 """
 
 import asyncio
