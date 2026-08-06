@@ -81,6 +81,10 @@ class BaseOpenDataSciAgent(ABC):
     @abstractmethod
     async def compact_chat_history(self) -> str: ...
 
+    @property
+    @abstractmethod
+    def task_manager(self) -> AgentTaskManagerBase: ...
+
 
 class Agent(BaseOpenDataSciAgent):
     """Data science and machine learning conversational AI agent.
@@ -211,6 +215,17 @@ class Agent(BaseOpenDataSciAgent):
 
     async def __aexit__(self, *exc_info: Any) -> None:
         await self._exit_stack.aclose()
+
+    @property
+    def task_manager(self) -> AgentTaskManagerBase:
+        """The task manager tracking this agent's background (``task``, ``run_mode="background"``) work.
+
+        Exposed so a caller driving this agent (the TUI, or a hosted-service
+        equivalent) can watch for background-task completions via
+        :meth:`AgentTaskManagerBase.watch_completions` without reaching into
+        tool internals.
+        """
+        return self._agent_task_manager  # type: ignore[return-value]
 
     @property
     def _graph_config(self) -> RunnableConfig:

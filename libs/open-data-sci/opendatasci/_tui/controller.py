@@ -15,6 +15,7 @@ Everything else has been extracted into focused sibling modules:
   - presenter.py  — _TurnPresenter (streaming event dispatch)
 """
 
+import asyncio
 import difflib
 import logging
 import string
@@ -28,6 +29,7 @@ from opendatasci._tui.session import CLISessionInfo
 from opendatasci.agents.agents_factory import create_agent
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.streaming import BaseAgentStreamEvent
+from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
 from opendatasci.streaming.events import (
     ApprovalRequiredEvent,
     ErrorEvent,
@@ -74,6 +76,20 @@ logger = logging.getLogger(__name__)
 # a real (if synthetic) turn of conversation, not a control-flow sentinel.
 _CHOICE_CANCELLED_QUERY = "cancel"
 
+# How often the header's "running background tasks" line refreshes.
+_BACKGROUND_STATUS_POLL_SECONDS = 2
+
+
+def _format_completion_message(record: AgentTaskRecord) -> tuple[str, str]:
+    """Render a finished background task as a synthetic turn's (query, display) text."""
+    if record.status == AgentTaskStatus.COMPLETED:
+        text = f"Background task '{record.summary}' finished:\n\n{record.result}"
+    elif record.status == AgentTaskStatus.FAILED:
+        text = f"Background task '{record.summary}' failed: {record.error}"
+    else:
+        text = f"Background task '{record.summary}' was cancelled."
+    return text, text
+
 
 class CLIController:
     """Owns application state and all non-Textual business logic for the TUI."""
@@ -102,6 +118,8 @@ class CLIController:
         self._agent_running: bool = False
         self._pending_queue = PendingMessageQueue()
         self._pending_handles: dict[int, PendingMessageHandle] = {}
+        self._background_watcher_task: asyncio.Task[None] | None = None
+        self._background_status_task: asyncio.Task[None] | None = None
         self._cfg: OpenDataSciConfig | None = None
         self._completion = (
             completion if completion is not None else CompletionState(extra_commands=[])
@@ -144,6 +162,12 @@ class CLIController:
 
     async def close(self) -> None:
         """Release the agent sandbox and any other resources held by the controller."""
+        if self._background_watcher_task is not None:
+            self._background_watcher_task.cancel()
+            self._background_watcher_task = None
+        if self._background_status_task is not None:
+            self._background_status_task.cancel()
+            self._background_status_task = None
         if self._service is not None:
             await self._service.close()
         await self._exit_stack.aclose()
@@ -173,6 +197,8 @@ class CLIController:
 
             info = CLISessionInfo.from_path(self._workspace_path, workspace_path, cfg)
             ui.set_file_count(self._describe_data(info))
+            self._background_watcher_task = asyncio.create_task(self._watch_background_tasks())
+            self._background_status_task = asyncio.create_task(self._poll_background_task_status())
         except FileNotFoundError:
             hint = self._did_you_mean(self._workspace_path)
             await self._fail_boot(
@@ -355,6 +381,43 @@ class CLIController:
             if self._awaiting_choice or self._awaiting_approval or self._pending_queue.is_empty():
                 return
             query = self._dequeue_pending()
+
+    async def _watch_background_tasks(self) -> None:
+        """Consume background-task completions and surface them, unprompted.
+
+        Runs for the lifetime of the session (started in ``boot``, cancelled
+        in ``close``). ``watch_completions`` blocks until the next terminal
+        task, so this stays idle between completions rather than polling.
+        """
+        assert self._service is not None
+        async for record in self._service.task_manager.watch_completions():
+            query, display = _format_completion_message(record)
+            if self._agent_running or self._awaiting_choice or self._awaiting_approval:
+                self._enqueue_pending(query, display)
+            else:
+                self._ui.add_message("agent", display)
+                self._active_turn_status = self._ui.add_turn_status_bar()
+                await self.run_agent(query)
+
+    async def _poll_background_task_status(self) -> None:
+        """Refresh the header's "running background tasks" line every few seconds.
+
+        Purely a status display of already-in-memory state — not the
+        completion-delivery mechanism (``_watch_background_tasks`` is).
+        """
+        assert self._service is not None
+        while True:
+            await asyncio.sleep(_BACKGROUND_STATUS_POLL_SECONDS)
+            records = await self._service.task_manager.list_tasks()
+            running = [r for r in records if r.status == AgentTaskStatus.RUNNING]
+            if not running:
+                self._ui.set_background_tasks("")
+                continue
+            parts = []
+            for record in running:
+                latest = record.progress[-1].progress_update.ongoing if record.progress else ""
+                parts.append(f"{record.summary} — {latest}" if latest else record.summary)
+            self._ui.set_background_tasks("; ".join(parts))
 
     def _dequeue_pending(self) -> str:
         """Pop the next queued message, surface it as a normal user turn, return its query."""

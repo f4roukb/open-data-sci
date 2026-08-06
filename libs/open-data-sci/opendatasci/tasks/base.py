@@ -4,7 +4,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import StrEnum, auto
-from typing import Any, Awaitable, Callable
+from typing import Any, AsyncIterator, Awaitable, Callable
 from uuid import UUID
 
 
@@ -77,5 +77,47 @@ class AgentTaskManagerBase(ABC):
         """Request cancellation of *task_id*. Returns ``False`` if unknown.
 
         Cancellation may be best-effort depending on the implementation.
+        """
+        ...
+
+    @abstractmethod
+    async def upsert_record(self, record: AgentTaskRecord) -> None:
+        """Insert or overwrite *record* wholesale, keyed by ``record.task_id``.
+
+        The low-level write primitive every other mutation (status
+        transitions, progress pushes) goes through. Exposing it publicly lets
+        a worker running in a different process from the manager report its
+        own state back by constructing a record/patch and calling this
+        directly, independent of whatever executes the work.
+        """
+        ...
+
+    @abstractmethod
+    async def push_task_progress(
+        self,
+        task_id: UUID,
+        update: AgentTaskProgressUpdate,
+        eta_seconds: float | None = None,
+    ) -> None:
+        """Append one progress checkpoint to *task_id*'s record.
+
+        No-op (aside from logging) if *task_id* is unknown.
+        """
+        ...
+
+    @abstractmethod
+    def watch_completions(self) -> AsyncIterator[AgentTaskRecord]:
+        """Yield each task's record exactly once, as soon as it reaches a terminal status.
+
+        Blocks between completions — this is a push source, not a poll.
+        Single-consumer by contract (one watcher per manager instance/
+        session): each terminal record is delivered exactly once, so two
+        concurrent consumers would race for records rather than both seeing
+        them. A local manager backs this with an in-memory queue fed at the
+        point a task transitions to a terminal state. A cloud/DB-backed
+        manager satisfies the same contract however its environment makes
+        sense (DB LISTEN/NOTIFY, a message-broker subscription, an internal
+        polling coroutine that feeds its own queue) — callers only ever
+        depend on the async-iterator contract, never the mechanism.
         """
         ...

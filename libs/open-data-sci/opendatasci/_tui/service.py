@@ -10,6 +10,7 @@ from typing import Any, AsyncIterator
 from opendatasci.agents.agents import BaseOpenDataSciAgent
 from opendatasci.sandbox.base import BaseSandbox
 from opendatasci.streaming import AgentStreamEvent
+from opendatasci.tasks.base import AgentTaskManagerBase
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,11 @@ class OpenDataSciTuiService:
     async def close(self) -> None:
         """Release sandbox resources (e.g. stop Docker containers)."""
         await self._sandbox.close()
+
+    @property
+    def task_manager(self) -> AgentTaskManagerBase:
+        """The agent's background-task manager (see ``watch_completions``)."""
+        return self._agent.task_manager
 
     async def astream(self, query: str) -> AsyncIterator[AgentStreamEvent]:
         """Stream events for *query* with token-level output."""

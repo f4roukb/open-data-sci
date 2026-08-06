@@ -179,6 +179,20 @@ class TestAgentInit:
         async with _make_agent_ctx() as agent:
             assert _get_messages(agent) == []
 
+    async def test_task_manager_property_exposes_shared_manager(self) -> None:
+        from opendatasci.tasks.base import AgentTaskManagerBase
+
+        async with _make_agent_ctx() as agent:
+            assert isinstance(agent.task_manager, AgentTaskManagerBase)
+            assert agent.task_manager is agent._agent_task_manager
+
+    async def test_task_manager_property_returns_explicit_override(self) -> None:
+        from opendatasci.tasks.local import LocalAgentTaskManager
+
+        explicit_manager = LocalAgentTaskManager()
+        async with _agent_with_overrides_ctx(agent_task_manager=explicit_manager) as agent:
+            assert agent.task_manager is explicit_manager
+
 
 # ---------------------------------------------------------------------------
 # Conversation management

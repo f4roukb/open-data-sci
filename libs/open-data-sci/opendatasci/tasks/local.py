@@ -4,10 +4,16 @@ import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any, AsyncIterator, Awaitable, Callable
 from uuid import UUID, uuid4
 
-from opendatasci.tasks.base import AgentTaskManagerBase, AgentTaskRecord, AgentTaskStatus
+from opendatasci.tasks.base import (
+    AgentTaskManagerBase,
+    AgentTaskProgressReport,
+    AgentTaskProgressUpdate,
+    AgentTaskRecord,
+    AgentTaskStatus,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +30,12 @@ class LocalAgentTaskManager(AgentTaskManagerBase):
         self._records: dict[UUID, AgentTaskRecord] = {}
         self._tasks: dict[UUID, asyncio.tasks[Any]] = {}
         self._output_root = output_root
+        self._completions: asyncio.Queue[AgentTaskRecord] = asyncio.Queue()
 
     async def submit_task(self, work: Callable[[UUID], Awaitable[Any]], summary: str) -> UUID:
         task_id = uuid4()
         record = AgentTaskRecord(task_id=task_id, summary=summary, status=AgentTaskStatus.RUNNING)
-        self._records[task_id] = record
+        await self.upsert_record(record)
 
         async def _run() -> None:
             try:
@@ -36,17 +43,23 @@ class LocalAgentTaskManager(AgentTaskManagerBase):
             except asyncio.CancelledError:
                 record.status = AgentTaskStatus.CANCELLED
                 record.finished_at = time.time()
+                await self.upsert_record(record)
+                self._completions.put_nowait(record)
                 raise
             except Exception as exc:
                 logger.exception("Background task %s (%s) failed", task_id, summary)
                 record.status = AgentTaskStatus.FAILED
                 record.error = str(exc)
                 record.finished_at = time.time()
+                await self.upsert_record(record)
+                self._completions.put_nowait(record)
             else:
                 record.status = AgentTaskStatus.COMPLETED
                 record.result = result
                 record.finished_at = time.time()
+                await self.upsert_record(record)
                 await self._publish_task_result(task_id, record)
+                self._completions.put_nowait(record)
 
         self._tasks[task_id] = asyncio.create_task(_run())
         return task_id
@@ -78,3 +91,22 @@ class LocalAgentTaskManager(AgentTaskManagerBase):
             return False
         task.cancel()
         return True
+
+    async def upsert_record(self, record: AgentTaskRecord) -> None:
+        self._records[record.task_id] = record
+
+    async def push_task_progress(
+        self,
+        task_id: UUID,
+        update: AgentTaskProgressUpdate,
+        eta_seconds: float | None = None,
+    ) -> None:
+        record = self._records.get(task_id)
+        if record is None:
+            logger.warning("push_task_progress called with unknown task_id=%s", task_id)
+            return
+        record.progress.append(AgentTaskProgressReport(progress_update=update, eta_seconds=eta_seconds))
+
+    async def watch_completions(self) -> AsyncIterator[AgentTaskRecord]:
+        while True:
+            yield await self._completions.get()

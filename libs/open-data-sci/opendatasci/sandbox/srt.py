@@ -5,48 +5,61 @@ Linux. Windows is unsupported: ``sandbox_runtime`` imports the Unix-only
 ``resource`` module at import time, so this module fails to import at all on
 Windows; this class is therefore exercised only under mocks on such hosts.
 
-GPU passthrough (Linux only, opt-in via the ``[deep-learning]`` extra):
+Accelerator (GPU/NPU) passthrough (Linux only, opt-in via the ``[host-dl]``
+extra — deep learning directly on the host, for machines with a GPU or NPU):
 ``sandbox_runtime`` (0.2.x) unconditionally runs ``bwrap --dev /dev`` on
-Linux, which mounts a fresh devtmpfs containing only the standard nodes
-(``null``, ``zero``, ``random``, etc.) — no ``/dev/nvidia*`` or
-``/dev/dri/*``. It exposes no device-related config to work around this
-(only ``network`` and ``filesystem``), and any ``/dev/*`` path handed to it
-via ``filesystem.allow_write`` is silently dropped (its own comment assumes
+Linux, mounting a fresh devtmpfs with only the standard nodes (``null``,
+``zero``, ``random``, etc.) — no ``/dev/nvidia*``, ``/dev/dri/*``,
+``/dev/dxg`` (WSL2), or ``/dev/accel/*``. It has no config for this (only
+``network`` and ``filesystem``), and silently drops any ``/dev/*`` path
+handed to it via ``filesystem.allow_write`` (its own comment assumes
 ``--dev /dev`` already covers device access, which it doesn't for real
-devices). Verified experimentally (bwrap 0.8, WSL2 + RTX 5070 Ti): appending
-an explicit ``--dev-bind`` for the GPU's device node after ``--dev /dev`` is
-sufficient to restore full accelerator access with no other changes needed.
+devices).
 
-``SRTSandbox`` does this itself, gated on whether a deep-learning package
+``SRTSandbox`` fixes this itself, gated on whether a ``[host-dl]`` package
 (``torch``, ``jax``, ``transformers``, ``sentence_transformers``) is
-importable — see ``_is_host_dl_extra_active`` and
-``_inject_gpu_devices``. It is off unless one of those is installed, and it
-logs a one-time warning when it activates, because it is a materially
+importable — see ``is_host_dl_extra_active`` and
+``_inject_accelerator_devices``. It's off unless one of those is installed,
+and it logs a one-time warning when it activates, because it's a materially
 different risk than the rest of this sandbox's isolation:
 
 - It hands sandboxed code direct ``ioctl`` access to the **host kernel's**
-  GPU driver, not just a contained resource. NVIDIA's driver ioctl surface
-  has a real CVE history for exactly this class of issue (e.g. the
+  accelerator driver, not just a contained resource. GPU driver ioctl
+  surfaces have a real CVE history for exactly this class of issue (e.g. the
   ``nvidia-container-toolkit`` CVEs), so a driver bug reachable from
   sandboxed code is a host-kernel bug, not a sandbox-contained one.
-- There is no GPU equivalent of ``ResourceLimitsConfig`` (which caps
-  CPU/memory/file-size) — nothing stops sandboxed code from exhausting GPU
-  memory or compute, a DoS against anything else using that GPU.
-- Only compute-capable nodes are ever bound: ``/dev/nvidia*`` and
-  ``/dev/dri/renderD*``. ``/dev/dri/card*`` (display/KMS ioctls) is never
-  exposed, deliberately.
+- There is no accelerator equivalent of ``ResourceLimitsConfig`` (which caps
+  CPU/memory/file-size) — nothing stops sandboxed code from exhausting
+  GPU/NPU memory or compute, a DoS against anything else using that device.
+- Only compute-capable nodes are ever bound: ``/dev/nvidia*``,
+  ``/dev/dri/renderD*``, ``/dev/accel/*``. ``/dev/dri/card*`` (display/KMS
+  ioctls) is never exposed, deliberately.
 
-macOS/Metal passthrough is not implemented here: it needs Seatbelt profile
-changes (allowing the ``AGXDeviceUserClient`` IOKit class and the
-``com.apple.MTLCompilerService`` mach-lookup), matching the shape of
-upstream's unmerged ``allowGPU`` proposal
-(anthropic-experimental/sandbox-runtime#181), but that's unverified here (no
-macOS hardware available) — deep learning code on macOS still runs on CPU.
+Coverage and verification status, by hardware:
+
+- **NVIDIA GPU on WSL2** (``/dev/dxg``, the DirectX-based GPU
+  paravirtualization device WSL2 exposes in place of ``/dev/nvidia*``):
+  verified end-to-end (bwrap 0.8, WSL2 + RTX 5070 Ti) — appending an explicit
+  ``--dev-bind /dev/dxg /dev/dxg`` after ``--dev /dev`` is sufficient to
+  restore full accelerator access (`nvidia-smi`, `pynvml`), no other changes
+  needed.
+- **Everything else** — native Linux NVIDIA (``/dev/nvidia*``), AMD/Intel
+  GPU (``/dev/dri/renderD*``), and NPU (``/dev/accel/*``): same mechanism,
+  **not independently verified** — only WSL2 hardware was available to test
+  against.
+- **macOS (Metal GPU, Apple Neural Engine)**: not implemented. Metal needs
+  Seatbelt profile changes (allowing the ``AGXDeviceUserClient`` IOKit class
+  and the ``com.apple.MTLCompilerService`` mach-lookup), matching the shape
+  of upstream's unmerged ``allowGPU`` proposal
+  (anthropic-experimental/sandbox-runtime#181) — unverified here (no macOS
+  hardware available). The Neural Engine has no device-node equivalent at
+  all (it's reached through CoreML and a private IOKit/daemon path, not a
+  ``/dev`` entry), so it isn't covered by this device-bind approach even in
+  principle. Deep learning code on macOS still runs on CPU.
 """
 
 import asyncio
 import base64
-import glob
 import json
 import logging
 import os
@@ -65,8 +78,9 @@ from typing import Any, AsyncIterator
 from sandbox_runtime import SandboxManager, SandboxRuntimeConfig
 from sandbox_runtime.utils.platform import get_platform
 
+from opendatasci._utils.accelerator_utils import discover_accelerator_devices
+from opendatasci._utils.credential_utils import discover_credential_deny_paths
 from opendatasci._utils.package_extras_utils import is_host_dl_extra_active
-from opendatasci._utils.gpu_utils import discover_gpu_devices
 from opendatasci.sandbox.base import (
     BaseSandbox,
     BaseSandboxFactory,
@@ -167,22 +181,19 @@ _ENV_PASSTHROUGH: tuple[str, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# GPU passthrough (Linux only; opt-in via the ``[deep-learning]`` extra)
+# Accelerator (GPU/NPU) passthrough (Linux only; opt-in via ``[host-dl]``)
 # ---------------------------------------------------------------------------
 #
 # See the module docstring for what this does and why it's gated. Detection
-# (``is_host_dl_extra_active``/``discover_gpu_devices``, in
-# ``opendatasci._utils.package_extras_utils``) is pure and reusable; injecting the bwrap
-# args and emitting the one-time warning stay here since they're tied to this
-# module's specific wrapped-command format. The warning is cached at module
-# scope so it fires once per process, not once per sandbox instance.
+# lives in ``opendatasci._utils`` (pure, reusable); the bwrap-specific
+# injection and its one-time warning stay here. The warning flag is
+# module-scoped so it fires once per process, not once per sandbox instance.
+
+_ACCELERATOR_WARNING_EMITTED: bool = False
 
 
-_GPU_WARNING_EMITTED: bool = False
-
-
-def _inject_gpu_devices(wrapped_command: str) -> str:
-    """Append ``--dev-bind`` for discovered GPU devices to a wrapped bwrap command.
+def _inject_accelerator_devices(wrapped_command: str) -> str:
+    """Append ``--dev-bind`` for discovered accelerator devices to a wrapped bwrap command.
 
     ``sandbox_runtime`` always emits a literal ``--dev /dev`` token on Linux
     (see module docstring), which this appends immediately after — bwrap
@@ -194,7 +205,7 @@ def _inject_gpu_devices(wrapped_command: str) -> str:
     bwrap already sees the real ``/dev``, and a raw (non-bwrap) command has
     nothing to inject into.
     """
-    devices = discover_gpu_devices()
+    devices = discover_accelerator_devices()
     if not devices:
         return wrapped_command
 
@@ -202,25 +213,19 @@ def _inject_gpu_devices(wrapped_command: str) -> str:
     if marker not in wrapped_command:
         return wrapped_command
 
-    global _GPU_WARNING_EMITTED
-    if not _GPU_WARNING_EMITTED:
-        _GPU_WARNING_EMITTED = True
+    global _ACCELERATOR_WARNING_EMITTED
+    if not _ACCELERATOR_WARNING_EMITTED:
+        _ACCELERATOR_WARNING_EMITTED = True
         warnings.warn(
-            "opendatasci: a deep-learning package is installed, so GPU compute "
-            f"device(s) are being bind-mounted into the sandbox: {', '.join(devices)}. "
-            "This gives sandboxed code direct ioctl access to the host kernel's GPU "
-            "driver — a materially different risk than the sandbox's filesystem/"
-            "network isolation (real CVE history for GPU driver ioctl surfaces; no "
-            "GPU-side resource limiting). See opendatasci/sandbox/srt.py module "
-            "docstring for details. Uninstall torch/jax/transformers/"
-            "sentence-transformers to disable this.",
+            "opendatasci: the sandbox now has access to this machine's accelerator "
+            f"device(s) ({', '.join(devices)}), needed for the [host-dl] extra to run "
+            "deep learning on your GPU/NPU. This expands what sandboxed code can "
+            "reach on your machine. Reinstall without the [host-dl] extra to disable it.",
             RuntimeWarning,
             stacklevel=2,
         )
         logger.warning(
-            "GPU passthrough active: bind-mounting %s into the sandbox "
-            "(deep-learning package detected)",
-            devices,
+            "Accelerator passthrough active: bind-mounting %s into the sandbox", devices
         )
 
     bind_args = " ".join(f"--dev-bind {shlex.quote(d)} {shlex.quote(d)}" for d in devices)
@@ -331,7 +336,7 @@ class SRTSandbox(BaseSandbox):
                     command, custom_config=self._make_config()
                 )
                 if is_host_dl_extra_active():
-                    wrapped = _inject_gpu_devices(wrapped)
+                    wrapped = _inject_accelerator_devices(wrapped)
                 stdout_str, stderr_str, _ = await self._run_subprocess(
                     wrapped, env=env, cwd=workspace
                 )
@@ -444,37 +449,13 @@ class SRTSandbox(BaseSandbox):
         shutil.copy2(_RUNNER_SRC, self._runner_path)
         self._initialized = True
 
-    def _credential_deny_paths(self) -> list[str]:
-        """Builds paths to deny IO operations on common credential paths. Not comprehensive."""
-        home = os.path.expanduser("~")
-        candidates: list[str] = []
-
-        # Every top-level dotfile/dotdir directly under the home directory:
-        # ``~/.ssh``, ``~/.aws``, ``~/.netrc``, ``~/.config`` (and everything
-        # under it), etc. Blanket-denies by naming convention rather than an
-        # explicit allowlist of known tools, so it also catches ones we haven't
-        # enumerated. Only reaches one level deep (``~/.foo``, not
-        # ``~/projects/.env``).
-        candidates.extend(glob.glob(os.path.join(home, ".*")))
-
-        # macOS Keychain: the platform's primary credential store. Not a dotfile
-        # (lives under ``~/Library``), so the glob above never reaches it.
-        candidates.append(os.path.join(home, "Library", "Keychains"))
-
-        # macOS browser/WebKit cookie jars, which commonly hold live session
-        # tokens and likewise live outside ``~/Library``'s non-dot prefix.
-        candidates.append(os.path.join(home, "Library", "Cookies"))
-        candidates.append(os.path.join(home, "Library", "HTTPStorages"))
-
-        return [os.path.realpath(path) for path in candidates if os.path.exists(path)]
-
     def _make_config(self) -> SandboxRuntimeConfig:
         if self._sandbox_config is None:
             workspace = str(self._workspace_path or self._session_dir)
             self._sandbox_config = SandboxRuntimeConfig(
                 network={"allowed_domains": [], "denied_domains": []},
                 filesystem={
-                    "deny_read": self._credential_deny_paths(),
+                    "deny_read": discover_credential_deny_paths(),
                     "allow_write": [workspace, str(self._session_dir)],
                     "deny_write": [],
                 },
@@ -498,7 +479,7 @@ class SRTSandbox(BaseSandbox):
                     "denied_domains": [],
                 },
                 filesystem={
-                    "deny_read": self._credential_deny_paths(),
+                    "deny_read": discover_credential_deny_paths(),
                     "allow_write": [workspace, str(self._session_dir)],
                     "deny_write": [],
                 },
@@ -534,7 +515,7 @@ class SRTSandbox(BaseSandbox):
                     timeout=self._command_timeout,
                 )
             except asyncio.CancelledError:
-                # Cancellation (e.g. via cancel_task) throws in here without ever
+                # Cancellation (e.g. via stop_task) throws in here without ever
                 # raising TimeoutError, so without this handler the wrapped
                 # subprocess (shell -> bwrap/sandbox-exec -> python) would be
                 # orphaned rather than killed.

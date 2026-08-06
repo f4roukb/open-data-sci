@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from opendatasci.tasks.base import AgentTaskStatus
+from opendatasci.tasks.base import AgentTaskProgressUpdate, AgentTaskRecord, AgentTaskStatus
 from opendatasci.tasks.local import LocalAgentTaskManager
 
 
@@ -191,3 +191,106 @@ class TestPublishResult:
         await asyncio.sleep(0)
 
         assert not (tmp_path / f"{task_id}.md").exists()
+
+
+class TestUpsertRecord:
+    @pytest.mark.asyncio
+    async def test_upsert_inserts_new_record(self) -> None:
+        manager = LocalAgentTaskManager()
+        record = AgentTaskRecord(task_id="abc", summary="s", status=AgentTaskStatus.RUNNING)
+
+        await manager.upsert_record(record)
+
+        assert await manager.get_task("abc") is record
+
+    @pytest.mark.asyncio
+    async def test_upsert_overwrites_existing_record(self) -> None:
+        manager = LocalAgentTaskManager()
+        await manager.upsert_record(
+            AgentTaskRecord(task_id="abc", summary="s", status=AgentTaskStatus.RUNNING)
+        )
+        replacement = AgentTaskRecord(task_id="abc", summary="s", status=AgentTaskStatus.COMPLETED)
+
+        await manager.upsert_record(replacement)
+
+        assert await manager.get_task("abc") is replacement
+
+
+class TestPushTaskProgress:
+    @pytest.mark.asyncio
+    async def test_appends_progress_report(self) -> None:
+        manager = LocalAgentTaskManager()
+        started = asyncio.Event()
+
+        async def _work(task_id: object) -> str:
+            started.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        await manager.push_task_progress(
+            task_id, AgentTaskProgressUpdate(done="a", ongoing="b", blockers=""), eta_seconds=5.0
+        )
+        record = await manager.get_task(task_id)
+        assert record is not None
+        assert len(record.progress) == 1
+        assert record.progress[0].progress_update.done == "a"
+        assert record.progress[0].progress_update.ongoing == "b"
+        assert record.progress[0].eta_seconds == 5.0
+
+        await manager.cancel_task(task_id)
+
+    @pytest.mark.asyncio
+    async def test_unknown_task_id_is_a_noop(self) -> None:
+        manager = LocalAgentTaskManager()
+        await manager.push_task_progress(
+            "no-such-id", AgentTaskProgressUpdate(done="", ongoing="", blockers="")
+        )
+        # No exception, and nothing to read back — the only observable
+        # behavior is that this doesn't raise.
+
+
+class TestWatchCompletions:
+    @pytest.mark.asyncio
+    async def test_yields_completed_task(self) -> None:
+        manager = LocalAgentTaskManager()
+
+        async def _work(task_id: object) -> str:
+            return "done"
+
+        task_id = await manager.submit_task(_work, summary="s")
+
+        watcher = manager.watch_completions()
+        record = await asyncio.wait_for(watcher.__anext__(), timeout=1)
+        assert record.task_id == task_id
+        assert record.status == AgentTaskStatus.COMPLETED
+
+    @pytest.mark.asyncio
+    async def test_yields_failed_and_cancelled_tasks_too(self) -> None:
+        manager = LocalAgentTaskManager()
+
+        async def _fails(task_id: object) -> str:
+            raise RuntimeError("boom")
+
+        await manager.submit_task(_fails, summary="s")
+        watcher = manager.watch_completions()
+        record = await asyncio.wait_for(watcher.__anext__(), timeout=1)
+        assert record.status == AgentTaskStatus.FAILED
+
+    @pytest.mark.asyncio
+    async def test_blocks_until_next_completion(self) -> None:
+        manager = LocalAgentTaskManager()
+        watcher = manager.watch_completions()
+
+        pending = asyncio.ensure_future(watcher.__anext__())
+        await asyncio.sleep(0.05)
+        assert not pending.done()
+
+        async def _work(task_id: object) -> str:
+            return "done"
+
+        await manager.submit_task(_work, summary="s")
+        record = await asyncio.wait_for(pending, timeout=1)
+        assert record.status == AgentTaskStatus.COMPLETED

@@ -63,6 +63,7 @@ def _make_header(version: str = "0.1.0") -> AppHeader:
     header._workspace = "/tmp/data"
     header._workspace_name = None
     header._file_count = ""
+    header._background_tasks = ""
     return header
 
 

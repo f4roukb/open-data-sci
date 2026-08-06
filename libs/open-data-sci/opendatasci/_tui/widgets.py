@@ -66,7 +66,7 @@ class AppHeader(Widget):
     """Docked top bar: logo left, version/workspace info right."""
 
     DEFAULT_CSS = """
-    #header-layout { layout: horizontal; height: 5; }
+    #header-layout { layout: horizontal; height: 6; }
     """
 
     def __init__(
@@ -84,6 +84,7 @@ class AppHeader(Widget):
         self._workspace = workspace
         self._workspace_name = workspace_name
         self._file_count: str = ""
+        self._background_tasks: str = ""
         _logo_path = Path(__file__).parents[4] / "docs" / "logo.png"
         self._use_image = _TUIImage is not None and _logo_path.exists()
         self._logo_path = _logo_path
@@ -124,6 +125,10 @@ class AppHeader(Widget):
         t.append("\n")
         t.append("Model      ", style=lbl)
         t.append(_fmt_model(self._provider, self._model), style=theme["text_primary"])
+        if self._background_tasks:
+            t.append("\n")
+            t.append("Background ", style=lbl)
+            t.append(self._background_tasks, style=theme["accent"])
         self.query_one("#header-info", Static).update(t)
 
     def set_workspace(self, name: str | None) -> None:
@@ -132,6 +137,11 @@ class AppHeader(Widget):
 
     def set_file_count(self, description: str) -> None:
         self._file_count = description
+        self._render_info()
+
+    def set_background_tasks(self, description: str) -> None:
+        """Update the "running background tasks" line, or clear it if *description* is empty."""
+        self._background_tasks = description
         self._render_info()
 
 

@@ -47,7 +47,8 @@ class TestToolName:
             "task",
             "check_task",
             "list_tasks",
-            "cancel_task",
+            "stop_task",
+            "report_progress",
             "read_dataset_info",
             "update_dataset_info",
             "profile_dataset",
@@ -237,7 +238,7 @@ class TestCreateMainAgentTools:
         names = {t.name for t in tools}
         assert "check_task" in names
         assert "list_tasks" in names
-        assert "cancel_task" in names
+        assert "stop_task" in names
 
     def test_includes_web_tools(self) -> None:
         tools = create_execution_mode_tools(_make_workspace(), _make_sandbox(), None, sandbox_factory=_make_sandbox_factory())

@@ -1,5 +1,5 @@
 """Task tools: spawn worker subtasks (``task``) and manage background tasks
-(``check_task``, ``list_tasks``, ``cancel_task``).
+(``check_task``, ``list_tasks``, ``stop_task``).
 """
 
 import asyncio
@@ -22,7 +22,12 @@ from opendatasci.configs import OpenDataSciConfig
 from opendatasci.prompts.prompt_templates import WORKER_SYSTEM_PROMPT
 from opendatasci.sandbox.base import BaseSandboxFactory
 from opendatasci.skills import BaseSkillStore
-from opendatasci.tasks.base import AgentTaskManagerBase, AgentTaskRecord, AgentTaskStatus
+from opendatasci.tasks.base import (
+    AgentTaskManagerBase,
+    AgentTaskProgressUpdate,
+    AgentTaskRecord,
+    AgentTaskStatus,
+)
 from opendatasci.tools.base import OpenDataSciBaseTool
 from opendatasci.tools.coding import create_cli_tools, create_coding_tools
 from opendatasci.tools.skills import create_skill_tools
@@ -36,6 +41,59 @@ class RunMode(StrEnum):
 
     FOREGROUND = auto()
     BACKGROUND = auto()
+
+
+class ReportProgressTool(OpenDataSciBaseTool):
+    """Report progress on the background task this worker is running under.
+
+    Bound with a fixed ``task_id`` at construction time — only handed to a
+    worker running in the background (``run_mode="background"``), since a
+    foreground worker has no task record to report against.
+    """
+
+    class CallArgs(BaseModel):
+        done: str
+        """What has been completed so far."""
+        ongoing: str
+        """What is currently being worked on."""
+        blockers: str
+        """Anything blocking progress, or an empty string if none."""
+        eta_seconds: float | None = None
+        """Estimated seconds remaining, if it can be reasonably guessed."""
+
+    name: str = "report_progress"
+    description: str = """
+Report progress on the background task you are currently running as. Call this
+periodically on long-running work so whoever scheduled you can see what's done,
+what's ongoing, and what's blocking further progress without waiting for you to finish.
+
+Args:
+    done:        What has been completed so far.
+    ongoing:     What you are currently working on.
+    blockers:    Anything blocking progress, or an empty string if none.
+    eta_seconds: Estimated seconds remaining, if it can be reasonably guessed.
+""".strip()
+
+    args_schema: type[BaseModel] = CallArgs
+
+    task_id: UUID
+    agent_task_manager: AgentTaskManagerBase
+
+    @override
+    async def _arun(
+        self,
+        done: str,
+        ongoing: str,
+        blockers: str,
+        eta_seconds: float | None = None,
+        **kwargs: Any,
+    ) -> str:
+        await self.agent_task_manager.push_task_progress(
+            self.task_id,
+            AgentTaskProgressUpdate(done=done, ongoing=ongoing, blockers=blockers),
+            eta_seconds=eta_seconds,
+        )
+        return "Progress recorded."
 
 
 class TaskTool(OpenDataSciBaseTool):
@@ -84,7 +142,7 @@ other subtasks. Each subtask runs to completion independently before results are
   large-scale data processing, anything that would otherwise stall the conversation) —
   the tool schedules each subtask in the background and returns immediately with one
   task ID per subtask, so you can keep helping the user instead of blocking on completion.
-  Check on scheduled work with `check_task`/`list_tasks`.
+  Check on scheduled work with `check_task`/`list_tasks`, stop it with `stop_task`.
 
 Args:
     subtasks:      1-3 subtask descriptors (see TaskDetails fields).
@@ -148,6 +206,10 @@ Args:
                 *create_cli_tools(worker_sandbox),
                 *create_skill_tools(self.skill_store),
             ]
+            if task_id is not None:
+                tools.append(
+                    ReportProgressTool(task_id=task_id, agent_task_manager=self.agent_task_manager)
+                )
 
             agent = WorkerAgent(tools=tools, config=self.datasci_config)
             emit("task_started", subtask.summary)
@@ -226,7 +288,7 @@ Args:
             lines = [f"Scheduled {len(scheduled)} background task(s):"]
             lines.extend(f"- task_id={tid} — {summary}" for tid, summary in scheduled)
             lines.append(
-                "Use `check_task`/`list_tasks` to monitor, `cancel_task` to stop any of them."
+                "Use `check_task`/`list_tasks` to monitor, `stop_task` to stop any of them."
             )
             return "\n".join(lines)
 
@@ -255,7 +317,7 @@ def create_task_tools(
         agent_task_manager:    Shared task manager used to submit and track background
                          (``run_mode="background"``) task runs. Callers should share
                          the same instance with :func:`create_task_management_tools`
-                         so ``check_task``/``list_tasks``/``cancel_task`` can see these tasks.
+                         so ``check_task``/``list_tasks``/``stop_task`` can see these tasks.
         skill_store:     Skill store shared across all spawned workers.
     """
     return [
@@ -363,18 +425,18 @@ Args:
         return "\n".join([header, separator, *rows])
 
 
-class CancelTaskTool(OpenDataSciBaseTool):
-    """Cancel a previously scheduled background task."""
+class StopTaskTool(OpenDataSciBaseTool):
+    """Stop a previously scheduled background task."""
 
     class CallArgs(BaseModel):
         task_id: UUID
 
-    name: str = "cancel_task"
+    name: str = "stop_task"
     description: str = """
-Cancel a background task previously scheduled via the `task` tool with `run_mode="background"`.
+Stop a background task previously scheduled via the `task` tool with `run_mode="background"`.
 
-Cancellation is best-effort: a worker deep inside a tool call may take a moment to unwind, and its
-result is discarded once cancelled.
+Stopping is best-effort: a worker deep inside a tool call may take a moment to unwind, and its
+result is discarded once stopped.
 
 Args:
     task_id: The task ID returned when the background task was scheduled.
@@ -389,11 +451,11 @@ Args:
         cancelled = await self.agent_task_manager.cancel_task(task_id)
         if not cancelled:
             return f"No background task found with task_id={task_id}."
-        return f"Cancellation requested for task_id={task_id}."
+        return f"Stop requested for task_id={task_id}."
 
 
 def create_task_management_tools(agent_task_manager: AgentTaskManagerBase) -> list[BaseTool]:
-    """Return the ``check_task``, ``list_tasks``, and ``cancel_task`` tools.
+    """Return the ``check_task``, ``list_tasks``, and ``stop_task`` tools.
 
     *agent_task_manager* must be the same instance passed to :func:`create_task_tools`
     so these tools can see the background tasks scheduled by the ``task`` tool.
@@ -401,5 +463,5 @@ def create_task_management_tools(agent_task_manager: AgentTaskManagerBase) -> li
     return [
         CheckTaskTool(agent_task_manager=agent_task_manager),
         ListTasksTool(agent_task_manager=agent_task_manager),
-        CancelTaskTool(agent_task_manager=agent_task_manager),
+        StopTaskTool(agent_task_manager=agent_task_manager),
     ]

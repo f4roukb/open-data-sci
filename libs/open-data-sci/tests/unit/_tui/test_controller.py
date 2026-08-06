@@ -1,6 +1,7 @@
 ﻿"""Unit tests for opendatasci._tui.controller."""
 
 
+import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -903,6 +904,126 @@ class TestChoiceHandling:
 async def _aiter(*events: AgentStreamEvent):
     for e in events:
         yield e
+
+
+class TestFormatCompletionMessage:
+    def test_completed_task_includes_result(self) -> None:
+        from opendatasci._tui.controller import _format_completion_message
+        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
+
+        record = AgentTaskRecord(
+            task_id="1", summary="my task", status=AgentTaskStatus.COMPLETED, result="the answer"
+        )
+        query, display = _format_completion_message(record)
+        assert "my task" in query
+        assert "the answer" in query
+        assert query == display
+
+    def test_failed_task_includes_error(self) -> None:
+        from opendatasci._tui.controller import _format_completion_message
+        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
+
+        record = AgentTaskRecord(
+            task_id="1", summary="my task", status=AgentTaskStatus.FAILED, error="boom"
+        )
+        query, _ = _format_completion_message(record)
+        assert "failed" in query.lower()
+        assert "boom" in query
+
+    def test_cancelled_task_reported(self) -> None:
+        from opendatasci._tui.controller import _format_completion_message
+        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
+
+        record = AgentTaskRecord(task_id="1", summary="my task", status=AgentTaskStatus.CANCELLED)
+        query, _ = _format_completion_message(record)
+        assert "cancelled" in query.lower()
+
+
+class TestBackgroundTaskWatcher:
+    @staticmethod
+    def _completions(*records):
+        async def _gen():
+            for r in records:
+                yield r
+
+        return _gen()
+
+    async def test_kicks_new_turn_when_idle(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
+
+        record = AgentTaskRecord(
+            task_id="1", summary="s", status=AgentTaskStatus.COMPLETED, result="done"
+        )
+        mock_service.task_manager = MagicMock()
+        mock_service.task_manager.watch_completions = MagicMock(
+            return_value=self._completions(record)
+        )
+        mock_service.astream.return_value = _aiter()
+        loaded_controller._agent_running = False
+
+        await loaded_controller._watch_background_tasks()
+
+        assert mock_service.astream.called
+
+    async def test_enqueues_pending_when_turn_in_progress(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
+
+        record = AgentTaskRecord(
+            task_id="1", summary="s", status=AgentTaskStatus.COMPLETED, result="done"
+        )
+        mock_service.task_manager = MagicMock()
+        mock_service.task_manager.watch_completions = MagicMock(
+            return_value=self._completions(record)
+        )
+        loaded_controller._agent_running = True
+
+        await loaded_controller._watch_background_tasks()
+
+        assert not loaded_controller._pending_queue.is_empty()
+        assert not mock_service.astream.called
+
+
+class TestBackgroundTaskStatusPoll:
+    async def test_running_tasks_shown_in_header(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
+
+        running = AgentTaskRecord(task_id="1", summary="crunching numbers", status=AgentTaskStatus.RUNNING)
+        mock_service.task_manager = MagicMock()
+        mock_service.task_manager.list_tasks = AsyncMock(return_value=[running])
+
+        with patch("opendatasci._tui.controller._BACKGROUND_STATUS_POLL_SECONDS", 0):
+            task = asyncio.create_task(loaded_controller._poll_background_task_status())
+            await asyncio.sleep(0.01)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        mock_ui.set_background_tasks.assert_any_call("crunching numbers")
+
+    async def test_no_running_tasks_clears_header(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        mock_service.task_manager = MagicMock()
+        mock_service.task_manager.list_tasks = AsyncMock(return_value=[])
+
+        with patch("opendatasci._tui.controller._BACKGROUND_STATUS_POLL_SECONDS", 0):
+            task = asyncio.create_task(loaded_controller._poll_background_task_status())
+            await asyncio.sleep(0.01)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        mock_ui.set_background_tasks.assert_any_call("")
 
 
 class TestRunAgent:

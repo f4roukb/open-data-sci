@@ -82,7 +82,11 @@ register(
     "list_tasks",
     ToolDisplay(label="Listing background tasks", icon="📋", summary_arg="summary"),
 )
-register("cancel_task", ToolDisplay(label="Cancelling task", icon="🛑", summary_arg="summary"))
+register("stop_task", ToolDisplay(label="Stopping task", icon="🛑", summary_arg="summary"))
+register(
+    "report_progress",
+    ToolDisplay(label="Reporting progress", icon="📶", summary_arg="summary"),
+)
 register(
     "read_dataset_info",
     ToolDisplay(

@@ -147,6 +147,9 @@ class OpenDataSciApp(App[None]):
     def set_file_count(self, description: str) -> None:
         self.query_one(AppHeader).set_file_count(description)
 
+    def set_background_tasks(self, description: str) -> None:
+        self.query_one(AppHeader).set_background_tasks(description)
+
     def show_workspace_panel(self, files: list[str]) -> None:
         self.query_one(ChatPane).show_workspace_panel(files)
 
