@@ -28,7 +28,7 @@ class LocalAgentTaskManager(AgentTaskManagerBase):
 
     def __init__(self, output_root: Path | None = None) -> None:
         self._records: dict[UUID, AgentTaskRecord] = {}
-        self._tasks: dict[UUID, asyncio.tasks[Any]] = {}
+        self._tasks: dict[UUID, asyncio.Task[Any]] = {}
         self._output_root = output_root
         self._completions: asyncio.Queue[AgentTaskRecord] = asyncio.Queue()
 

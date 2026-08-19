@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 from enum import StrEnum, auto
 from pathlib import Path
-from typing import Annotated, Any, override
+from typing import Annotated, Any, Awaitable, Callable, override
 from uuid import UUID
 
 from annotated_types import MaxLen, MinLen
@@ -280,8 +280,17 @@ Args:
         if run_mode == RunMode.BACKGROUND:
             scheduled: list[tuple[UUID, str]] = []
             for i, subtask in enumerate(subtasks):
+
+                def _make_work(
+                    i: int = i, subtask: "TaskTool.TaskDetails" = subtask
+                ) -> Callable[[UUID], Awaitable[str]]:
+                    async def _work(tid: UUID) -> str:
+                        return await self._arun_one(i, subtask, tid, outer_config)
+
+                    return _work
+
                 task_id = await self.agent_task_manager.submit_task(
-                    lambda tid, i=i, subtask=subtask: self._arun_one(i, subtask, tid, outer_config),
+                    _make_work(),
                     summary=subtask.summary,
                 )
                 scheduled.append((task_id, subtask.summary))

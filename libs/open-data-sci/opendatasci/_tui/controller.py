@@ -29,7 +29,6 @@ from opendatasci._tui.session import CLISessionInfo
 from opendatasci.agents.agents_factory import create_agent
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.streaming import BaseAgentStreamEvent
-from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
 from opendatasci.streaming.events import (
     ApprovalRequiredEvent,
     ErrorEvent,
@@ -44,6 +43,7 @@ from opendatasci.streaming.events import (
     ToolResultEvent,
     UsageEvent,
 )
+from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
 from opendatasci.tools.mcp import load_mcp_servers
 
 from . import theme as _theme
