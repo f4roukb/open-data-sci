@@ -5,57 +5,11 @@ Linux. Windows is unsupported: ``sandbox_runtime`` imports the Unix-only
 ``resource`` module at import time, so this module fails to import at all on
 Windows; this class is therefore exercised only under mocks on such hosts.
 
-Accelerator (GPU/NPU) passthrough (Linux only, opt-in via the ``[host-dl]``
-extra — deep learning directly on the host, for machines with a GPU or NPU):
-``sandbox_runtime`` (0.2.x) unconditionally runs ``bwrap --dev /dev`` on
-Linux, mounting a fresh devtmpfs with only the standard nodes (``null``,
-``zero``, ``random``, etc.) — no ``/dev/nvidia*``, ``/dev/dri/*``,
-``/dev/dxg`` (WSL2), or ``/dev/accel/*``. It has no config for this (only
-``network`` and ``filesystem``), and silently drops any ``/dev/*`` path
-handed to it via ``filesystem.allow_write`` (its own comment assumes
-``--dev /dev`` already covers device access, which it doesn't for real
-devices).
-
-``SRTSandbox`` fixes this itself, gated on whether a ``[host-dl]`` package
-(``torch``, ``jax``, ``transformers``, ``sentence_transformers``) is
-importable — see ``is_host_dl_extra_active`` and
-``_inject_accelerator_devices``. It's off unless one of those is installed,
-and it logs a one-time warning when it activates, because it's a materially
-different risk than the rest of this sandbox's isolation:
-
-- It hands sandboxed code direct ``ioctl`` access to the **host kernel's**
-  accelerator driver, not just a contained resource. GPU driver ioctl
-  surfaces have a real CVE history for exactly this class of issue (e.g. the
-  ``nvidia-container-toolkit`` CVEs), so a driver bug reachable from
-  sandboxed code is a host-kernel bug, not a sandbox-contained one.
-- There is no accelerator equivalent of ``ResourceLimitsConfig`` (which caps
-  CPU/memory/file-size) — nothing stops sandboxed code from exhausting
-  GPU/NPU memory or compute, a DoS against anything else using that device.
-- Only compute-capable nodes are ever bound: ``/dev/nvidia*``,
-  ``/dev/dri/renderD*``, ``/dev/accel/*``. ``/dev/dri/card*`` (display/KMS
-  ioctls) is never exposed, deliberately.
-
-Coverage and verification status, by hardware:
-
-- **NVIDIA GPU on WSL2** (``/dev/dxg``, the DirectX-based GPU
-  paravirtualization device WSL2 exposes in place of ``/dev/nvidia*``):
-  verified end-to-end (bwrap 0.8, WSL2 + RTX 5070 Ti) — appending an explicit
-  ``--dev-bind /dev/dxg /dev/dxg`` after ``--dev /dev`` is sufficient to
-  restore full accelerator access (`nvidia-smi`, `pynvml`), no other changes
-  needed.
-- **Everything else** — native Linux NVIDIA (``/dev/nvidia*``), AMD/Intel
-  GPU (``/dev/dri/renderD*``), and NPU (``/dev/accel/*``): same mechanism,
-  **not independently verified** — only WSL2 hardware was available to test
-  against.
-- **macOS (Metal GPU, Apple Neural Engine)**: not implemented. Metal needs
-  Seatbelt profile changes (allowing the ``AGXDeviceUserClient`` IOKit class
-  and the ``com.apple.MTLCompilerService`` mach-lookup), matching the shape
-  of upstream's unmerged ``allowGPU`` proposal
-  (anthropic-experimental/sandbox-runtime#181) — unverified here (no macOS
-  hardware available). The Neural Engine has no device-node equivalent at
-  all (it's reached through CoreML and a private IOKit/daemon path, not a
-  ``/dev`` entry), so it isn't covered by this device-bind approach even in
-  principle. Deep learning code on macOS still runs on CPU.
+Accelerator (GPU/NPU) passthrough for the ``[deep-learning]`` extra is Linux
+only and opt-in — see ``_inject_accelerator_devices`` below for the mechanism
+and the security tradeoff it logs a warning about. Tested on native Linux and
+WSL2 with an NVIDIA GPU; macOS has no accelerator passthrough, so deep
+learning there runs on CPU only.
 """
 
 import asyncio
@@ -80,7 +34,7 @@ from sandbox_runtime.utils.platform import get_platform
 
 from opendatasci._utils.accelerator_utils import discover_accelerator_devices
 from opendatasci._utils.credential_utils import discover_credential_deny_paths
-from opendatasci._utils.package_extras_utils import is_host_dl_extra_active
+from opendatasci._utils.package_extras_utils import is_deep_learning_extra_active
 from opendatasci.sandbox.base import (
     BaseSandbox,
     BaseSandboxFactory,
@@ -181,13 +135,24 @@ _ENV_PASSTHROUGH: tuple[str, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# Accelerator (GPU/NPU) passthrough (Linux only; opt-in via ``[host-dl]``)
+# Accelerator (GPU/NPU) passthrough (Linux only; opt-in via ``[deep-learning]``)
 # ---------------------------------------------------------------------------
 #
-# See the module docstring for what this does and why it's gated. Detection
-# lives in ``opendatasci._utils`` (pure, reusable); the bwrap-specific
-# injection and its one-time warning stay here. The warning flag is
-# module-scoped so it fires once per process, not once per sandbox instance.
+# ``sandbox_runtime`` (0.2.x) unconditionally runs ``bwrap --dev /dev`` on
+# Linux, which mounts only standard nodes (null, zero, random) and drops real
+# accelerator devices (/dev/nvidia*, /dev/dri/*, /dev/accel/*) with no config
+# knob to restore them. We work around that below by activating only when a
+# ``[deep-learning]`` package (torch/jax/transformers/sentence_transformers)
+# is importable, since it hands sandboxed code direct ioctl access to the
+# host kernel's accelerator driver (a real CVE surface, e.g.
+# nvidia-container-toolkit) with no resource limiting the way CPU/memory
+# have — hence the one-time warning below. Only compute-capable nodes are
+# ever bound, never /dev/dri/card* (display/KMS).
+#
+# Detection lives in ``opendatasci._utils`` (pure, reusable); the
+# bwrap-specific injection and its one-time warning stay here. The warning
+# flag is module-scoped so it fires once per process, not once per sandbox
+# instance.
 
 _ACCELERATOR_WARNING_EMITTED: bool = False
 
@@ -218,9 +183,9 @@ def _inject_accelerator_devices(wrapped_command: str) -> str:
         _ACCELERATOR_WARNING_EMITTED = True
         warnings.warn(
             "opendatasci: the sandbox now has access to this machine's accelerator "
-            f"device(s) ({', '.join(devices)}), needed for the [host-dl] extra to run "
+            f"device(s) ({', '.join(devices)}), needed for the [deep-learning] extra to run "
             "deep learning on your GPU/NPU. This expands what sandboxed code can "
-            "reach on your machine. Reinstall without the [host-dl] extra to disable it.",
+            "reach on your machine. Reinstall without the [deep-learning] extra to disable it.",
             RuntimeWarning,
             stacklevel=2,
         )
@@ -335,7 +300,7 @@ class SRTSandbox(BaseSandbox):
                 wrapped = await SandboxManager.wrap_with_sandbox(
                     command, custom_config=self._make_config()
                 )
-                if is_host_dl_extra_active():
+                if is_deep_learning_extra_active():
                     wrapped = _inject_accelerator_devices(wrapped)
                 stdout_str, stderr_str, _ = await self._run_subprocess(
                     wrapped, env=env, cwd=workspace

@@ -62,16 +62,16 @@ The default installation includes the Anthropic and OpenAI clients. Install addi
 ### Capability extras
 
 ```bash
-pip install "open-data-sci[host-dl]" # Deep learning on the host — PyTorch, JAX, Transformers, Sentence-Transformers
+pip install "open-data-sci[deep-learning]" # Deep learning on the host — PyTorch, JAX, Transformers, Sentence-Transformers
 pip install "open-data-sci[finance]" # Finance data — yfinance
 ```
 
-The `[host-dl]` extra — deep learning directly on the host, for machines with a GPU or NPU — is required for the built-in **Deep Learning** skill; `[finance]` for the built-in **`finance.yahoo.com`** skill. Combine extras freely:
+The `[deep-learning]` extra — deep learning directly on the host, for machines with a GPU or NPU — is required for the built-in **Deep Learning** skill; `[finance]` for the built-in **`finance.yahoo.com`** skill. Combine extras freely:
 
-> **GPU access inside the sandbox is opt-in.** Installing a `[host-dl]` package makes the sandbox bind-mount the host's GPU device nodes so `torch`/`jax` can actually use the GPU — this exposes the host kernel's GPU driver to sandboxed code, a real change to the sandbox's risk profile. See `opendatasci/sandbox/srt.py`'s module docstring for details and current platform coverage.
+> **GPU access inside the sandbox is opt-in.** Installing a `[deep-learning]` package makes the sandbox bind-mount the host's GPU device nodes so `torch`/`jax` can actually use the GPU — this exposes the host kernel's GPU driver to sandboxed code, a real change to the sandbox's risk profile. See `opendatasci/sandbox/srt.py`'s module docstring for details and current platform coverage.
 
 ```bash
-pip install "open-data-sci[aws,gemini,host-dl,finance]"
+pip install "open-data-sci[aws,gemini,deep-learning,finance]"
 ```
 
 ---

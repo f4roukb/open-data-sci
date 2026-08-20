@@ -2533,6 +2533,14 @@ aws = [
 azure = [
     { name = "azure-identity" },
 ]
+deep-learning = [
+    { name = "flax" },
+    { name = "jax" },
+    { name = "optax" },
+    { name = "sentence-transformers" },
+    { name = "torch" },
+    { name = "transformers" },
+]
 dev = [
     { name = "kaggle" },
     { name = "mypy" },
@@ -2560,14 +2568,6 @@ gcp = [
 gemini = [
     { name = "langchain-google-genai" },
 ]
-host-dl = [
-    { name = "flax" },
-    { name = "jax" },
-    { name = "optax" },
-    { name = "sentence-transformers" },
-    { name = "torch" },
-    { name = "transformers" },
-]
 ollama = [
     { name = "langchain-ollama" },
 ]
@@ -2587,10 +2587,10 @@ requires-dist = [
     { name = "category-encoders", specifier = ">=2.6.0,<3.0.0" },
     { name = "duckdb", specifier = ">=1.0.0,<2.0.0" },
     { name = "duckduckgo-search", specifier = ">=8.0.0,<9.0.0" },
-    { name = "flax", marker = "extra == 'host-dl'", specifier = ">=0.8.0,<1.0.0" },
+    { name = "flax", marker = "extra == 'deep-learning'", specifier = ">=0.8.0,<1.0.0" },
     { name = "httpx", specifier = ">=0.27.0,<1.0.0" },
     { name = "imbalanced-learn", specifier = ">=0.12.0,<1.0.0" },
-    { name = "jax", marker = "extra == 'host-dl'", specifier = ">=0.4.0,<1.0.0" },
+    { name = "jax", marker = "extra == 'deep-learning'", specifier = ">=0.4.0,<1.0.0" },
     { name = "kaggle", marker = "extra == 'dev'", specifier = ">=2.0.0,<3.0.0" },
     { name = "langchain-anthropic", specifier = ">=1.0.0,<2.0.0" },
     { name = "langchain-aws", marker = "extra == 'aws'", specifier = ">=1.0.0,<2.0.0" },
@@ -2609,7 +2609,7 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=2.0.0,<3.0.0" },
     { name = "networkx", specifier = ">=3.0.0,<4.0.0" },
     { name = "numpy", specifier = ">=2.0.0,<2.5.0" },
-    { name = "optax", marker = "extra == 'host-dl'", specifier = ">=0.2.0,<1.0.0" },
+    { name = "optax", marker = "extra == 'deep-learning'", specifier = ">=0.2.0,<1.0.0" },
     { name = "optuna", specifier = ">=4.0.0,<5.0.0" },
     { name = "pandas", extras = ["excel", "parquet", "feather"], specifier = ">=3.0.0,<4.0.0" },
     { name = "pandas-stubs", marker = "extra == 'dev'", specifier = ">=3.0.0,<4.0.0" },
@@ -2632,12 +2632,12 @@ requires-dist = [
     { name = "scikit-learn", specifier = ">=1.5.0,<2.0.0" },
     { name = "scipy", specifier = ">=1.14.0,<2.0.0" },
     { name = "seaborn", specifier = ">=0.12.0,<1.0.0" },
-    { name = "sentence-transformers", marker = "extra == 'host-dl'", specifier = ">=3.0.0,<4.0.0" },
+    { name = "sentence-transformers", marker = "extra == 'deep-learning'", specifier = ">=3.0.0,<4.0.0" },
     { name = "shap", specifier = ">=0.46.0,<1.0.0" },
     { name = "statsmodels", specifier = ">=0.14.0,<1.0.0" },
     { name = "textual", specifier = ">=8.0.0,<9.0.0" },
-    { name = "torch", marker = "extra == 'host-dl'", specifier = ">=2.0.0,<3.0.0" },
-    { name = "transformers", marker = "extra == 'host-dl'", specifier = ">=4.0.0,<5.0.0" },
+    { name = "torch", marker = "extra == 'deep-learning'", specifier = ">=2.0.0,<3.0.0" },
+    { name = "transformers", marker = "extra == 'deep-learning'", specifier = ">=4.0.0,<5.0.0" },
     { name = "types-openpyxl", marker = "extra == 'dev'", specifier = ">=3.1.0,<4.0.0" },
     { name = "umap-learn", specifier = ">=0.5.0,<1.0.0" },
     { name = "vulture", marker = "extra == 'dev'", specifier = ">=2.0.0,<3.0.0" },
@@ -2645,7 +2645,7 @@ requires-dist = [
     { name = "xxhash", specifier = ">=3.5.0,<4.0.0" },
     { name = "yfinance", marker = "extra == 'finance'", specifier = ">=0.2.0,<1.0.0" },
 ]
-provides-extras = ["aws", "gemini", "gcp", "azure", "ollama", "host-dl", "finance", "dev", "docs"]
+provides-extras = ["aws", "gemini", "gcp", "azure", "ollama", "deep-learning", "finance", "dev", "docs"]
 
 [package.metadata.requires-dev]
 dev = [
