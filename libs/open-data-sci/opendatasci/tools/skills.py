@@ -206,7 +206,9 @@ Args:
     @override
     async def _arun(self, summary: str, communication: str, **kwargs: Any) -> str:
         domains = sorted(self.skill_store.list_domains())
-        standalone_skills = sorted(name for name in self.skill_store.list_skills() if "::" not in name)
+        standalone_skills = sorted(
+            name for name in self.skill_store.list_skills() if "::" not in name
+        )
         return json.dumps({"domains": domains, "standalone_skills": standalone_skills})
 
 

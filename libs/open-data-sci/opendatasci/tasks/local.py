@@ -114,7 +114,9 @@ class LocalAgentTaskManager(AgentTaskManagerBase):
         if record is None:
             logger.warning("push_task_progress called with unknown task_id=%s", task_id)
             return
-        record.progress.append(AgentTaskProgressReport(progress_update=update, eta_seconds=eta_seconds))
+        record.progress.append(
+            AgentTaskProgressReport(progress_update=update, eta_seconds=eta_seconds)
+        )
         await self.upsert_record(record)
 
     async def watch_completions(self) -> AsyncIterator[AgentTaskRecord]:

@@ -337,7 +337,6 @@ def create_task_tools(
     ]
 
 
-
 def _isoformat(timestamp: float | None) -> str | None:
     return datetime.fromtimestamp(timestamp).isoformat() if timestamp is not None else None
 

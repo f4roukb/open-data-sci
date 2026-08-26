@@ -403,4 +403,3 @@ class Agent(BaseOpenDataSciAgent):
             updates["messages"] = [RemoveMessage(id=msg.id) for msg in completed_messages]
         self._graph.update_state(self._graph_config, updates)
         return compaction_summary.content
-

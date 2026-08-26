@@ -288,7 +288,9 @@ def create_mode_tools(
         session_id:    Current session id, used as the plan's storage key.
     """
     tools: list[BaseTool] = [
-        SwitchAgentModeTool(skill_store=skill_store, context_store=context_store, session_id=session_id),
+        SwitchAgentModeTool(
+            skill_store=skill_store, context_store=context_store, session_id=session_id
+        ),
         ExitSelfReviewModeTool(),
     ]
     if context_store is not None and session_id is not None:

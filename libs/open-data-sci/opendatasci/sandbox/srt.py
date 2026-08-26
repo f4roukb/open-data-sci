@@ -189,9 +189,7 @@ def _inject_accelerator_devices(wrapped_command: str) -> str:
             RuntimeWarning,
             stacklevel=2,
         )
-        logger.warning(
-            "Accelerator passthrough active: bind-mounting %s into the sandbox", devices
-        )
+        logger.warning("Accelerator passthrough active: bind-mounting %s into the sandbox", devices)
 
     bind_args = " ".join(f"--dev-bind {shlex.quote(d)} {shlex.quote(d)}" for d in devices)
     return wrapped_command.replace(marker, f"{marker} {bind_args}", 1)
