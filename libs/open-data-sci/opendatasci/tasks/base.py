@@ -84,11 +84,9 @@ class AgentTaskManagerBase(ABC):
     async def upsert_record(self, record: AgentTaskRecord) -> None:
         """Insert or overwrite *record* wholesale, keyed by ``record.task_id``.
 
-        The low-level write primitive every other mutation (status
-        transitions, progress pushes) goes through. Exposing it publicly lets
-        a worker running in a different process from the manager report its
-        own state back by constructing a record/patch and calling this
-        directly, independent of whatever executes the work.
+        Exposed publicly so a worker running independently of the manager
+        (e.g. in a different process) can report its own state back by
+        constructing a record and calling this directly.
         """
         ...
 
@@ -113,11 +111,6 @@ class AgentTaskManagerBase(ABC):
         Single-consumer by contract (one watcher per manager instance/
         session): each terminal record is delivered exactly once, so two
         concurrent consumers would race for records rather than both seeing
-        them. A local manager backs this with an in-memory queue fed at the
-        point a task transitions to a terminal state. A cloud/DB-backed
-        manager satisfies the same contract however its environment makes
-        sense (DB LISTEN/NOTIFY, a message-broker subscription, an internal
-        polling coroutine that feeds its own queue) — callers only ever
-        depend on the async-iterator contract, never the mechanism.
+        them.
         """
         ...

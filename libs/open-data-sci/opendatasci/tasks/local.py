@@ -17,13 +17,16 @@ from opendatasci.tasks.base import (
 
 logger = logging.getLogger(__name__)
 
+_MAX_RECORDS = 128
+
 
 class LocalAgentTaskManager(AgentTaskManagerBase):
     """Runs submitted work as ``asyncio.tasks`` objects on the current event loop.
 
     Records are kept for the lifetime of this manager instance (i.e. for as long
     as the owning agent session is alive) so that ``get_task``/``list_tasks``
-    remain answerable after a task finishes.
+    remain answerable after a task finishes, up to a fixed number of most
+    recent tasks (oldest evicted first).
     """
 
     def __init__(self, output_root: Path | None = None) -> None:
@@ -60,6 +63,8 @@ class LocalAgentTaskManager(AgentTaskManagerBase):
                 await self.upsert_record(record)
                 await self._publish_task_result(task_id, record)
                 self._completions.put_nowait(record)
+            finally:
+                self._tasks.pop(task_id, None)
 
         self._tasks[task_id] = asyncio.create_task(_run())
         return task_id
@@ -86,13 +91,17 @@ class LocalAgentTaskManager(AgentTaskManagerBase):
         return list(self._records.values())
 
     async def cancel_task(self, task_id: UUID) -> bool:
-        task = self._tasks.get(task_id)
-        if task is None:
+        if task_id not in self._records:
             return False
-        task.cancel()
+        task = self._tasks.get(task_id)
+        if task is not None:
+            task.cancel()
         return True
 
     async def upsert_record(self, record: AgentTaskRecord) -> None:
+        if record.task_id not in self._records and len(self._records) >= _MAX_RECORDS:
+            oldest_task_id = next(iter(self._records))
+            del self._records[oldest_task_id]
         self._records[record.task_id] = record
 
     async def push_task_progress(
@@ -106,6 +115,7 @@ class LocalAgentTaskManager(AgentTaskManagerBase):
             logger.warning("push_task_progress called with unknown task_id=%s", task_id)
             return
         record.progress.append(AgentTaskProgressReport(progress_update=update, eta_seconds=eta_seconds))
+        await self.upsert_record(record)
 
     async def watch_completions(self) -> AsyncIterator[AgentTaskRecord]:
         while True:

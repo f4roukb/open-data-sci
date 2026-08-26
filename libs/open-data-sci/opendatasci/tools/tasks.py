@@ -177,10 +177,7 @@ Args:
         if subtask.skill is not None:
             initial_skill = self.skill_store.load(subtask.skill)
             if initial_skill is None:
-                logger.warning(
-                    idx,
-                    subtask.skill,
-                )
+                logger.warning("Subtask %d: skill %r not found", idx, subtask.skill)
 
         def emit(event_type: str, content: str, metadata: dict[str, Any] | None = None) -> None:
             coro = adispatch_custom_event(

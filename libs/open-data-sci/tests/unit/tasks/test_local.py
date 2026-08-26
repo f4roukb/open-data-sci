@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from opendatasci.tasks.base import AgentTaskProgressUpdate, AgentTaskRecord, AgentTaskStatus
-from opendatasci.tasks.local import LocalAgentTaskManager
+from opendatasci.tasks.local import _MAX_RECORDS, LocalAgentTaskManager
 
 
 class TestSubmitAndStatus:
@@ -214,6 +214,38 @@ class TestUpsertRecord:
         await manager.upsert_record(replacement)
 
         assert await manager.get_task("abc") is replacement
+
+    @pytest.mark.asyncio
+    async def test_evicts_oldest_record_once_at_capacity(self) -> None:
+        manager = LocalAgentTaskManager()
+        for i in range(_MAX_RECORDS):
+            await manager.upsert_record(
+                AgentTaskRecord(task_id=f"task-{i}", summary="s", status=AgentTaskStatus.RUNNING)
+            )
+
+        await manager.upsert_record(
+            AgentTaskRecord(task_id="task-new", summary="s", status=AgentTaskStatus.RUNNING)
+        )
+
+        assert len(await manager.list_tasks()) == _MAX_RECORDS
+        assert await manager.get_task("task-0") is None
+        assert await manager.get_task("task-1") is not None
+        assert await manager.get_task("task-new") is not None
+
+    @pytest.mark.asyncio
+    async def test_updating_existing_record_does_not_evict(self) -> None:
+        manager = LocalAgentTaskManager()
+        for i in range(_MAX_RECORDS):
+            await manager.upsert_record(
+                AgentTaskRecord(task_id=f"task-{i}", summary="s", status=AgentTaskStatus.RUNNING)
+            )
+
+        await manager.upsert_record(
+            AgentTaskRecord(task_id="task-0", summary="s", status=AgentTaskStatus.COMPLETED)
+        )
+
+        assert len(await manager.list_tasks()) == _MAX_RECORDS
+        assert await manager.get_task("task-0") is not None
 
 
 class TestPushTaskProgress:

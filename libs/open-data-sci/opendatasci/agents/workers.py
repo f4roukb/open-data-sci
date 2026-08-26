@@ -1,14 +1,9 @@
-"""WorkerAgent: one-shot worker agent for a single delegated subtask.
+"""WorkerAgent: one-shot worker agent for a single delegated subtask."""
 
-Deliberately free of any dependency on ``opendatasci.tools`` — unlike
-``opendatasci.agents.agents`` (which wires up the main ``Agent`` and its full
-tool set, and therefore *does* depend on ``opendatasci.tools``) — so that
-tool modules can import :class:`WorkerAgent` directly at module
-level. ``opendatasci.tools.tasks`` needs it to build a worker's toolset, and
-``opendatasci.tools`` → ``opendatasci.agents.agents`` → ``opendatasci.tools``
-would otherwise be a cycle; keeping this class in its own leaf module avoids
-that without resorting to a local, function-body import.
-"""
+# Deliberately free of any dependency on opendatasci.tools, unlike
+# opendatasci.agents.agents, so that opendatasci.tools.tasks can import
+# WorkerAgent directly at module level without an opendatasci.tools ->
+# opendatasci.agents.agents -> opendatasci.tools cycle.
 
 import logging
 from typing import Any, Callable

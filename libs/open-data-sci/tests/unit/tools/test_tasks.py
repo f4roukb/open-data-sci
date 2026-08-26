@@ -321,6 +321,23 @@ class TestRunOne:
         store.load.assert_called_once_with("data_science")
 
     @pytest.mark.asyncio
+    async def test_unknown_skill_logs_warning_without_raising(self, caplog: pytest.LogCaptureFixture) -> None:
+        store = _make_store()
+        store.load = MagicMock(return_value=None)
+        tool = _make_tool(skill_store=store)
+        with patch(_AGENT_PATCH) as MockAgent:
+            MockAgent.return_value.ainvoke = AsyncMock(return_value="ok")
+            with caplog.at_level("WARNING"):
+                result = await tool._arun_one(
+                    0,
+                    TaskTool.TaskDetails(subtask="T.", summary="s", skill="nonexistent"),
+                    None,
+                    MagicMock(),
+                )
+        assert result == "ok"
+        assert "nonexistent" in caplog.text
+
+    @pytest.mark.asyncio
     async def test_report_progress_tool_added_in_background_mode(self) -> None:
         tool = _make_tool()
         with patch(_AGENT_PATCH) as MockAgent:
