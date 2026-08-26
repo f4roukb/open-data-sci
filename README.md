@@ -60,7 +60,7 @@ Most "AI for data" tools turn you into the bottleneck. Every experiment starts w
 | **Real code execution** | Full Python in a native OS sandbox |
 | **Built-in DS methodology** | Leakage prevention, proper evaluation, causality awareness |
 | **Self-review** | Every significant step is reviewed and revised before moving forward |
-| **Parallel experimentation** | Up to 3 concurrent worker agents for ensemble runs, hyperparameter sweeps, strategy comparisons |
+| **Parallel experimentation** | Up to 3 concurrent worker agents for ensemble runs, hyperparameter sweeps, strategy comparisons — run in the background with live progress and no blocking on long ones |
 | **Persistent project memory** | Data schema, profiles, and notes accumulate across sessions |
 | **Safe by default** | Sandboxed execution: everything runs safely inside your workspace |
 | **Human-in-the-loop** | At genuine decision forks that impact your intended goal, it pauses and asks, then gets on with it |
