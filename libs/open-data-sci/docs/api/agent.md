@@ -118,11 +118,13 @@ async with Agent(
 
 ---
 
-## ConcurrentWorkerAgent
+## WorkerAgent
 
-`ConcurrentWorkerAgent` is the sub-agent spawned internally when the orchestrator delegates subtasks to concurrent workers. You do not normally construct this directly.
+`WorkerAgent` is the sub-agent spawned internally when the orchestrator delegates subtasks to concurrent workers. You do not normally construct this directly.
 
-::: opendatasci.agents.agents.ConcurrentWorkerAgent
+Subtasks normally run to completion and return their result immediately. For long-running work, the orchestrator can instead schedule a subtask in the background and check on it later — see [Background Tasks](tasks.md) for the task-tracking data model behind this.
+
+::: opendatasci.agents.workers.WorkerAgent
     options:
       show_root_heading: true
       show_source: false

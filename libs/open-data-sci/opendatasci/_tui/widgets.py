@@ -66,7 +66,7 @@ class AppHeader(Widget):
     """Docked top bar: logo left, version/workspace info right."""
 
     DEFAULT_CSS = """
-    #header-layout { layout: horizontal; height: 5; }
+    #header-layout { layout: horizontal; height: 6; }
     """
 
     def __init__(
@@ -84,6 +84,7 @@ class AppHeader(Widget):
         self._workspace = workspace
         self._workspace_name = workspace_name
         self._file_count: str = ""
+        self._background_tasks: str = ""
         _logo_path = Path(__file__).parents[4] / "docs" / "logo.png"
         self._use_image = _TUIImage is not None and _logo_path.exists()
         self._logo_path = _logo_path
@@ -124,6 +125,10 @@ class AppHeader(Widget):
         t.append("\n")
         t.append("Model      ", style=lbl)
         t.append(_fmt_model(self._provider, self._model), style=theme["text_primary"])
+        if self._background_tasks:
+            t.append("\n")
+            t.append("Background ", style=lbl)
+            t.append(self._background_tasks, style=theme["accent"])
         self.query_one("#header-info", Static).update(t)
 
     def set_workspace(self, name: str | None) -> None:
@@ -132,6 +137,11 @@ class AppHeader(Widget):
 
     def set_file_count(self, description: str) -> None:
         self._file_count = description
+        self._render_info()
+
+    def set_background_tasks(self, description: str) -> None:
+        """Update the "running background tasks" line, or clear it if *description* is empty."""
+        self._background_tasks = description
         self._render_info()
 
 
@@ -927,8 +937,8 @@ class ChatPane(Widget):
         self._mount_in_messages(widget)
         return widget
 
-    def add_worker_block(self, communication: str, worker_summaries: list[str]) -> "ToolCallBlock":
-        widget = ToolCallBlock(communication, "", "", worker_summaries=worker_summaries)
+    def add_task_block(self, communication: str, task_summaries: list[str]) -> "ToolCallBlock":
+        widget = ToolCallBlock(communication, "", "", task_summaries=task_summaries)
         self._mount_in_messages(widget)
         return widget
 
@@ -955,7 +965,7 @@ class ToolCallBlock(Static):
 
     Shows blue while the tool is running; call ``set_done()`` to turn green.
     Call ``dismiss()`` to remove from the DOM entirely.
-    For ``task``, pass ``worker_summaries`` to get one status line per worker.
+    For ``task``, pass ``task_summaries`` to get one status line per worker.
     Worker rows can be individually marked done (green ✓) or error (red ✗).
 
     When both ``label`` and ``summary`` are empty the block is
@@ -977,17 +987,17 @@ class ToolCallBlock(Static):
         communication: str,
         label: str,
         summary: str,
-        worker_summaries: list[str] | None = None,
+        task_summaries: list[str] | None = None,
     ) -> None:
         super().__init__("")
         self._communication: str | None = communication
         self._label = label
         self._summary = summary
-        self._worker_summaries = worker_summaries or []
+        self._task_summaries = task_summaries or []
         # Per-worker three-state status: "running" | "done" | "error"
-        self._worker_statuses: list[str] = ["running"] * len(self._worker_summaries)
+        self._task_statuses: list[str] = ["running"] * len(self._task_summaries)
         # Current tool name / activity string shown inline for running workers.
-        self._worker_activities: list[str] = [""] * len(self._worker_summaries)
+        self._task_activities: list[str] = [""] * len(self._task_summaries)
         self._done = False
         self._error = False
         self._spin_idx = 0
@@ -1012,7 +1022,7 @@ class ToolCallBlock(Static):
         spin = SPINNER[self._spin_idx]
         return f"[bold {theme['tool_running']}]{spin} {safe_text}[/bold {theme['tool_running']}]"
 
-    def _worker_status_markup(self, text: str, status: str, prefix: str = "") -> str:
+    def _task_status_markup(self, text: str, status: str, prefix: str = "") -> str:
         """Return markup for a single worker row based on its status.
 
         ``prefix`` is placed inside the bold/colour span so it inherits the
@@ -1027,26 +1037,26 @@ class ToolCallBlock(Static):
 
     def _refresh(self) -> None:
         lines: list[str] = []
-        if self._worker_summaries:
-            all_terminal = all(s != "running" for s in self._worker_statuses)
+        if self._task_summaries:
+            all_terminal = all(s != "running" for s in self._task_statuses)
             if self._communication:
                 lines.append(escape(self._communication))
                 lines.append("")
             lines.append(self._status_markup("⚡ Parallelizing", done=self._done or all_terminal))
-            for i, s in enumerate(self._worker_summaries):
+            for i, s in enumerate(self._task_summaries):
                 if self._done:
                     # Force-done: keep terminal rows as-is; promote any still-running row to
                     # "error" if the block itself errored, otherwise to "done".
-                    cur = self._worker_statuses[i]
+                    cur = self._task_statuses[i]
                     if cur == "running":
                         st = "error" if self._error else "done"
                     else:
                         st = cur
                 else:
-                    st = self._worker_statuses[i]
-                activity = self._worker_activities[i] if i < len(self._worker_activities) else ""
+                    st = self._task_statuses[i]
+                activity = self._task_activities[i] if i < len(self._task_activities) else ""
                 label = f"Worker {i + 1}: {activity if activity and st == 'running' else s}"
-                display = self._worker_status_markup(label, st, prefix="  └─ ")
+                display = self._task_status_markup(label, st, prefix="  └─ ")
                 lines.append(display)
         else:
             display = self._summary if self._summary else self._label
@@ -1071,32 +1081,32 @@ class ToolCallBlock(Static):
             self._spin_timer.stop()
             self._spin_timer = None
 
-    def mark_worker_done(self, idx: int) -> None:
-        if 0 <= idx < len(self._worker_statuses):
-            self._worker_statuses[idx] = "done"
-            if idx < len(self._worker_activities):
-                self._worker_activities[idx] = ""
-        if all(s != "running" for s in self._worker_statuses):
+    def mark_task_done(self, idx: int) -> None:
+        if 0 <= idx < len(self._task_statuses):
+            self._task_statuses[idx] = "done"
+            if idx < len(self._task_activities):
+                self._task_activities[idx] = ""
+        if all(s != "running" for s in self._task_statuses):
             self._stop_spinner()
             self._done = True
         self._refresh()
 
-    def mark_worker_error(self, idx: int) -> None:
-        if 0 <= idx < len(self._worker_statuses):
-            self._worker_statuses[idx] = "error"
-            if idx < len(self._worker_activities):
-                self._worker_activities[idx] = ""
-        if all(s != "running" for s in self._worker_statuses):
+    def mark_task_error(self, idx: int) -> None:
+        if 0 <= idx < len(self._task_statuses):
+            self._task_statuses[idx] = "error"
+            if idx < len(self._task_activities):
+                self._task_activities[idx] = ""
+        if all(s != "running" for s in self._task_statuses):
             self._stop_spinner()
             self._done = True
         self._refresh()
 
-    def update_worker_activity(self, idx: int, activity: str) -> None:
+    def update_task_activity(self, idx: int, activity: str) -> None:
         """Update the inline activity label for a running worker row."""
-        if 0 <= idx < len(self._worker_activities) and self._worker_statuses[idx] == "running":
-            if self._worker_activities[idx] == activity:
+        if 0 <= idx < len(self._task_activities) and self._task_statuses[idx] == "running":
+            if self._task_activities[idx] == activity:
                 return
-            self._worker_activities[idx] = activity
+            self._task_activities[idx] = activity
             self._refresh()
 
     def set_communication(self, text: str | None) -> None:

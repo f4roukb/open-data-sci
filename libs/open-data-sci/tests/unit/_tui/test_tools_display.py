@@ -177,14 +177,14 @@ class TestRegistryContents:
 
     # ── Workers ───────────────────────────────────────────────────────────────
 
-    def test_spawn_workers_label(self) -> None:
-        assert REGISTRY["spawn_workers"].label == "Spawning workers"
+    def test_task_label(self) -> None:
+        assert REGISTRY["task"].label == "Spawning workers"
 
-    def test_spawn_workers_icon(self) -> None:
-        assert REGISTRY["spawn_workers"].icon == "👥"
+    def test_task_icon(self) -> None:
+        assert REGISTRY["task"].icon == "👥"
 
-    def test_spawn_workers_summary_arg(self) -> None:
-        assert REGISTRY["spawn_workers"].summary_arg == "summary"
+    def test_task_summary_arg(self) -> None:
+        assert REGISTRY["task"].summary_arg == "summary"
 
     # ── Dataset ───────────────────────────────────────────────────────────────
 

@@ -2,11 +2,13 @@
 and its wiring into SRTSandboxFactory.create()."""
 
 
+import asyncio
+import shutil
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from opendatasci.sandbox.srt import SRTSandboxFactory, check_sandbox_dependencies
+from opendatasci.sandbox.srt import SRTSandbox, SRTSandboxFactory, check_sandbox_dependencies
 
 # ---------------------------------------------------------------------------
 # check_sandbox_dependencies
@@ -95,3 +97,61 @@ class TestSRTSandboxFactoryCreate:
 
             async with factory.create(workspace_path=None) as sandbox:
                 assert sandbox is sandbox_instance
+
+
+# ---------------------------------------------------------------------------
+# SRTSandbox._run_subprocess: cancellation must not orphan the spawned process
+# ---------------------------------------------------------------------------
+
+
+class TestRunSubprocessCancellation:
+    async def test_cancellation_terminates_process_tree_before_propagating(self) -> None:
+        sandbox = SRTSandbox(workspace_path=None)
+        try:
+            proc = MagicMock()
+            proc.communicate = AsyncMock(side_effect=asyncio.CancelledError())
+
+            with (
+                patch(
+                    "opendatasci.sandbox.srt.asyncio.create_subprocess_shell",
+                    AsyncMock(return_value=proc),
+                ),
+                patch.object(
+                    sandbox, "_terminate_process_tree", AsyncMock()
+                ) as terminate_mock,
+            ):
+                with pytest.raises(asyncio.CancelledError):
+                    await sandbox._run_subprocess("echo hi", env={}, cwd=".")
+
+                terminate_mock.assert_awaited_once_with(proc)
+        finally:
+            shutil.rmtree(sandbox._session_dir, ignore_errors=True)
+
+    async def test_timeout_still_terminates_process_tree(self) -> None:
+        """Regression guard: the pre-existing timeout path must keep working
+        alongside the new cancellation handling."""
+        sandbox = SRTSandbox(workspace_path=None, command_timeout=0.01)
+        try:
+            proc = MagicMock()
+
+            async def _hang(*args: object, **kwargs: object) -> tuple[bytes, bytes]:
+                await asyncio.sleep(10)
+                return b"", b""
+
+            proc.communicate = _hang
+
+            with (
+                patch(
+                    "opendatasci.sandbox.srt.asyncio.create_subprocess_shell",
+                    AsyncMock(return_value=proc),
+                ),
+                patch.object(
+                    sandbox, "_terminate_process_tree", AsyncMock()
+                ) as terminate_mock,
+            ):
+                with pytest.raises(TimeoutError):
+                    await sandbox._run_subprocess("echo hi", env={}, cwd=".")
+
+                terminate_mock.assert_awaited_once_with(proc)
+        finally:
+            shutil.rmtree(sandbox._session_dir, ignore_errors=True)

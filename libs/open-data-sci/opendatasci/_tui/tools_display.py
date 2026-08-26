@@ -73,7 +73,20 @@ register(
     "list_skills",
     ToolDisplay(label="Checking available skills", icon="🧭", summary_arg="summary"),
 )
-register("spawn_workers", ToolDisplay(label="Spawning workers", icon="👥", summary_arg="summary"))
+register("task", ToolDisplay(label="Spawning workers", icon="👥", summary_arg="summary"))
+register(
+    "check_task",
+    ToolDisplay(label="Checking task status", icon="📋", summary_arg="summary"),
+)
+register(
+    "list_tasks",
+    ToolDisplay(label="Listing background tasks", icon="📋", summary_arg="summary"),
+)
+register("stop_task", ToolDisplay(label="Stopping task", icon="🛑", summary_arg="summary"))
+register(
+    "report_progress",
+    ToolDisplay(label="Reporting progress", icon="📶", summary_arg="summary"),
+)
 register(
     "read_dataset_info",
     ToolDisplay(

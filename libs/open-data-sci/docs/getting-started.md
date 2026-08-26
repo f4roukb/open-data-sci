@@ -62,14 +62,16 @@ The default installation includes the Anthropic and OpenAI clients. Install addi
 ### Capability extras
 
 ```bash
-pip install "open-data-sci[jax]"       # Deep learning — JAX, Flax, Optax
-pip install "open-data-sci[finance]"   # Finance data — yfinance
+pip install "open-data-sci[deep-learning]" # Deep learning on the host — PyTorch, JAX, Transformers, Sentence-Transformers
+pip install "open-data-sci[finance]" # Finance data — yfinance
 ```
 
-The `[jax]` extra is required for the built-in **Deep Learning** skill; `[finance]` for the built-in **`finance.yahoo.com`** skill. Combine extras freely:
+The `[deep-learning]` extra — deep learning directly on the host, for machines with a GPU or NPU — is required for the built-in **Deep Learning** skill; `[finance]` for the built-in **`finance.yahoo.com`** skill. Combine extras freely:
+
+> **GPU access inside the sandbox is opt-in.** Installing a `[deep-learning]` package makes the sandbox bind-mount the host's GPU device nodes so `torch`/`jax` can actually use the GPU — this exposes the host kernel's GPU driver to sandboxed code, a real change to the sandbox's risk profile. See `opendatasci/sandbox/srt.py`'s module docstring for details and current platform coverage.
 
 ```bash
-pip install "open-data-sci[aws,gemini,jax,finance]"
+pip install "open-data-sci[aws,gemini,deep-learning,finance]"
 ```
 
 ---
@@ -254,8 +256,8 @@ async for event in agent.astream(query):
             print(f"\n[tool] {event.content}")
         case "tool_result":
             pass
-        case "worker_done":
-            idx = event.metadata["worker_idx"]
+        case "task_done":
+            idx = event.metadata["task_idx"]
             ok = event.metadata["success"]
             print(f"\n[worker {idx}] {'ok' if ok else 'failed'}")
         case "input_required":

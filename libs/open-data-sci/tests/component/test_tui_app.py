@@ -99,7 +99,7 @@ class TestAppShell:
         assert isinstance(app.add_turn_status_bar(), TurnStatusBar)
         assert isinstance(app.add_pending_message("queued"), PendingMessageBubble)
         assert isinstance(app.add_ephemeral_block("", "tool", "summary"), ToolCallBlock)
-        assert isinstance(app.add_worker_block("", ["w1"]), ToolCallBlock)
+        assert isinstance(app.add_task_block("", ["w1"]), ToolCallBlock)
         assert isinstance(app.add_thinking_block(), ThinkingBlock)
         await pilot.pause()
 

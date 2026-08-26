@@ -3,7 +3,7 @@
 Centralises every tool that mutates ``AgentState.is_plan_mode`` /
 ``is_self_review_mode`` so the mode lifecycle lives in one place. Entry is a
 single tool (``switch_agentic_mode``) that picks the target mode via
-:class:`AgenticMode`; exit stays mode-specific (``exit_plan_mode`` records the
+:class:`AgentMode`; exit stays mode-specific (``exit_plan_mode`` records the
 plan, ``exit_self_review_mode`` records the review) since each returns
 different data.
 """
@@ -21,37 +21,37 @@ from pydantic import BaseModel, ConfigDict
 from opendatasci.agents.states import AgentState
 from opendatasci.context.base import BaseContextStore
 from opendatasci.skills.base import BaseSkillStore
-from opendatasci.tools.base import OpenDataSciSyncTool
+from opendatasci.tools.base import OpenDataSciBaseTool
 
 
-class AgenticMode(str, Enum):
+class AgentMode(str, Enum):
     """Modes ``switch_agentic_mode`` can enter."""
 
     PLAN = "plan"
     SELF_REVIEW = "self_review"
 
 
-_EXIT_TOOL_NAME: dict[AgenticMode, str] = {
-    AgenticMode.PLAN: "exit_plan_mode",
-    AgenticMode.SELF_REVIEW: "exit_self_review_mode",
+_EXIT_TOOL_NAME: dict[AgentMode, str] = {
+    AgentMode.PLAN: "exit_plan_mode",
+    AgentMode.SELF_REVIEW: "exit_self_review_mode",
 }
 
 
-def _active_mode(state: AgentState) -> AgenticMode | None:
+def _active_mode(state: AgentState) -> AgentMode | None:
     if state.is_plan_mode:
-        return AgenticMode.PLAN
+        return AgentMode.PLAN
     if state.is_self_review_mode:
-        return AgenticMode.SELF_REVIEW
+        return AgentMode.SELF_REVIEW
     return None
 
 
-class SwitchAgenticModeTool(OpenDataSciSyncTool):
+class SwitchAgentModeTool(OpenDataSciBaseTool):
     """Switch into Plan Mode or Self-Review Mode."""
 
     class CallArgs(BaseModel):
         model_config = ConfigDict(arbitrary_types_allowed=True)
 
-        mode: AgenticMode
+        mode: AgentMode
         summary: str
         communication: str
         state: Annotated[AgentState, InjectedState]
@@ -76,14 +76,14 @@ Args:
 """
     args_schema: type[BaseModel] = CallArgs
 
-    store: BaseSkillStore
+    skill_store: BaseSkillStore
     context_store: BaseContextStore | None = None
     session_id: str | None = None
 
     @override
-    def _run(
+    async def _arun(
         self,
-        mode: AgenticMode,
+        mode: AgentMode,
         summary: str,
         communication: str,
         state: AgentState,
@@ -109,7 +109,7 @@ Args:
                 }
             )
 
-        if mode is AgenticMode.PLAN:
+        if mode is AgentMode.PLAN:
             return self._enter_plan_mode(tool_call_id)
         return self._enter_self_review_mode(skill, tool_call_id)
 
@@ -146,9 +146,9 @@ Args:
     def _enter_self_review_mode(self, skill: str | None, tool_call_id: str) -> Command[AgentState]:
         state_update: dict[str, Any] = {"is_self_review_mode": True}
         if skill is not None:
-            loaded = self.store.load(skill)
+            loaded = self.skill_store.load(skill)
             if loaded is None:
-                available = ", ".join(sorted(self.store.list_skills()))
+                available = ", ".join(sorted(self.skill_store.list_skills()))
                 return Command(
                     update={
                         "messages": [
@@ -175,7 +175,7 @@ Args:
         return Command(update=state_update)
 
 
-class ExitPlanModeTool(OpenDataSciSyncTool):
+class ExitPlanModeTool(OpenDataSciBaseTool):
     """Exit Plan Mode and record the completed plan."""
 
     class CallArgs(BaseModel):
@@ -204,7 +204,7 @@ Args:
     session_id: str
 
     @override
-    def _run(
+    async def _arun(
         self, final_plan: str, summary: str, communication: str, tool_call_id: str, **kwargs: Any
     ) -> Command[AgentState]:
         self.context_store.save_plan(self.session_id, final_plan)
@@ -224,7 +224,7 @@ Args:
         )
 
 
-class ExitSelfReviewModeTool(OpenDataSciSyncTool):
+class ExitSelfReviewModeTool(OpenDataSciBaseTool):
     """Exit Self-Review Mode and record the review findings."""
 
     class CallArgs(BaseModel):
@@ -254,7 +254,7 @@ Args:
     args_schema: type[BaseModel] = CallArgs
 
     @override
-    def _run(
+    async def _arun(
         self, review: str, summary: str, communication: str, tool_call_id: str, **kwargs: Any
     ) -> Command[AgentState]:
         content = (
@@ -271,7 +271,7 @@ Args:
 
 
 def create_mode_tools(
-    store: BaseSkillStore,
+    skill_store: BaseSkillStore,
     context_store: BaseContextStore | None = None,
     session_id: str | None = None,
 ) -> list[BaseTool]:
@@ -283,12 +283,14 @@ def create_mode_tools(
     somewhere.
 
     Args:
-        store:         Skill store used to resolve the optional ``skill`` argument.
+        skill_store:   Skill store used to resolve the optional ``skill`` argument.
         context_store: Where completed plans are persisted, if available.
         session_id:    Current session id, used as the plan's storage key.
     """
     tools: list[BaseTool] = [
-        SwitchAgenticModeTool(store=store, context_store=context_store, session_id=session_id),
+        SwitchAgentModeTool(
+            skill_store=skill_store, context_store=context_store, session_id=session_id
+        ),
         ExitSelfReviewModeTool(),
     ]
     if context_store is not None and session_id is not None:

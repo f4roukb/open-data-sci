@@ -82,16 +82,18 @@ pip install "open-data-sci[ollama]"    # Ollama (local models)
 ### Capability extras
 
 ```bash
-pip install "open-data-sci[jax]"       # Deep learning — JAX, Flax, Optax
-pip install "open-data-sci[finance]"   # Finance data — yfinance
+pip install "open-data-sci[deep-learning]" # Deep learning on the host — PyTorch, JAX, Transformers, Sentence-Transformers
+pip install "open-data-sci[finance]" # Finance data — yfinance
 ```
 
-The `[jax]` extra is required to use the **Deep Learning** skill; without it, the agent's sandboxed Python environment has no training framework available. The `[finance]` extra is required to use the **`finance.yahoo.com`** skill.
+The `[deep-learning]` extra — deep learning directly on the host, for machines with a GPU or NPU — is required to use the **Deep Learning** skill; without it, the agent's sandboxed Python environment has no training framework available. The `[finance]` extra is required to use the **`finance.yahoo.com`** skill.
+
+> **GPU access inside the sandbox is opt-in, and it's a real host-kernel exposure.** When a `[deep-learning]` package (`torch`, `jax`, `transformers`, `sentence-transformers`) is installed, the sandbox bind-mounts the host's GPU compute device nodes (`/dev/nvidia*`, `/dev/dri/renderD*` on Linux) so those frameworks can actually use the GPU — otherwise sandboxed code has no path to accelerator hardware at all. This is a materially different risk than the sandbox's filesystem/network isolation: it hands sandboxed code direct `ioctl` access to the host kernel's GPU driver (GPU driver ioctl surfaces have a real CVE history), and there's no GPU-equivalent of the CPU/memory resource limits the sandbox otherwise enforces. A warning is logged whenever this activates. See the module docstring in `opendatasci/sandbox/srt.py` for the full detail. macOS/Metal passthrough and NPU passthrough are not verified — see that docstring for current status. Uninstall the `[deep-learning]` packages to disable this entirely.
 
 Multiple extras can be combined:
 
 ```bash
-pip install "open-data-sci[aws,gemini,jax,finance]"
+pip install "open-data-sci[aws,gemini,deep-learning,finance]"
 ```
 
 ---

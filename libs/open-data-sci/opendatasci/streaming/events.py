@@ -34,7 +34,7 @@ class TokenEvent(BaseAgentStreamEvent):
 class ToolCallEvent(BaseAgentStreamEvent):
     """The agent is invoking a tool.
 
-    ``worker_summaries`` is populated only for ``spawn_workers`` tool calls;
+    ``task_summaries`` is populated only for ``task`` tool calls;
     ``summary`` carries the agent-provided summary argument for all other calls.
     """
 
@@ -43,7 +43,7 @@ class ToolCallEvent(BaseAgentStreamEvent):
     tool: str = ""
     tool_call_id: str | None = None
     summary: str = ""
-    worker_summaries: list[str] = field(default_factory=list)
+    task_summaries: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -75,11 +75,11 @@ class MessageEvent(BaseAgentStreamEvent):
 
 
 @dataclass
-class WorkerDoneEvent(BaseAgentStreamEvent):
+class TaskDoneEvent(BaseAgentStreamEvent):
     """A single concurrent worker finished."""
 
-    type: ClassVar[str] = "worker_done"
-    worker_idx: int | None = None
+    type: ClassVar[str] = "task_done"
+    task_idx: int | None = None
     success: bool = True
 
 
@@ -87,13 +87,13 @@ class WorkerDoneEvent(BaseAgentStreamEvent):
 class SubagentEvent(BaseAgentStreamEvent):
     """Lifecycle event from inside a running worker.
 
-    ``event_type`` is one of ``"worker_tool_call"`` or ``"worker_tool_result"``.
-    ``content`` carries the tool name for ``worker_tool_call`` events.
+    ``event_type`` is one of ``"task_tool_call"`` or ``"task_tool_result"``.
+    ``content`` carries the tool name for ``task_tool_call`` events.
     """
 
     type: ClassVar[str] = "subagent_event"
     content: str = ""
-    worker_idx: int | None = None
+    task_idx: int | None = None
     event_type: str = ""
     success: bool = True
     summary: str = ""
@@ -166,7 +166,7 @@ AgentStreamEvent = (
     | ToolCommunicationEvent
     | ToolResultEvent
     | MessageEvent
-    | WorkerDoneEvent
+    | TaskDoneEvent
     | SubagentEvent
     | InputRequiredEvent
     | ApprovalRequiredEvent

@@ -63,6 +63,7 @@ def _make_header(version: str = "0.1.0") -> AppHeader:
     header._workspace = "/tmp/data"
     header._workspace_name = None
     header._file_count = ""
+    header._background_tasks = ""
     return header
 
 
@@ -303,16 +304,16 @@ def _make_block(
     communication: str = "doing something",
     label: str = "MyTool",
     summary: str = "ran code",
-    worker_summaries: list[str] | None = None,
+    task_summaries: list[str] | None = None,
 ) -> ToolCallBlock:
     """Instantiate ToolCallBlock bypassing Textual Widget.__init__."""
     block = ToolCallBlock.__new__(ToolCallBlock)
     block._communication = communication
     block._label = label
     block._summary = summary
-    block._worker_summaries = worker_summaries or []
-    block._worker_statuses = ["running"] * len(block._worker_summaries)
-    block._worker_activities = [""] * len(block._worker_summaries)
+    block._task_summaries = task_summaries or []
+    block._task_statuses = ["running"] * len(block._task_summaries)
+    block._task_activities = [""] * len(block._task_summaries)
     block._done = False
     block._error = False
     block._spin_idx = 0
@@ -351,83 +352,83 @@ class TestToolCallBlockState:
             block.set_communication(None)
         assert block._communication is None
 
-    def test_mark_worker_done_sets_status(self) -> None:
-        block = _make_block(worker_summaries=["w1", "w2"])
+    def test_mark_task_done_sets_status(self) -> None:
+        block = _make_block(task_summaries=["w1", "w2"])
         with patch.object(block, "_refresh"), patch.object(block, "_stop_spinner"):
-            block.mark_worker_done(0)
-        assert block._worker_statuses[0] == "done"
-        assert block._worker_statuses[1] == "running"
+            block.mark_task_done(0)
+        assert block._task_statuses[0] == "done"
+        assert block._task_statuses[1] == "running"
 
-    def test_mark_worker_error_sets_status(self) -> None:
-        block = _make_block(worker_summaries=["w1"])
+    def test_mark_task_error_sets_status(self) -> None:
+        block = _make_block(task_summaries=["w1"])
         with patch.object(block, "_refresh"), patch.object(block, "_stop_spinner"):
-            block.mark_worker_error(0)
-        assert block._worker_statuses[0] == "error"
+            block.mark_task_error(0)
+        assert block._task_statuses[0] == "error"
 
-    def test_mark_worker_done_all_terminal_stops_spinner(self) -> None:
-        block = _make_block(worker_summaries=["w1"])
+    def test_mark_task_done_all_terminal_stops_spinner(self) -> None:
+        block = _make_block(task_summaries=["w1"])
         stop_called = []
         with (
             patch.object(block, "_refresh"),
             patch.object(block, "_stop_spinner", side_effect=lambda: stop_called.append(True)),
         ):
-            block.mark_worker_done(0)
+            block.mark_task_done(0)
         assert stop_called
 
-    def test_mark_worker_done_all_terminal_sets_done(self) -> None:
-        block = _make_block(worker_summaries=["w1", "w2"])
+    def test_mark_task_done_all_terminal_sets_done(self) -> None:
+        block = _make_block(task_summaries=["w1", "w2"])
         with patch.object(block, "_refresh"), patch.object(block, "_stop_spinner"):
-            block.mark_worker_done(0)
+            block.mark_task_done(0)
         assert block._done is False  # only one of two workers done
         with patch.object(block, "_refresh"), patch.object(block, "_stop_spinner"):
-            block.mark_worker_done(1)
+            block.mark_task_done(1)
         assert block._done is True  # all workers done → block is definitively closed
 
-    def test_mark_worker_error_all_terminal_sets_done(self) -> None:
-        block = _make_block(worker_summaries=["w1"])
+    def test_mark_task_error_all_terminal_sets_done(self) -> None:
+        block = _make_block(task_summaries=["w1"])
         with patch.object(block, "_refresh"), patch.object(block, "_stop_spinner"):
-            block.mark_worker_error(0)
+            block.mark_task_error(0)
         assert block._done is True
 
-    def test_mark_worker_done_partial_does_not_set_done(self) -> None:
-        block = _make_block(worker_summaries=["w1", "w2", "w3"])
+    def test_mark_task_done_partial_does_not_set_done(self) -> None:
+        block = _make_block(task_summaries=["w1", "w2", "w3"])
         with patch.object(block, "_refresh"), patch.object(block, "_stop_spinner"):
-            block.mark_worker_done(0)
-            block.mark_worker_done(1)
+            block.mark_task_done(0)
+            block.mark_task_done(1)
         assert block._done is False  # third worker still running
 
-    def test_update_worker_activity_updates_running_worker(self) -> None:
-        block = _make_block(worker_summaries=["w1"])
+    def test_update_task_activity_updates_running_worker(self) -> None:
+        block = _make_block(task_summaries=["w1"])
         with patch.object(block, "_refresh"):
-            block.update_worker_activity(0, "running tool X")
-        assert block._worker_activities[0] == "running tool X"
+            block.update_task_activity(0, "running tool X")
+        assert block._task_activities[0] == "running tool X"
 
-    def test_update_worker_activity_ignored_for_done_worker(self) -> None:
-        block = _make_block(worker_summaries=["w1"])
-        block._worker_statuses[0] = "done"
+    def test_update_task_activity_ignored_for_done_worker(self) -> None:
+        block = _make_block(task_summaries=["w1"])
+        block._task_statuses[0] = "done"
         with patch.object(block, "_refresh"):
-            block.update_worker_activity(0, "should be ignored")
-        assert block._worker_activities[0] == ""
+            block.update_task_activity(0, "should be ignored")
+        assert block._task_activities[0] == ""
 
-    def test_update_worker_activity_skips_refresh_when_unchanged(self) -> None:
-        block = _make_block(worker_summaries=["w1"])
-        block._worker_activities[0] = "tool X"
+    def test_update_task_activity_skips_refresh_when_unchanged(self) -> None:
+        block = _make_block(task_summaries=["w1"])
+        block._task_activities[0] = "tool X"
         with patch.object(block, "_refresh") as refresh:
-            block.update_worker_activity(0, "tool X")
+            block.update_task_activity(0, "tool X")
         refresh.assert_not_called()
 
-    def test_update_worker_activity_calls_refresh_when_changed(self) -> None:
-        block = _make_block(worker_summaries=["w1"])
+    def test_update_task_activity_calls_refresh_when_changed(self) -> None:
+        block = _make_block(task_summaries=["w1"])
         with patch.object(block, "_refresh") as refresh:
-            block.update_worker_activity(0, "tool X")
+            block.update_task_activity(0, "tool X")
         refresh.assert_called_once()
 
-    def test_mark_worker_done_clears_activity(self) -> None:
-        block = _make_block(worker_summaries=["w1"])
-        block._worker_activities[0] = "some activity"
+    def test_mark_task_done_clears_activity(self) -> None:
+        block = _make_block(task_summaries=["w1"])
+        block._task_activities[0] = "some activity"
         with patch.object(block, "_refresh"), patch.object(block, "_stop_spinner"):
-            block.mark_worker_done(0)
-        assert block._worker_activities[0] == ""
+            block.mark_task_done(0)
+        assert block._task_activities[0] == ""
 
 
 class TestToolCallBlockMarkup:
@@ -447,21 +448,21 @@ class TestToolCallBlockMarkup:
         assert "done text" in markup
         assert "[bold" in markup  # still styled
 
-    def test_worker_status_markup_error_contains_x(self) -> None:
+    def test_task_status_markup_error_contains_x(self) -> None:
         block = _make_block()
-        markup = block._worker_status_markup("worker", "error")
+        markup = block._task_status_markup("worker", "error")
         assert "✗" in markup
 
-    def test_worker_status_markup_done_no_checkmark(self) -> None:
+    def test_task_status_markup_done_no_checkmark(self) -> None:
         block = _make_block()
-        markup = block._worker_status_markup("worker", "done")
+        markup = block._task_status_markup("worker", "done")
         assert "✓" not in markup
         assert "worker" in markup
         assert "[bold" in markup  # still styled
 
-    def test_worker_status_markup_running_contains_spinner(self) -> None:
+    def test_task_status_markup_running_contains_spinner(self) -> None:
         block = _make_block()
-        markup = block._worker_status_markup("worker", "running")
+        markup = block._task_status_markup("worker", "running")
         assert "worker" in markup
 
 
@@ -473,7 +474,7 @@ class TestToolCallBlockRefreshForcedTerminalState:
     set_error would hide a failure behind a green row."""
 
     def test_set_error_promotes_running_rows_to_error(self) -> None:
-        block = _make_block(worker_summaries=["w1", "w2"])
+        block = _make_block(task_summaries=["w1", "w2"])
         block.update = MagicMock()  # type: ignore[assignment]
         block.set_error()
         rendered = str(block.update.call_args.args[0])
@@ -481,7 +482,7 @@ class TestToolCallBlockRefreshForcedTerminalState:
         assert rendered.count("✗") >= 2
 
     def test_set_done_keeps_running_rows_as_done(self) -> None:
-        block = _make_block(worker_summaries=["w1"])
+        block = _make_block(task_summaries=["w1"])
         block.update = MagicMock()  # type: ignore[assignment]
         block.set_done()
         rendered = str(block.update.call_args.args[0])
@@ -489,8 +490,8 @@ class TestToolCallBlockRefreshForcedTerminalState:
         assert "✗" not in rendered
 
     def test_set_error_keeps_already_done_rows_done(self) -> None:
-        block = _make_block(worker_summaries=["w1", "w2"])
-        block._worker_statuses[0] = "done"
+        block = _make_block(task_summaries=["w1", "w2"])
+        block._task_statuses[0] = "done"
         block.update = MagicMock()  # type: ignore[assignment]
         block.set_error()
         rendered = str(block.update.call_args.args[0])
@@ -586,8 +587,8 @@ class TestToolCallBlockRefreshSpacing:
         assert lines[0] != ""
         assert len(lines) == 1
 
-    def test_communication_shown_with_blank_separator_for_worker_blocks(self) -> None:
-        block = _make_block(worker_summaries=["worker-1", "worker-2"])
+    def test_communication_shown_with_blank_separator_for_task_blocks(self) -> None:
+        block = _make_block(task_summaries=["worker-1", "worker-2"])
         block._communication = "Running checks in parallel."
         lines = self._rendered_lines(block)
         # Worker path renders communication → blank separator → header → worker rows
@@ -597,8 +598,8 @@ class TestToolCallBlockRefreshSpacing:
         assert lines[3] != ""  # worker 1
         assert lines[4] != ""  # worker 2
 
-    def test_no_communication_no_blank_line_for_worker_blocks(self) -> None:
-        block = _make_block(worker_summaries=["worker-1", "worker-2"])
+    def test_no_communication_no_blank_line_for_task_blocks(self) -> None:
+        block = _make_block(task_summaries=["worker-1", "worker-2"])
         block._communication = ""
         lines = self._rendered_lines(block)
         # No communication → header is first line, no leading blank
@@ -692,7 +693,7 @@ class TestToolCallBlockWorkerRowRendering:
         return captured[-1].plain.splitlines()
 
     def test_header_has_no_trailing_colon(self) -> None:
-        block = _make_block(communication="", worker_summaries=["w1"])
+        block = _make_block(communication="", task_summaries=["w1"])
         lines = self._rendered_lines(block)
         # While workers run, the spinner is prepended to the header by
         # _status_markup; expected layout is "{spin} ⚡ Parallelizing".
@@ -700,35 +701,35 @@ class TestToolCallBlockWorkerRowRendering:
         assert not lines[0].rstrip().endswith(":")
 
     def test_header_done_state_has_no_trailing_colon(self) -> None:
-        block = _make_block(communication="", worker_summaries=["w1"])
-        block._worker_statuses[0] = "done"
+        block = _make_block(communication="", task_summaries=["w1"])
+        block._task_statuses[0] = "done"
         lines = self._rendered_lines(block)
         # All workers terminal → header rendered in the done style (no spinner).
         assert lines[0] == "⚡ Parallelizing"
 
     def test_running_worker_row_has_indented_tree_prefix_before_spinner(self) -> None:
-        block = _make_block(communication="", worker_summaries=["w1"])
+        block = _make_block(communication="", task_summaries=["w1"])
         lines = self._rendered_lines(block)
         # Spinner is SPINNER[0] = "⣾"; tree prefix sits BEFORE the spinner.
         assert lines[1] == f"{self.WORKER_UPDATE_BRANCH}⣾ Worker 1: w1"
 
     def test_done_worker_row_preserves_tree_prefix(self) -> None:
-        block = _make_block(communication="", worker_summaries=["w1"])
-        block._worker_statuses[0] = "done"
+        block = _make_block(communication="", task_summaries=["w1"])
+        block._task_statuses[0] = "done"
         lines = self._rendered_lines(block)
         # No spinner in done state — prefix still leads, then the row text.
         assert lines[1] == f"{self.WORKER_UPDATE_BRANCH}Worker 1: w1"
 
     def test_error_worker_row_preserves_tree_prefix_before_x_glyph(self) -> None:
-        block = _make_block(communication="", worker_summaries=["w1"])
-        block._worker_statuses[0] = "error"
+        block = _make_block(communication="", task_summaries=["w1"])
+        block._task_statuses[0] = "error"
         lines = self._rendered_lines(block)
         # Error glyph "✗" sits inside the status markup; prefix is still external.
         assert lines[1] == f"{self.WORKER_UPDATE_BRANCH}✗ Worker 1: w1"
 
     def test_running_worker_row_with_activity_keeps_tree_prefix(self) -> None:
-        block = _make_block(communication="", worker_summaries=["w1"])
-        block._worker_activities[0] = "🐍 running pandas"
+        block = _make_block(communication="", task_summaries=["w1"])
+        block._task_activities[0] = "🐍 running pandas"
         lines = self._rendered_lines(block)
         # Activity replaces the subtask summary while running; prefix unchanged.
         assert lines[1] == f"{self.WORKER_UPDATE_BRANCH}⣾ Worker 1: 🐍 running pandas"

@@ -8,12 +8,12 @@ from opendatasci.streaming.events import (
     ReasoningEvent,
     ResponseEvent,
     SubagentEvent,
+    TaskDoneEvent,
     TokenEvent,
     ToolCallEvent,
     ToolCommunicationEvent,
     ToolResultEvent,
     UsageEvent,
-    WorkerDoneEvent,
 )
 from opendatasci.streaming.processors import AgentTurnStreamProcessor
 
@@ -27,11 +27,11 @@ __all__ = [
     "ReasoningEvent",
     "ResponseEvent",
     "SubagentEvent",
+    "TaskDoneEvent",
     "TokenEvent",
     "ToolCallEvent",
     "ToolCommunicationEvent",
     "ToolResultEvent",
     "UsageEvent",
-    "WorkerDoneEvent",
     "AgentTurnStreamProcessor",
 ]

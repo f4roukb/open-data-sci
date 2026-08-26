@@ -4,13 +4,12 @@ from abc import ABC, abstractmethod
 from contextlib import AsyncExitStack
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, AsyncIterator, Callable
+from typing import Any, AsyncIterator
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     RemoveMessage,
     SystemMessage,
-    ToolMessage,
 )
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
@@ -26,14 +25,14 @@ from opendatasci._utils.message_utils import (
 )
 from opendatasci._utils.streaming_utils import format_stream_error
 from opendatasci.agents.chat_history import ChatHistoryBuilder
-from opendatasci.agents.graphs import AgentCompiledGraph, AgentGraphFactory, WorkerGraphFactory
+from opendatasci.agents.graphs import AgentCompiledGraph, AgentGraphFactory
 from opendatasci.agents.states import AgentState
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.base import BaseContextStore
 from opendatasci.context.local import LocalContextStore
 from opendatasci.human_inputs.human_approval import APPROVAL_INTERRUPT_KIND
 from opendatasci.memory.chat_memory import ChatHistoryCompactor
-from opendatasci.memory.messages import AgentToAgentMessage, MessageOrigin, UserMessage
+from opendatasci.memory.messages import UserMessage
 from opendatasci.memory.turn_memory import TurnRewinder
 from opendatasci.models.factory import (
     _RetryRunnable,
@@ -42,12 +41,10 @@ from opendatasci.models.factory import (
     with_retry,
 )
 from opendatasci.prompts.builders import SystemContextBuilder
-from opendatasci.prompts.caching import cached_system_prompt
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory
 from opendatasci.sandbox.srt import SRTSandboxFactory
 from opendatasci.session import BaseSessionManager, LocalSessionManager
 from opendatasci.skills import BaseSkillStore, LocalSkillStore
-from opendatasci.skills.base import Skill, SkillDomain
 from opendatasci.streaming import (
     AgentStreamEvent,
     AgentTurnStreamProcessor,
@@ -57,7 +54,9 @@ from opendatasci.streaming import (
     MessageEvent,
     ResponseEvent,
 )
-from opendatasci.tools import (
+from opendatasci.tasks.base import AgentTaskManagerBase
+from opendatasci.tasks.local import LocalAgentTaskManager
+from opendatasci.tools.factory import (
     create_execution_mode_tools,
     create_plan_mode_tools,
     create_self_review_mode_tools,
@@ -67,14 +66,6 @@ from opendatasci.workspace.base import BaseWorkspace
 logger = logging.getLogger(__name__)
 
 AGENT_RECURSION_LIMIT: int = 1000
-
-SUBAGENT_TAG: str = "opendatasci:subagent"
-WORKER_MAX_STEPS: int = 50
-
-# Signature: (event_type, content, metadata | None) -> None
-OnEventCallback = Callable[[str, str, "dict[str, Any] | None"], None]
-
-_ARGS_PREVIEW_LEN = 80
 
 
 class BaseOpenDataSciAgent(ABC):
@@ -89,6 +80,10 @@ class BaseOpenDataSciAgent(ABC):
 
     @abstractmethod
     async def compact_chat_history(self) -> str: ...
+
+    @property
+    @abstractmethod
+    def task_manager(self) -> AgentTaskManagerBase: ...
 
 
 class Agent(BaseOpenDataSciAgent):
@@ -113,6 +108,8 @@ class Agent(BaseOpenDataSciAgent):
             local file-based store is created when omitted.
         skill_store: Registry that the agent queries to resolve named skills
             at runtime.  Defaults to the built-in :class:`LocalSkillStore`.
+        agent_task_manager: Tracks background tasks spawned via the ``task``
+            tool.  Defaults to a file-backed :class:`LocalAgentTaskManager`.
         session_manager: Tracks the session's conversation threads in the
             graph checkpointer; clearing the conversation creates a new
             thread.  Defaults to a file-backed :class:`LocalSessionManager`.
@@ -133,6 +130,7 @@ class Agent(BaseOpenDataSciAgent):
         workspace: BaseWorkspace,
         context_store: BaseContextStore | None = None,
         skill_store: BaseSkillStore | None = None,
+        agent_task_manager: AgentTaskManagerBase | None = None,
         sandbox_factory: BaseSandboxFactory | None = None,
         checkpointer: BaseCheckpointSaver[Any] | None = None,
         tools: list[BaseTool] | None = None,
@@ -146,6 +144,7 @@ class Agent(BaseOpenDataSciAgent):
         self._tools = tools
         self._sandbox_factory = sandbox_factory
         self._skill_store = skill_store
+        self._agent_task_manager = agent_task_manager
         self._context_store = context_store
         self._session_manager = session_manager
         self._checkpointer = checkpointer
@@ -162,6 +161,9 @@ class Agent(BaseOpenDataSciAgent):
         if self._context_store is None:
             workspace_path = Path(self._workspace.get_reference())
             self._context_store = LocalContextStore(workspace_path=workspace_path)
+        if self._agent_task_manager is None:
+            output_root = Path(self._context_store.root) / "workers" / "outputs"
+            self._agent_task_manager = LocalAgentTaskManager(output_root=output_root)
         if self._session_manager is None:
             self._session_manager = LocalSessionManager(
                 workspace_path=Path(self._workspace.get_reference()),
@@ -183,8 +185,9 @@ class Agent(BaseOpenDataSciAgent):
                 self._context_store,
                 self._sandbox_factory,
                 session_id=self._session_id,
-                store=self._skill_store,
+                skill_store=self._skill_store,
                 datasci_config=self._config,
+                agent_task_manager=self._agent_task_manager,
             )
 
         self._tools_in_plan_mode: list[BaseTool] = create_plan_mode_tools(self._tools)
@@ -212,6 +215,16 @@ class Agent(BaseOpenDataSciAgent):
 
     async def __aexit__(self, *exc_info: Any) -> None:
         await self._exit_stack.aclose()
+
+    @property
+    def task_manager(self) -> AgentTaskManagerBase:
+        """The task manager tracking this agent's background (``task``, ``run_mode="background"``) work.
+
+        Exposed so a caller driving this agent (the TUI, or a hosted-service
+        equivalent) can watch for background-task completions via
+        :meth:`AgentTaskManagerBase.watch_completions`.
+        """
+        return self._agent_task_manager  # type: ignore[return-value]
 
     @property
     def _graph_config(self) -> RunnableConfig:
@@ -390,124 +403,3 @@ class Agent(BaseOpenDataSciAgent):
             updates["messages"] = [RemoveMessage(id=msg.id) for msg in completed_messages]
         self._graph.update_state(self._graph_config, updates)
         return compaction_summary.content
-
-
-class ConcurrentWorkerAgent:
-    """One-shot worker agent that executes a single delegated subtask to completion."""
-
-    def __init__(
-        self,
-        tools: list[BaseTool],
-        config: OpenDataSciConfig | None = None,
-        llm: BaseChatModel | None = None,
-    ) -> None:
-        self._config = config or OpenDataSciConfig()
-        _llm = llm if llm is not None else create_model(self._config)
-        _llm_with_tools = with_retry(_llm.bind_tools(tools))
-        self._current_system_prompt: str = ""
-
-        self._graph = WorkerGraphFactory(
-            llm_with_tools=_llm_with_tools,
-            tools=tools,
-            build_system_context=self._build_system_context,
-        ).build()
-
-    def _build_system_context(self, state: AgentState) -> list[SystemMessage]:
-        messages: list[SystemMessage] = [
-            SystemMessage(
-                content=cached_system_prompt(self._current_system_prompt, self._config.provider)  # type: ignore[arg-type]
-            )
-        ]
-        if state.active_skill_domains:
-            messages.append(
-                SystemMessage(
-                    content=cached_system_prompt(
-                        state.active_skill_domains[0].content, self._config.provider
-                    )  # type: ignore[arg-type]
-                )
-            )
-        for skill in state.active_skills:
-            messages.append(
-                SystemMessage(
-                    content=cached_system_prompt(skill.content, self._config.provider)  # type: ignore[arg-type]
-                )
-            )
-        return messages
-
-    async def ainvoke(
-        self,
-        task: str,
-        system_prompt: str,
-        on_event: OnEventCallback | None = None,
-        messages_out: "list[Any] | None" = None,
-        initial_active_skills: "list[Skill] | None" = None,
-        initial_active_skill_domains: "list[SkillDomain] | None" = None,
-    ) -> str:
-        """Execute *task* to completion and return the final text response."""
-        self._current_system_prompt = system_prompt
-        initial_state = AgentState(
-            messages=[AgentToAgentMessage(content=task, origin=MessageOrigin.AGENT)],
-            active_skills=list(initial_active_skills or []),
-            active_skill_domains=list(initial_active_skill_domains or []),
-        )
-        invoke_config: RunnableConfig = {
-            "tags": [SUBAGENT_TAG],
-            "recursion_limit": WORKER_MAX_STEPS * 2 + 1,
-        }
-
-        final_state: dict[str, Any] | None = None
-
-        if on_event is not None:
-            async for event in self._graph.astream_events(
-                initial_state, version="v2", config=invoke_config
-            ):
-                kind = event["event"]
-                if kind == "on_tool_start":
-                    tool_name = event["name"]
-                    args = event["data"].get("input") or {}
-                    args_preview = str(args)[:_ARGS_PREVIEW_LEN]
-                    summary = args.get("summary", "") if isinstance(args, dict) else ""
-                    on_event(
-                        "worker_tool_call",
-                        tool_name,
-                        {"args_preview": args_preview, "summary": summary},
-                    )
-                elif kind == "on_tool_end":
-                    tool_name = event["name"]
-                    output = event["data"].get("output")
-                    if isinstance(output, ToolMessage):
-                        content = output.content
-                    elif isinstance(output, str):
-                        content = output
-                    else:
-                        content = ""
-                    is_error = isinstance(content, str) and content.startswith("Error")
-                    on_event("worker_tool_result", tool_name, {"success": not is_error})
-                elif kind == "on_chain_end" and event.get("name") == "LangGraph":
-                    final_state = event["data"].get("output")
-        else:
-            final_state = await self._graph.ainvoke(initial_state, config=invoke_config)
-
-        if messages_out is not None and final_state is not None:
-            final_messages = final_state.get("messages", [])
-            final_active_skills: list[Skill] = final_state.get("active_skills", [])
-            final_active_skill_domains: list[SkillDomain] = final_state.get(
-                "active_skill_domains", []
-            )
-            dummy_state = AgentState(
-                messages=[],
-                active_skills=final_active_skills,
-                active_skill_domains=final_active_skill_domains,
-            )
-            sys_messages = self._build_system_context(dummy_state)
-            messages_out.extend([*sys_messages, *final_messages])
-
-        if final_state is None:
-            raise RuntimeError("Worker graph ended without producing output")
-
-        messages = final_state.get("messages", [])
-        if not messages:
-            raise RuntimeError("Worker graph ended with no messages")
-
-        last = messages[-1]
-        return get_message_text_content(last).strip()
