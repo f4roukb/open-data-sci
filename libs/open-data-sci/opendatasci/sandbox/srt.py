@@ -33,7 +33,7 @@ from sandbox_runtime import SandboxManager, SandboxRuntimeConfig
 from sandbox_runtime.utils.platform import get_platform
 
 from opendatasci._utils.accelerator_utils import discover_accelerator_devices
-from opendatasci._utils.credential_utils import discover_credential_deny_paths
+from opendatasci._utils.credential_utils import find_maybe_sensitive_paths
 from opendatasci._utils.package_extras_utils import is_deep_learning_extra_active
 from opendatasci.sandbox.base import (
     BaseSandbox,
@@ -418,7 +418,7 @@ class SRTSandbox(BaseSandbox):
             self._sandbox_config = SandboxRuntimeConfig(
                 network={"allowed_domains": [], "denied_domains": []},
                 filesystem={
-                    "deny_read": discover_credential_deny_paths(),
+                    "deny_read": find_maybe_sensitive_paths(),
                     "allow_write": [workspace, str(self._session_dir)],
                     "deny_write": [],
                 },
@@ -442,7 +442,7 @@ class SRTSandbox(BaseSandbox):
                     "denied_domains": [],
                 },
                 filesystem={
-                    "deny_read": discover_credential_deny_paths(),
+                    "deny_read": find_maybe_sensitive_paths(),
                     "allow_write": [workspace, str(self._session_dir)],
                     "deny_write": [],
                 },
