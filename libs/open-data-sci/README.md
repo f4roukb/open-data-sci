@@ -145,10 +145,11 @@ Annotated config files for every supported provider are available in [`examples/
 ### Python SDK
 
 ```python
-from opendatasci import create_agent
+from opendatasci import create_agent, Invocation
 
 async with create_agent("data.csv") as agent:
-    async for event in agent.astream("Summarise this dataset and train a model on the target column."):
+    invocation = Invocation.from_text("Summarise this dataset and train a model on the target column.")
+    async for event in agent.astream(invocation):
         print(event)
 ```
 

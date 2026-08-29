@@ -7,10 +7,10 @@
 The agent must be used as an async context manager. The sandbox is created on entry and closed on exit:
 
 ```python
-from opendatasci import create_agent
+from opendatasci import Invocation, create_agent
 
 async with create_agent("data.csv") as agent:
-    async for event in agent.astream("Describe this dataset"):
+    async for event in agent.astream(Invocation.from_text("Describe this dataset")):
         print(event)
 ```
 
@@ -19,29 +19,29 @@ For advanced use cases where you need to control each dependency explicitly, con
 ```python
 from opendatasci.agents.agents import Agent
 from opendatasci.workspace.local import LocalWorkspace
-from opendatasci import OpenDataSciConfig
+from opendatasci import Invocation, OpenDataSciConfig
 
 workspace = LocalWorkspace("./data/")
 config = OpenDataSciConfig(provider="anthropic")
 
 async with Agent(workspace=workspace, config=config) as agent:
-    async for event in agent.astream("Analyse sales trends"):
+    async for event in agent.astream(Invocation.from_text("Analyse sales trends")):
         ...
 ```
 
 ## Streaming events
 
-`agent.astream()` is an async generator that yields [`AgentStreamEvent`](types.md) objects as the agent works. See the [Events & Types](types.md) page for the full event taxonomy.
+`agent.astream()` takes a single `Invocation` or a `list[Invocation]` and is an async generator that yields [`AgentStreamEvent`](types.md) objects as the agent works. A list is not multiple separate requests — every item is folded into one turn, producing exactly one response. See the [Events & Types](types.md) page for the full event taxonomy.
 
 ### Handling an interrupt
 
 Some tools pause the agent and ask the user to pick an option (for example, to confirm a destructive operation). When this happens an `AgentStreamEvent` with `type="input_required"` is yielded. Resume the agent by calling `astream()` again with the user's answer:
 
 ```python
-async for event in agent.astream(query):
+async for event in agent.astream(invocation):
     if event.type == "input_required":
         choice = input(f"{event.content} [{', '.join(event.metadata['choices'])}]: ")
-        async for follow_up in agent.astream(choice):
+        async for follow_up in agent.astream(Invocation.from_text(choice)):
             # process follow_up events as usual
             ...
     elif event.type == "token":

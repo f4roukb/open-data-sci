@@ -3,10 +3,11 @@ OpenDataSci — AI-powered data analytics SDK.
 
 Quick start::
 
-    from opendatasci import OpenDataSciConfig, create_agent
+    from opendatasci import Invocation, OpenDataSciConfig, create_agent
 
     async with create_agent("/data/sales.csv") as agent:
-        async for event in agent.astream("What is the average revenue by region?"):
+        invocation = Invocation.from_text("What is the average revenue by region?")
+        async for event in agent.astream(invocation):
             print(event)
 
 Package layout::
@@ -24,7 +25,7 @@ Package layout::
         tools/          LangChain tools available to the agent
 """
 
-from opendatasci.agents.agents import Agent
+from opendatasci.agents.agents import Agent, Invocation
 from opendatasci.agents.agents_factory import create_agent
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.memory.chat_memory import ChatTurnContext
@@ -36,6 +37,7 @@ __version__ = "0.2.0"
 
 __all__ = [
     "Agent",
+    "Invocation",
     "create_agent",
     "ChatTurnContext",
     "OpenDataSciConfig",

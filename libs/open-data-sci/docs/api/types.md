@@ -38,8 +38,8 @@ existing `event.type == "token"` comparisons continue to work alongside
 | `ToolResultEvent` | `"tool_result"` | `content`, `tool_call_id`, `is_error` | Tool returned its result |
 | `TaskDoneEvent` | `"task_done"` | `task_idx`, `success` | A concurrent worker finished |
 | `SubagentEvent` | `"subagent_event"` | `content`, `task_idx`, `event_type`, `success`, `summary` | Lifecycle event from inside a running worker |
-| `InputRequiredEvent` | `"input_required"` | `content`, `choices` | Agent paused at a free-text interrupt; call `astream(answer)` to resume |
-| `ApprovalRequiredEvent` | `"approval_required"` | `command`, `description`, `heads_up` | Agent paused waiting for command approval; call `astream("yes")` or `astream("no")` to resume |
+| `InputRequiredEvent` | `"input_required"` | `content`, `choices` | Agent paused at a free-text interrupt; call `astream(Invocation.from_text(answer))` to resume |
+| `ApprovalRequiredEvent` | `"approval_required"` | `command`, `description`, `heads_up` | Agent paused waiting for command approval; call `astream(Invocation.from_text("yes"))` or `astream(Invocation.from_text("no"))` to resume |
 | `UsageEvent` | `"usage"` | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_creation_tokens` | Token usage update (fields are `int \| None`) |
 | `ResponseEvent` | `"response"` | `content` | End-of-turn marker with the full assembled response |
 | `ErrorEvent` | `"error"` | `content` | Unrecoverable error |
@@ -50,12 +50,13 @@ use in type annotations.
 ### Handling each event type
 
 ```python
+from opendatasci import Invocation
 from opendatasci.streaming import (
     ApprovalRequiredEvent, InputRequiredEvent, ResponseEvent, TokenEvent,
     ToolCallEvent, UsageEvent, TaskDoneEvent, ErrorEvent,
 )
 
-async for event in agent.astream("Analyse this dataset"):
+async for event in agent.astream(Invocation.from_text("Analyse this dataset")):
     if isinstance(event, TokenEvent):
         print(event.content, end="", flush=True)
 
@@ -68,7 +69,7 @@ async for event in agent.astream("Analyse this dataset"):
 
     elif isinstance(event, InputRequiredEvent):
         ans = input(f"{event.content} ({'/'.join(event.choices)}): ")
-        async for follow_up in agent.astream(ans):
+        async for follow_up in agent.astream(Invocation.from_text(ans)):
             ...
 
     elif isinstance(event, ApprovalRequiredEvent):
@@ -76,7 +77,7 @@ async for event in agent.astream("Analyse this dataset"):
         if event.heads_up:
             print(f"Warning: {event.heads_up}")
         answer = input("Allow? (yes/no): ")
-        async for follow_up in agent.astream(answer):
+        async for follow_up in agent.astream(Invocation.from_text(answer)):
             ...
 
     elif isinstance(event, UsageEvent):

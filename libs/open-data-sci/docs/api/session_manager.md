@@ -8,7 +8,7 @@ You do not normally instantiate this class directly — the TUI creates it for y
 
 ```python
 from opendatasci._tui.service import OpenDataSciTuiService
-from opendatasci import create_agent, OpenDataSciConfig
+from opendatasci import create_agent, Invocation, OpenDataSciConfig
 from pathlib import Path
 
 config = OpenDataSciConfig()
@@ -19,13 +19,13 @@ async with create_agent("data.csv", config=config) as agent:
         sandbox=agent._sandbox,
         workspace_path=Path(agent._workspace.get_reference()),
     )
-    async for event in service.astream("Describe this dataset"):
+    async for event in service.astream(Invocation.from_text("Describe this dataset")):
         print(event)
 ```
 
 ## Key responsibilities
 
-- **`astream(query)`** — delegates to the agent and yields `AgentStreamEvent` objects
+- **`astream(invocation)`** — delegates to the agent and yields `AgentStreamEvent` objects (`invocation` is an `Invocation` or `list[Invocation]`, never a plain string)
 - **`reset_session()`** — resets both the sandbox execution state and the agent's conversation history
 - **`clear_context()`** — clears only the conversation history (sandbox variables survive)
 - **`compact_chat_history()`** — calls the agent's LLM-based compaction and returns the summary
