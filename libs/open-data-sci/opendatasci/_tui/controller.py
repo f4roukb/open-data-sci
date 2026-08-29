@@ -28,8 +28,8 @@ from opendatasci._tui.service import OpenDataSciTuiService
 from opendatasci._tui.session import CLISessionInfo
 from opendatasci.agents.agents import Invocation
 from opendatasci.agents.agents_factory import create_agent
-from opendatasci.memory.messages import MessageOrigin
 from opendatasci.configs import OpenDataSciConfig
+from opendatasci.memory.messages import MessageOrigin
 from opendatasci.streaming import BaseAgentStreamEvent
 from opendatasci.streaming.events import (
     ApprovalRequiredEvent,
@@ -68,7 +68,7 @@ from .file_refs import (
     _parse_file_refs,
     _split_existing_file_refs,
 )
-from .message_queue import PendingMessageQueue
+from .message_queue import PendingMessageOrigin, PendingMessageQueue
 from .presenter import _TurnPresenter, apply_usage_event
 from .theme import active as theme
 
@@ -351,7 +351,11 @@ class CLIController:
         return SubmitAction.RUN, agent_query
 
     def _enqueue_pending(
-        self, agent_query: str, display: str, *, from_worker: bool = False
+        self,
+        agent_query: str,
+        display: str,
+        *,
+        origin: PendingMessageOrigin = PendingMessageOrigin.USER,
     ) -> None:
         """Queue *agent_query* for when the agent is free.
 
@@ -359,8 +363,8 @@ class CLIController:
         the user never typed a worker result, so it shouldn't appear to be
         waiting on them either.
         """
-        message = self._pending_queue.enqueue(agent_query, display, from_worker=from_worker)
-        if not from_worker:
+        message = self._pending_queue.enqueue(agent_query, display, origin=origin)
+        if origin is PendingMessageOrigin.USER:
             self._pending_handles[message.id] = self._ui.add_pending_message(display)
 
     # ── Agent run ─────────────────────────────────────────────────────────────
@@ -394,19 +398,20 @@ class CLIController:
             query = self._drain_pending_batch()
 
     async def _watch_background_tasks(self) -> None:
-        """Consume background-task completions and surface them, unprompted.
+        """Consume background-task completions and feed them to the agent, unprompted.
 
         Runs for the lifetime of the session (started in ``boot``, cancelled
         in ``close``). ``watch_completions`` blocks until the next terminal
         task, so this stays idle between completions rather than polling.
+        The raw completion is never shown as a chat message — only the
+        agent's eventual response to it appears in the UI.
         """
         assert self._service is not None
         async for record in self._service.task_manager.watch_completions():
             query, display = _format_completion_message(record)
             if self._agent_running or self._awaiting_choice or self._awaiting_approval:
-                self._enqueue_pending(query, display, from_worker=True)
+                self._enqueue_pending(query, display, origin=PendingMessageOrigin.TASK)
             else:
-                self._ui.add_message("agent", display)
                 self._active_turn_status = self._ui.add_turn_status_bar()
                 await self.run_agent([Invocation.from_text(query, origin=MessageOrigin.TASK)])
 
@@ -431,9 +436,11 @@ class CLIController:
             self._ui.set_background_tasks("; ".join(parts))
 
     def _drain_pending_batch(self) -> list[Invocation]:
-        """Drain every queued message, surface each in the UI, and return the batch.
+        """Drain every queued message, surface user-typed ones in the UI, and return the batch.
 
-        Messages are shown in the order they arrived.
+        Messages are shown in the order they arrived. Background-task
+        completions are never shown as chat messages — they're queued only
+        so the agent gets fed the result once it's free.
         """
         messages = self._pending_queue.drain_all()
         assert messages  # caller already checked the queue is non-empty
@@ -442,11 +449,13 @@ class CLIController:
             handle = self._pending_handles.pop(message.id, None)
             if handle is not None:
                 handle.remove()
-            self._ui.add_message("agent" if message.from_worker else "user", message.display)
+            is_task = message.origin is PendingMessageOrigin.TASK
+            if not is_task:
+                self._ui.add_message("user", message.display)
             batch.append(
                 Invocation.from_text(
                     message.agent_query,
-                    origin=MessageOrigin.TASK if message.from_worker else MessageOrigin.USER,
+                    origin=MessageOrigin.TASK if is_task else MessageOrigin.USER,
                     created_at=message.created_at,
                 )
             )

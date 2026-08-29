@@ -13,7 +13,7 @@ from langchain_core.messages import SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 
-from opendatasci._utils.message_utils import get_message_text_content
+from opendatasci._utils.message_utils import get_message_text_content, to_text_content_blocks
 from opendatasci.agents.graphs import WorkerGraphFactory
 from opendatasci.agents.states import AgentState
 from opendatasci.configs import OpenDataSciConfig
@@ -87,7 +87,7 @@ class WorkerAgent:
         """Execute *task* to completion and return the final text response."""
         self._current_system_prompt = system_prompt
         initial_state = AgentState(
-            messages=[AgentToAgentMessage(content=task, origin=MessageOrigin.AGENT)],
+            messages=[AgentToAgentMessage(content=to_text_content_blocks(task), origin=MessageOrigin.AGENT)],
             active_skills=list(initial_active_skills or []),
             active_skill_domains=list(initial_active_skill_domains or []),
         )

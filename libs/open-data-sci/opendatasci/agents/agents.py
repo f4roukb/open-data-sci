@@ -2,7 +2,6 @@ import logging
 import uuid
 from abc import ABC, abstractmethod
 from contextlib import AsyncExitStack
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator
@@ -24,7 +23,9 @@ from opendatasci._utils.message_utils import (
     get_final_ai_message,
     get_message_text_content,
     is_final_ai_message,
+    to_text_content_blocks,
 )
+from opendatasci._utils.pydantic_utils import FrozenStrictBaseModel
 from opendatasci._utils.streaming_utils import format_stream_error
 from opendatasci.agents.chat_history import ChatHistoryBuilder
 from opendatasci.agents.graphs import AgentCompiledGraph, AgentGraphFactory
@@ -70,8 +71,7 @@ logger = logging.getLogger(__name__)
 AGENT_RECURSION_LIMIT: int = 1000
 
 
-@dataclass(frozen=True)
-class Invocation:
+class Invocation(FrozenStrictBaseModel):
     """One message to fold into a single turn, alongside others.
 
     ``origin`` marks whether this is a background task's output
@@ -96,7 +96,7 @@ class Invocation:
     ) -> "Invocation":
         """Build an Invocation from plain text."""
         return cls(
-            content=[{"type": "text", "text": text}],
+            content=to_text_content_blocks(text),
             created_at=created_at if created_at is not None else datetime.now(timezone.utc),
             origin=origin,
         )
@@ -299,7 +299,7 @@ class Agent(BaseOpenDataSciAgent):
 
     @classmethod
     def _prepare_user_message(cls, query: str) -> UserMessage:
-        return UserMessage(content=query, created_at=datetime.now(timezone.utc))
+        return UserMessage(content=to_text_content_blocks(query), created_at=datetime.now(timezone.utc))
 
     @classmethod
     def _prepare_batch_messages(cls, items: list[Invocation]) -> list[BaseMessage]:

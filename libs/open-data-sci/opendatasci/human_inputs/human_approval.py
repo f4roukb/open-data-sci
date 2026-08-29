@@ -8,12 +8,12 @@ work), and resumes with the user's yes/no decision.
 
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import interrupt
 from pydantic import BaseModel, Field
 
+from opendatasci._utils.pydantic_utils import FrozenStrictBaseModel
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.models.factory import create_secondary_model
 
@@ -61,8 +61,7 @@ class _CommandImpactAssessment(BaseModel):
     )
 
 
-@dataclass(frozen=True)
-class CommandImpactAssessment:
+class CommandImpactAssessment(FrozenStrictBaseModel):
     """User-facing summary of a command the agent wants to execute.
 
     Attributes:

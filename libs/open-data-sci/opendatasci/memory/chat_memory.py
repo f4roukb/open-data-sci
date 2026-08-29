@@ -1,7 +1,6 @@
 """Agent-level chat memory: rolling turn summaries and per-call context assembly."""
 
 import logging
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -14,6 +13,7 @@ from opendatasci._utils.message_utils import (
     render_turn,
 )
 from opendatasci._utils.mixins import LLMDigestibleMixin
+from opendatasci._utils.pydantic_utils import MutableStrictBaseModel
 from opendatasci.memory.messages import (
     TaskMessage,
     UserMessage,
@@ -33,8 +33,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class ChatTurnSummary(LLMDigestibleMixin):
+class ChatTurnSummary(MutableStrictBaseModel, LLMDigestibleMixin):
     """Summary of a single completed conversation turn."""
 
     # Metadata
@@ -55,8 +54,7 @@ class ChatTurnSummary(LLMDigestibleMixin):
         )
 
 
-@dataclass
-class ChatHistoryCompaction(LLMDigestibleMixin):
+class ChatHistoryCompaction(MutableStrictBaseModel, LLMDigestibleMixin):
     """A folded compaction of multiple :class:`ChatTurnSummary` records.
 
     Produced by :class:`ChatHistoryCompactor` when the user explicitly requests
@@ -162,8 +160,7 @@ class ChatTurnSummarizer:
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class ChatTurnContext:
+class ChatTurnContext(MutableStrictBaseModel):
     """The assembled messages for a single LLM call.
 
     Attributes:

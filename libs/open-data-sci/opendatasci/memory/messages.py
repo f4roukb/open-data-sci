@@ -2,10 +2,10 @@
 
 from datetime import datetime
 from enum import StrEnum, auto
-from typing import final
+from typing import Any, final
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from opendatasci._utils.datetime_utils import datetime_now, to_local_timezone
 from opendatasci._utils.message_utils import get_final_ai_message
@@ -25,22 +25,28 @@ class MessageOrigin(StrEnum):
     TASK = auto()
 
 
-def _with_metadata_tag(content: str | list[str | dict], tag: str) -> str | list[str | dict]:
-    """Prepend *tag* to *content*, preserving a content-block list's shape."""
-    if isinstance(content, list):
-        return [{"type": "text", "text": tag}, *content]
-    return f"{tag}\n{content}"
+def _with_metadata_tag(content: list[dict[str, Any]], tag: str) -> list[dict[str, Any]]:
+    """Prepend *tag* as a text block to *content*."""
+    return [{"type": "text", "text": tag}, *content]
 
 
 @final
 class UserMessage(HumanMessage, RenderableMessageMixin["UserMessage"]):
     """A message that originated directly from the user."""
 
+    content: list[dict[str, Any]]
     origin: MessageOrigin = MessageOrigin.USER
     created_at: datetime = Field(default_factory=datetime_now)
     is_input_on_interrupt: bool = False
 
-    def _get_content(self) -> str | list[str | dict]:
+    @field_validator("content")
+    @classmethod
+    def _validate_content_blocks(cls, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not all(isinstance(block, dict) and "type" in block for block in blocks):
+            raise ValueError("content must be a list of content-block dicts, each with a 'type' key")
+        return blocks
+
+    def _get_content(self) -> list[dict[str, Any]]:
         tag = (
             f"<message_metadata>"
             f"<origin>{self.origin}</origin>"
@@ -57,17 +63,25 @@ class UserMessage(HumanMessage, RenderableMessageMixin["UserMessage"]):
 class CompactionMessage(HumanMessage, RenderableMessageMixin["CompactionMessage"]):
     """A harness message carrying a compacted history recall block."""
 
+    content: list[dict[str, Any]]
     origin: MessageOrigin = MessageOrigin.HARNESS
     created_at: datetime = Field(default_factory=datetime_now)
 
-    def _get_content(self) -> str:
+    @field_validator("content")
+    @classmethod
+    def _validate_content_blocks(cls, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not all(isinstance(block, dict) and "type" in block for block in blocks):
+            raise ValueError("content must be a list of content-block dicts, each with a 'type' key")
+        return blocks
+
+    def _get_content(self) -> list[dict[str, Any]]:
         tag = (
             f"<message_metadata>"
             f"<origin>{self.origin}</origin>"
             f"<timestamp>{to_local_timezone(self.created_at).isoformat()}</timestamp>"
             f"</message_metadata>"
         )
-        return f"{tag}\n{self.content}"
+        return _with_metadata_tag(self.content, tag)
 
     def render(self) -> "CompactionMessage":
         return self.model_copy(update={"content": self._get_content()}, deep=True)
@@ -77,17 +91,25 @@ class CompactionMessage(HumanMessage, RenderableMessageMixin["CompactionMessage"
 class AgentToAgentMessage(HumanMessage, RenderableMessageMixin["AgentToAgentMessage"]):
     """A message sent from one agent to another."""
 
+    content: list[dict[str, Any]]
     origin: MessageOrigin
     created_at: datetime = Field(default_factory=datetime_now)
 
-    def _get_content(self) -> str:
+    @field_validator("content")
+    @classmethod
+    def _validate_content_blocks(cls, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not all(isinstance(block, dict) and "type" in block for block in blocks):
+            raise ValueError("content must be a list of content-block dicts, each with a 'type' key")
+        return blocks
+
+    def _get_content(self) -> list[dict[str, Any]]:
         tag = (
             f"<message_metadata>"
             f"<origin>{self.origin}</origin>"
             f"<timestamp>{to_local_timezone(self.created_at).isoformat()}</timestamp>"
             f"</message_metadata>"
         )
-        return f"{tag}\n{self.content}"
+        return _with_metadata_tag(self.content, tag)
 
     def render(self) -> "AgentToAgentMessage":
         return self.model_copy(update={"content": self._get_content()}, deep=True)
@@ -97,10 +119,18 @@ class AgentToAgentMessage(HumanMessage, RenderableMessageMixin["AgentToAgentMess
 class TaskMessage(HumanMessage, RenderableMessageMixin["TaskMessage"]):
     """A worker's output delivered back to the main agent (e.g. a finished background task)."""
 
+    content: list[dict[str, Any]]
     origin: MessageOrigin = MessageOrigin.TASK
     created_at: datetime = Field(default_factory=datetime_now)
 
-    def _get_content(self) -> str | list[str | dict]:
+    @field_validator("content")
+    @classmethod
+    def _validate_content_blocks(cls, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not all(isinstance(block, dict) and "type" in block for block in blocks):
+            raise ValueError("content must be a list of content-block dicts, each with a 'type' key")
+        return blocks
+
+    def _get_content(self) -> list[dict[str, Any]]:
         tag = (
             f"<message_metadata>"
             f"<origin>{self.origin}</origin>"
@@ -117,12 +147,20 @@ class TaskMessage(HumanMessage, RenderableMessageMixin["TaskMessage"]):
 class SummaryMessage(HumanMessage, RenderableMessageMixin["SummaryMessage"]):
     """Harness-constructed message carrying a turn-summary recall."""
 
+    content: list[dict[str, Any]]
     origin: MessageOrigin = MessageOrigin.HARNESS
     created_at: datetime = Field(default_factory=datetime_now)
     turn_start_timestamp: datetime
     turn_end_timestamp: datetime
 
-    def _get_content(self) -> str:
+    @field_validator("content")
+    @classmethod
+    def _validate_content_blocks(cls, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not all(isinstance(block, dict) and "type" in block for block in blocks):
+            raise ValueError("content must be a list of content-block dicts, each with a 'type' key")
+        return blocks
+
+    def _get_content(self) -> list[dict[str, Any]]:
         message_meta = (
             f"<message_metadata>"
             f"<origin>{self.origin}</origin>"
@@ -135,7 +173,11 @@ class SummaryMessage(HumanMessage, RenderableMessageMixin["SummaryMessage"]):
             f"  <turn_end_timestamp>{to_local_timezone(self.turn_end_timestamp).isoformat()}</turn_end_timestamp>\n"
             f"</summary_metadata>"
         )
-        return f"{message_meta}\n{summary_meta}\n{self.content}"
+        return [
+            {"type": "text", "text": message_meta},
+            {"type": "text", "text": summary_meta},
+            *self.content,
+        ]
 
     def render(self) -> "SummaryMessage":
         return self.model_copy(update={"content": self._get_content()}, deep=True)
@@ -145,17 +187,25 @@ class SummaryMessage(HumanMessage, RenderableMessageMixin["SummaryMessage"]):
 class PlanMessage(HumanMessage, RenderableMessageMixin["PlanMessage"]):
     """Harness-constructed message carrying the current session plan."""
 
+    content: list[dict[str, Any]]
     origin: MessageOrigin = MessageOrigin.HARNESS
     created_at: datetime = Field(default_factory=datetime_now)
 
-    def _get_content(self) -> str:
+    @field_validator("content")
+    @classmethod
+    def _validate_content_blocks(cls, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not all(isinstance(block, dict) and "type" in block for block in blocks):
+            raise ValueError("content must be a list of content-block dicts, each with a 'type' key")
+        return blocks
+
+    def _get_content(self) -> list[dict[str, Any]]:
         tag = (
             f"<message_metadata>"
             f"<origin>{self.origin}</origin>"
             f"<timestamp>{to_local_timezone(self.created_at).isoformat()}</timestamp>"
             f"</message_metadata>"
         )
-        return f"{tag}\n{self.content}"
+        return _with_metadata_tag(self.content, tag)
 
     def render(self) -> "PlanMessage":
         return self.model_copy(update={"content": self._get_content()}, deep=True)

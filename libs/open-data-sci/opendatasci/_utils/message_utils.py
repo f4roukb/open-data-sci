@@ -1,6 +1,14 @@
 """LangChain message utilities."""
 
+from typing import Any
+
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+
+
+def to_text_content_blocks(text: str | list[str]) -> list[dict[str, Any]]:
+    """Wrap plain text as a content-block list, one block per string."""
+    texts = [text] if isinstance(text, str) else text
+    return [{"type": "text", "text": t} for t in texts]
 
 
 def get_message_text_content(msg: BaseMessage) -> str:

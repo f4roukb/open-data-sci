@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+
+from opendatasci._utils.pydantic_utils import FrozenStrictBaseModel
 
 
-@dataclass(frozen=True)
-class Skill:
+class Skill(FrozenStrictBaseModel):
     """Know-how for carrying out a specific task or subtask.
 
     A skill is where domain *information* lives — methodologies, idioms,
@@ -23,8 +23,7 @@ class Skill:
     content: str
 
 
-@dataclass(frozen=True)
-class SkillDomain:
+class SkillDomain(FrozenStrictBaseModel):
     """A collection of skills scoped to a broad task domain.
 
     A skill domain does not itself contain task-execution know-how — it is
