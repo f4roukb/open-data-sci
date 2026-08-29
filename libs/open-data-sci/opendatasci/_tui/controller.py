@@ -454,7 +454,7 @@ class CLIController:
                 self._ui.add_message("user", message.display)
             batch.append(
                 Invocation.from_text(
-                    message.agent_query,
+                    message.content,
                     origin=MessageOrigin.TASK if is_task else MessageOrigin.USER,
                     created_at=message.created_at,
                 )

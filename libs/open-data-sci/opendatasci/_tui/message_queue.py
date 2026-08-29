@@ -33,18 +33,14 @@ class PendingMessage(FrozenStrictBaseModel):
     """
 
     id: int
-    agent_query: str
+    content: str
     display: str
     origin: PendingMessageOrigin = PendingMessageOrigin.USER
     created_at: datetime = Field(default_factory=datetime_now)
 
 
 class PendingMessageQueue:
-    """Unbounded FIFO queue of messages submitted while the agent is running.
-
-    Messages are meant to be drained together as a single batch once the
-    agent is free, rather than processed one at a time.
-    """
+    """Unbounded FIFO queue of messages submitted while the agent is running."""
 
     def __init__(self) -> None:
         self._items: list[PendingMessage] = []
@@ -52,14 +48,14 @@ class PendingMessageQueue:
 
     def enqueue(
         self,
-        agent_query: str,
+        content: str,
         display: str,
         *,
         origin: PendingMessageOrigin = PendingMessageOrigin.USER,
     ) -> PendingMessage:
         message = PendingMessage(
             id=next(self._next_id),
-            agent_query=agent_query,
+            content=content,
             display=display,
             origin=origin,
         )
