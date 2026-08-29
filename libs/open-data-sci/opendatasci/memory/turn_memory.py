@@ -98,28 +98,36 @@ class TurnRewinder:
         in-progress turn (started but no final agent response yet) is treated
         the same as a completed one.
 
-        By default the human message that opened the turn is also dropped.
-        Pass ``keep_user_message=True`` to retain it and drop only the agent
-        response and any intermediate tool messages.
+        By default the message(s) that opened the turn are also dropped.
+        Pass ``keep_user_message=True`` to retain them and drop only the
+        agent response and any intermediate tool messages. A turn may open
+        with more than one leading message; the whole run is treated as
+        one opener.
 
         Args:
             chat_history: The full conversation message list.
-            keep_user_message: When ``True``, the user message that opened
-                the last turn is retained. Defaults to ``False``.
+            keep_user_message: When ``True``, the messages that opened
+                the last turn are retained. Defaults to ``False``.
 
         Returns:
             A new list with the last turn removed, or a copy of
             *chat_history* unchanged if no turn start is found.
         """
-        # Locate the HumanMessage that opened the last turn.
-        start_idx = -1
+        # Locate the last message of the opening run (the most recent
+        # HumanMessage), then walk backward through the contiguous run of
+        # HumanMessages to find where it begins.
+        end_of_opener = -1
         for i in range(len(chat_history) - 1, -1, -1):
             if isinstance(chat_history[i], HumanMessage):
-                start_idx = i
+                end_of_opener = i
                 break
 
-        if start_idx == -1:
+        if end_of_opener == -1:
             return list(chat_history)
 
-        cut = start_idx + 1 if keep_user_message else start_idx
+        start_idx = end_of_opener
+        while start_idx > 0 and isinstance(chat_history[start_idx - 1], HumanMessage):
+            start_idx -= 1
+
+        cut = end_of_opener + 1 if keep_user_message else start_idx
         return list(chat_history[:cut])

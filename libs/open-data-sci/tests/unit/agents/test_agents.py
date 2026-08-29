@@ -15,7 +15,7 @@ from langchain_core.tools import BaseTool, StructuredTool
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel, ConfigDict
 
-from opendatasci.agents.agents import Agent
+from opendatasci.agents.agents import Agent, Invocation
 from opendatasci.agents.workers import SUBAGENT_TAG, WorkerAgent
 from opendatasci.agents.states import AgentState
 from opendatasci.agents.chat_history import ChatHistoryBuilder
@@ -357,7 +357,7 @@ class TestAgentConversation:
         """
         async with _make_agent_ctx() as agent:
             agent._llm_with_tools.ainvoke = AsyncMock(return_value=AIMessage(content="answer"))
-            events = [event async for event in agent.astream("hello")]
+            events = [event async for event in agent.astream(Invocation.from_text("hello"))]
             assert any(type(event).__name__ == "ResponseEvent" for event in events)
 
             agent._llm.ainvoke = AsyncMock(return_value=AIMessage(content="compact summary"))
@@ -373,7 +373,7 @@ class TestAgentConversation:
         the whole completed turn empties ``messages`` before the router runs."""
         async with _make_agent_ctx() as agent:
             agent._llm_with_tools.ainvoke = AsyncMock(return_value=AIMessage(content="answer"))
-            events = [event async for event in agent.astream("hello")]
+            events = [event async for event in agent.astream(Invocation.from_text("hello"))]
             assert any(type(event).__name__ == "ResponseEvent" for event in events)
 
             await agent.rewind_turn()
@@ -567,7 +567,7 @@ class TestAgentAstream:
         upstream = [TokenEvent(content="hi")]
         async with _make_agent_ctx() as agent:
             with self._wire_astream_mocks(agent, upstream):
-                events = [ev async for ev in agent.astream("hello")]
+                events = [ev async for ev in agent.astream(Invocation.from_text("hello"))]
         assert events[-1].type == "response"
         assert events[-1].content == "final-explanation"
 
@@ -580,7 +580,7 @@ class TestAgentAstream:
         ]
         async with _make_agent_ctx() as agent:
             with self._wire_astream_mocks(agent, upstream):
-                events = [ev async for ev in agent.astream("q")]
+                events = [ev async for ev in agent.astream(Invocation.from_text("q"))]
         prefix = [(e.type, e.content) for e in events[:-1]]
         assert prefix == [("token", "a"), ("token", "b")]
 
@@ -590,7 +590,7 @@ class TestAgentAstream:
         upstream = [TokenEvent(content="x")]
         async with _make_agent_ctx() as agent:
             with self._wire_astream_mocks(agent, upstream):
-                [ev async for ev in agent.astream("q")]
+                [ev async for ev in agent.astream(Invocation.from_text("q"))]
             assert agent._session_manager is not None
             thread_id = agent._session_manager.get_current_thread()
 
@@ -608,7 +608,7 @@ class TestAgentAstream:
                 lambda messages: scheduled.append(messages)
             )
             with self._wire_astream_mocks(agent, upstream):
-                async for _ in agent.astream("q"):
+                async for _ in agent.astream(Invocation.from_text("q")):
                     pass
 
         assert len(scheduled) == 1

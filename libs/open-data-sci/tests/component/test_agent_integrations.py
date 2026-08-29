@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, patch
 
 from langchain_core.messages import AIMessage, ToolMessage
 
+from opendatasci.agents.agents import Invocation
 from opendatasci.agents.states import AgentState
 from opendatasci.tools.factory import ToolName
 
@@ -86,7 +87,7 @@ class TestSpawnWorkersFlow:
                 ]
             )
 
-            events = [e async for e in svc.astream("analyse in parallel")]
+            events = [e async for e in svc.astream(Invocation.from_text("analyse in parallel"))]
             await asyncio.sleep(0)
 
         types = [e.type for e in events]
@@ -139,7 +140,7 @@ class TestPlanModeFlow:
 
         agent = svc._agent
 
-        events = [e async for e in svc.astream("complex task")]
+        events = [e async for e in svc.astream(Invocation.from_text("complex task"))]
         await asyncio.sleep(0)
 
         # The plan was persisted into the LocalContextStore.
@@ -218,7 +219,7 @@ class TestSelfReviewModeFlow:
             ]
         )
 
-        events = [e async for e in svc.astream("review yourself")]
+        events = [e async for e in svc.astream(Invocation.from_text("review yourself"))]
         await asyncio.sleep(0)
 
         tool_calls = [e for e in events if e.type == "tool_call"]
@@ -255,7 +256,7 @@ class TestSelfReviewModeFlow:
             ]
         )
 
-        events = [e async for e in svc.astream("try to review")]
+        events = [e async for e in svc.astream(Invocation.from_text("try to review"))]
         await asyncio.sleep(0)
 
         tool_results = [e for e in events if e.type == "tool_result"]
@@ -291,7 +292,7 @@ class TestTurnSummarizerIntegration:
         structured_llm.ainvoke = AsyncMock(return_value=structured_summary)
         agent._chat_history_builder._summarizer._structured_llm = structured_llm
 
-        async for _ in svc.astream("Greet me"):
+        async for _ in svc.astream(Invocation.from_text("Greet me")):
             pass
         await asyncio.sleep(0)
         record = await agent._chat_history_builder.flush_pending_tasks()
@@ -310,7 +311,7 @@ class TestTurnSummarizerIntegration:
         # Conftest patches create_secondary_model to None, so _summarizer_llm is None.
         assert agent._summarizer_llm is None
 
-        async for _ in svc.astream("Greet me!"):
+        async for _ in svc.astream(Invocation.from_text("Greet me!")):
             pass
         await asyncio.sleep(0)
         record = await agent._chat_history_builder.flush_pending_tasks()

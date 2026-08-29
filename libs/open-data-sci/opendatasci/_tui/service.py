@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any, AsyncIterator
 
-from opendatasci.agents.agents import BaseOpenDataSciAgent
+from opendatasci.agents.agents import BaseOpenDataSciAgent, Invocation
 from opendatasci.sandbox.base import BaseSandbox
 from opendatasci.streaming import AgentStreamEvent
 from opendatasci.tasks.base import AgentTaskManagerBase
@@ -47,9 +47,11 @@ class OpenDataSciTuiService:
         """The agent's background-task manager (see ``watch_completions``)."""
         return self._agent.task_manager
 
-    async def astream(self, query: str) -> AsyncIterator[AgentStreamEvent]:
-        """Stream events for *query* with token-level output."""
-        async for event in self._agent.astream(query):
+    async def astream(
+        self, invocation: Invocation | list[Invocation]
+    ) -> AsyncIterator[AgentStreamEvent]:
+        """Stream events for *invocation* with token-level output."""
+        async for event in self._agent.astream(invocation):
             yield event
 
     async def reset_session(self) -> None:

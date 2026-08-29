@@ -228,6 +228,8 @@ Type `/` in the input box to trigger autocomplete. All commands are available at
 
 Sending a message while the agent is still working doesn't reject it — it's pinned above the input box as a queued message and run automatically, in order, once the agent finishes (unless the agent is waiting on your answer to a question). Use `/cancel-message` or `/cancel-all-messages` to discard queued messages instead of waiting for them to run.
 
+When the agent schedules work in the background (e.g. concurrent worker agents running an ensemble sweep), a **Background** line in the header shows which tasks are still running and their latest self-reported progress. You don't need to check back manually — as soon as a background task finishes, the agent picks it up and continues on its own.
+
 ---
 
 ## File Attachments

@@ -36,8 +36,7 @@ def render_turn(messages: list[BaseMessage]) -> str:
     parts: list[str] = []
     for msg in messages:
         if isinstance(msg, HumanMessage):
-            content = msg.content if isinstance(msg.content, str) else str(msg.content)
-            content = content.strip()
+            content = get_message_text_content(msg)
             if content:
                 parts.append(f"User: {content}")
         elif isinstance(msg, AIMessage) and msg.tool_calls:

@@ -15,9 +15,10 @@ from opendatasci._utils.message_utils import (
 )
 from opendatasci._utils.mixins import LLMDigestibleMixin
 from opendatasci.memory.messages import (
+    TaskMessage,
+    UserMessage,
     get_turn_end_timestamp,
     get_turn_start_timestamp,
-    is_user_message,
 )
 from opendatasci.prompts.prompt_templates import (
     CHAT_COMPACTOR_SYSTEM_PROMPT,
@@ -140,8 +141,8 @@ class ChatTurnSummarizer:
                 logger.exception("Summarizer failed, using fallback")
 
         user_msg = turn_messages[0]
-        if not is_user_message(user_msg):
-            raise ValueError("First message in turn is not a user message")
+        if not isinstance(user_msg, (UserMessage, TaskMessage)):
+            raise ValueError("First message in turn is not a UserMessage or TaskMessage")
         final_ai_msg = get_final_ai_message(turn_messages)
 
         user_msg_text_content = get_message_text_content(user_msg)

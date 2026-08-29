@@ -66,7 +66,7 @@ Most "AI for data" tools turn you into the bottleneck. Every experiment starts w
 | **Human-in-the-loop** | At genuine decision forks that impact your intended goal, it pauses and asks, then gets on with it |
 | **Specialized Skills** | Data Science, Machine Learning, Deep Learning, Quantitative Analysis, Competitive DS, Education |
 | **Extensible** | Drop Markdown skill files into `.opendatasci/skills/` to inject your own domain knowledge |
-| **Web access** | Searches for papers, docs, and library changelogs mid-analysis |
+| **Web access** | Searches for papers, docs, and library changelogs mid-analysis, with curated navigation know-how for Kaggle, arXiv, Hugging Face, GitHub, Papers with Code, and Yahoo Finance |
 | **MCP-ready** | Connect any MCP-compatible tool server: internal databases, custom APIs, proprietary sources |
 
 ---

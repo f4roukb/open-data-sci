@@ -22,6 +22,16 @@ class MessageOrigin(StrEnum):
     USER = auto()
     HARNESS = auto()
     AGENT = auto()
+    TASK = auto()
+
+
+def _with_metadata_tag(
+    content: str | list[str | dict], tag: str
+) -> str | list[str | dict]:
+    """Prepend *tag* to *content*, preserving a content-block list's shape."""
+    if isinstance(content, list):
+        return [{"type": "text", "text": tag}, *content]
+    return f"{tag}\n{content}"
 
 
 @final
@@ -32,14 +42,14 @@ class UserMessage(HumanMessage, RenderableMessageMixin["UserMessage"]):
     created_at: datetime = Field(default_factory=datetime_now)
     is_input_on_interrupt: bool = False
 
-    def _get_content(self) -> str:
+    def _get_content(self) -> str | list[str | dict]:
         tag = (
             f"<message_metadata>"
             f"<origin>{self.origin}</origin>"
             f"<timestamp>{to_local_timezone(self.created_at).isoformat()}</timestamp>"
             f"</message_metadata>"
         )
-        return f"{tag}\n{self.content}"
+        return _with_metadata_tag(self.content, tag)
 
     def render(self) -> "UserMessage":
         return self.model_copy(update={"content": self._get_content()}, deep=True)
@@ -82,6 +92,26 @@ class AgentToAgentMessage(HumanMessage, RenderableMessageMixin["AgentToAgentMess
         return f"{tag}\n{self.content}"
 
     def render(self) -> "AgentToAgentMessage":
+        return self.model_copy(update={"content": self._get_content()}, deep=True)
+
+
+@final
+class TaskMessage(HumanMessage, RenderableMessageMixin["TaskMessage"]):
+    """A worker's output delivered back to the main agent (e.g. a finished background task)."""
+
+    origin: MessageOrigin = MessageOrigin.TASK
+    created_at: datetime = Field(default_factory=datetime_now)
+
+    def _get_content(self) -> str | list[str | dict]:
+        tag = (
+            f"<message_metadata>"
+            f"<origin>{self.origin}</origin>"
+            f"<timestamp>{to_local_timezone(self.created_at).isoformat()}</timestamp>"
+            f"</message_metadata>"
+        )
+        return _with_metadata_tag(self.content, tag)
+
+    def render(self) -> "TaskMessage":
         return self.model_copy(update={"content": self._get_content()}, deep=True)
 
 
@@ -169,8 +199,8 @@ def is_ongoing_turn(turn: list[BaseMessage]) -> bool:
 
 def get_turn_start_timestamp(turn_messages: list[BaseMessage]) -> datetime:
     first = turn_messages[0]
-    if not isinstance(first, UserMessage):
-        raise ValueError("First message in turn is not a UserMessage")
+    if not isinstance(first, (UserMessage, TaskMessage)):
+        raise ValueError("First message in turn is not a UserMessage or TaskMessage")
     return first.created_at
 
 
