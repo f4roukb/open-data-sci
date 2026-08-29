@@ -21,6 +21,7 @@ import logging
 import string
 from contextlib import AsyncExitStack
 from pathlib import Path
+from typing import AsyncIterator
 
 from rich.markup import escape as escape_markup
 
@@ -30,7 +31,7 @@ from opendatasci.agents.agents import Invocation
 from opendatasci.agents.agents_factory import create_agent
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.memory.messages import MessageOrigin
-from opendatasci.streaming import BaseAgentStreamEvent
+from opendatasci.streaming import AgentStreamEvent, BaseAgentStreamEvent
 from opendatasci.streaming.events import (
     ApprovalRequiredEvent,
     ErrorEvent,
@@ -308,7 +309,7 @@ class CLIController:
                 return (SubmitAction.QUIT if should_quit else SubmitAction.NONE), ""
             answer = await self._handle_user_choice(raw)
             if answer is not None:
-                return SubmitAction.RUN, answer
+                return SubmitAction.RESUME_INPUT, answer
             return SubmitAction.NONE, ""
 
         if self._awaiting_approval:
@@ -369,33 +370,63 @@ class CLIController:
 
     # ── Agent run ─────────────────────────────────────────────────────────────
 
+    async def _ensure_service_ready(self) -> bool:
+        """Show a status message and return False if there's no service to run against yet."""
+        if self._service is not None:
+            return True
+        if self._boot_failed:
+            await self._ui.add_message(
+                "agent",
+                "❌ Startup failed, so queries can't run in this session. "
+                "Fix the problem shown above and restart the app "
+                "(type `/exit` to quit).",
+            ).finish()
+        else:
+            await self._ui.add_message(
+                "agent", "⚠️ Still loading — please wait a moment and try again."
+            ).finish()
+        return False
+
     async def run_agent(self, query: str | list[Invocation]) -> None:
-        """Run *query*, then keep draining the pending-message queue.
+        """Run *query* as a new turn, then keep draining the pending-message queue.
 
         Once a turn finishes, every message queued in the meantime is sent
         together as a single new turn, as long as the turn didn't end on a
         choice prompt (which requires the user's input before anything else
         can proceed).
         """
-        if self._service is None:
-            if self._boot_failed:
-                await self._ui.add_message(
-                    "agent",
-                    "❌ Startup failed, so queries can't run in this session. "
-                    "Fix the problem shown above and restart the app "
-                    "(type `/exit` to quit).",
-                ).finish()
-            else:
-                await self._ui.add_message(
-                    "agent", "⚠️ Still loading — please wait a moment and try again."
-                ).finish()
+        if not await self._ensure_service_ready():
             return
+        assert self._service is not None
+        invocation = query if isinstance(query, list) else Invocation.from_text(query)
+        await self._run_turn(self._service.astream(invocation))
+        await self._drain_loop()
 
-        while True:
-            await self._run_turn(query)
-            if self._awaiting_choice or self._awaiting_approval or self._pending_queue.is_empty():
-                return
-            query = self._drain_pending_batch()
+    async def resume_with_input(self, answer: str) -> None:
+        """Resume a pending question/choice prompt with *answer*, then drain the pending queue."""
+        if not await self._ensure_service_ready():
+            return
+        assert self._service is not None
+        await self._run_turn(self._service.resume_with_input(answer))
+        await self._drain_loop()
+
+    async def resume_with_approval(self, approved: bool) -> None:
+        """Resolve a pending approval prompt with the user's Yes/No decision, then drain the pending queue."""
+        self._awaiting_approval = False
+        self._ui.set_input_placeholder("Ask a question about your data…")
+        await self._ui.add_message("user", "Yes" if approved else "No").finish()
+        if not await self._ensure_service_ready():
+            return
+        assert self._service is not None
+        await self._run_turn(self._service.resume_with_approval(approved))
+        await self._drain_loop()
+
+    async def _drain_loop(self) -> None:
+        """Keep sending queued messages as new turns until the queue is empty or a prompt opens."""
+        assert self._service is not None
+        while not (self._awaiting_choice or self._awaiting_approval or self._pending_queue.is_empty()):
+            batch = self._drain_pending_batch()
+            await self._run_turn(self._service.astream(batch))
 
     async def _watch_background_tasks(self) -> None:
         """Consume background-task completions and feed them to the agent, unprompted.
@@ -462,15 +493,13 @@ class CLIController:
         self._active_turn_status = self._ui.add_turn_status_bar()
         return batch
 
-    async def _run_turn(self, query: str | list[Invocation]) -> None:
-        assert self._service is not None
+    async def _run_turn(self, stream: AsyncIterator[AgentStreamEvent]) -> None:
         self._agent_running = True
         presenter = _TurnPresenter(self._ui)
-        invocation = query if isinstance(query, list) else Invocation.from_text(query)
         try:
-            async for event in self._service.astream(invocation):
+            async for event in stream:
                 if not isinstance(event, BaseAgentStreamEvent):
-                    logger.warning("astream() yielded unexpected type %r; skipping", type(event))
+                    logger.warning("agent stream yielded unexpected type %r; skipping", type(event))
                     continue
                 await self._dispatch_stream_event(event, presenter)
                 if isinstance(event, (ResponseEvent, ErrorEvent)):
@@ -623,17 +652,6 @@ class CLIController:
         self._ui.show_approval_prompt(event.description, event.heads_up)
         self._awaiting_approval = True
         self._ui.set_input_placeholder("↑/↓ to select Yes or No, Enter to confirm, Esc to decline…")
-
-    async def resolve_approval(self, approved: bool) -> str:
-        """Record the user's approval decision and return the resume input.
-
-        The caller must pass the returned value to ``run_agent`` so the paused
-        graph resumes with the user's answer.
-        """
-        self._awaiting_approval = False
-        self._ui.set_input_placeholder("Ask a question about your data…")
-        await self._ui.add_message("user", "Yes" if approved else "No").finish()
-        return "yes" if approved else "no"
 
     # ── Slash command dispatch ────────────────────────────────────────────────
 

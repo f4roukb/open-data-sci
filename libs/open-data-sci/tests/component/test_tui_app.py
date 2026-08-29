@@ -56,6 +56,8 @@ def _make_controller_stub(workspace_path: str) -> MagicMock:
     stub.clear_conv = AsyncMock()
     stub.compact = AsyncMock()
     stub.run_agent = AsyncMock()
+    stub.resume_with_input = AsyncMock()
+    stub.resume_with_approval = AsyncMock()
     stub.on_submit = AsyncMock(return_value=(SubmitAction.NONE, ""))
     stub.cycle_completion = MagicMock(return_value=False)
     stub.cancel_choice = AsyncMock(return_value=None)
@@ -181,14 +183,12 @@ class TestAppShell:
 
     async def test_approval_decision_resumes_agent(self, running_app) -> None:
         app, pilot, stub = running_app
-        stub.resolve_approval = AsyncMock(return_value="resume-query")
         app.query_one(ChatPane).show_approval_prompt("Do it?", "")
         await pilot.pause()
         await pilot.press("enter")
         await pilot.pause()
 
-        stub.resolve_approval.assert_called_once_with(True)
-        stub.run_agent.assert_awaited_once_with("resume-query")
+        stub.resume_with_approval.assert_awaited_once_with(True)
         assert app.focused is app.query_one("#user-input", Input)
 
 
@@ -269,7 +269,7 @@ class TestKeyRouting:
         await pilot.press("escape")
         await pilot.pause()
         stub.cancel_choice.assert_called_once()
-        stub.run_agent.assert_awaited_once_with("resume-input")
+        stub.resume_with_input.assert_awaited_once_with("resume-input")
 
     async def test_escape_stops_running_agent(self, running_app) -> None:
         app, pilot, stub = running_app

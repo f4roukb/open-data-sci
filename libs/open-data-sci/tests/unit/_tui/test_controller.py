@@ -584,7 +584,7 @@ class TestOnSubmit:
         action, _ = await controller.on_submit("/exit")
         assert action == "quit"
 
-    async def test_awaiting_choice_routes_answer_as_run(
+    async def test_awaiting_choice_routes_answer_as_resume_input(
         self, controller: CLIController, mock_service: MagicMock
     ) -> None:
         controller._service = mock_service
@@ -592,7 +592,7 @@ class TestOnSubmit:
         controller._pending_choices = ["yes", "no"]
         controller._other_choice_label = None
         action, payload = await controller.on_submit("A")
-        assert action == "run"
+        assert action == "resume_input"
         assert payload == "yes"
 
 
@@ -617,21 +617,21 @@ class TestApprovalFlow:
         )
         assert controller.awaiting_approval is True
 
-    async def test_resolve_approval_yes_returns_yes(
+    async def test_resume_with_approval_yes_shows_yes(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         await self._dispatch(controller)
-        assert await controller.resolve_approval(True) == "yes"
+        await controller.resume_with_approval(True)
         assert controller.awaiting_approval is False
-        mock_ui.add_message.assert_called_with("user", "Yes")
+        mock_ui.add_message.assert_any_call("user", "Yes")
 
-    async def test_resolve_approval_no_returns_no(
+    async def test_resume_with_approval_no_shows_no(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         await self._dispatch(controller)
-        assert await controller.resolve_approval(False) == "no"
+        await controller.resume_with_approval(False)
         assert controller.awaiting_approval is False
-        mock_ui.add_message.assert_called_with("user", "No")
+        mock_ui.add_message.assert_any_call("user", "No")
 
     async def test_typed_input_is_ignored_while_awaiting_approval(
         self, controller: CLIController
@@ -1196,6 +1196,50 @@ class TestRunAgent:
         wb.mark_task_done.assert_any_call(1)
         # And the block itself must be set done
         wb.set_done.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# CLIController — resume_with_input / resume_with_approval
+# ---------------------------------------------------------------------------
+
+
+class TestResumeMethods:
+    async def test_resume_with_input_calls_service_resume_not_astream(
+        self, loaded_controller: CLIController, mock_service: MagicMock
+    ) -> None:
+        await loaded_controller.resume_with_input("blue")
+        mock_service.resume_with_input.assert_called_once_with("blue")
+        mock_service.astream.assert_not_called()
+
+    async def test_resume_with_approval_calls_service_resume_not_astream(
+        self, loaded_controller: CLIController, mock_service: MagicMock
+    ) -> None:
+        await loaded_controller.resume_with_approval(True)
+        mock_service.resume_with_approval.assert_called_once_with(True)
+        mock_service.astream.assert_not_called()
+
+    async def test_resume_with_input_no_service_shows_warning(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await controller.resume_with_input("blue")
+        call = mock_ui.add_message.call_args
+        assert "Still loading" in call[0][1]
+
+    async def test_resume_with_input_drains_pending_queue_afterward(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        loaded_controller._enqueue_pending("queued query", "queued display")
+        mock_service.resume_with_input.return_value = _aiter()
+        mock_service.astream.return_value = _aiter()
+        await loaded_controller.resume_with_input("blue")
+        mock_service.astream.assert_called_once()
+
+    async def test_resume_with_approval_resets_awaiting_flag(
+        self, loaded_controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        loaded_controller._awaiting_approval = True
+        await loaded_controller.resume_with_approval(False)
+        assert loaded_controller.awaiting_approval is False
 
 
 # ---------------------------------------------------------------------------

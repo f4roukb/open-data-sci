@@ -205,14 +205,15 @@ class OpenDataSciApp(App[None]):
         action, query = await self._controller.on_submit(raw)
         if action is SubmitAction.RUN:
             self._run_agent(query)
+        elif action is SubmitAction.RESUME_INPUT:
+            self._resume_with_input(query)
         elif action is SubmitAction.QUIT:
             self.exit()
 
     @on(CommandApprovalPrompt.Decision)
     async def on_approval_decision(self, event: CommandApprovalPrompt.Decision) -> None:
-        resume_input = await self._controller.resolve_approval(event.approved)
         self.query_one("#user-input", Input).focus()
-        self._run_agent(resume_input)
+        self._resume_with_approval(event.approved)
 
     @on(events.Key)
     def on_input_key(self, event: events.Key) -> None:
@@ -243,6 +244,14 @@ class OpenDataSciApp(App[None]):
     @work(exclusive=True, group="agent", exit_on_error=False)
     async def _run_agent(self, query: str) -> None:
         await self._controller.run_agent(query)
+
+    @work(exclusive=True, group="agent", exit_on_error=False)
+    async def _resume_with_input(self, answer: str) -> None:
+        await self._controller.resume_with_input(answer)
+
+    @work(exclusive=True, group="agent", exit_on_error=False)
+    async def _resume_with_approval(self, approved: bool) -> None:
+        await self._controller.resume_with_approval(approved)
 
     @work
     async def _compact(self) -> None:
@@ -289,7 +298,7 @@ class OpenDataSciApp(App[None]):
         if self._controller.awaiting_choice:
             resume_input = await self._controller.cancel_choice()
             if resume_input is not None:
-                self._run_agent(resume_input)
+                self._resume_with_input(resume_input)
         elif not had_completion and not had_paste and self._controller.agent_running:
             # A bare Esc during a turn stops the agent, mirroring Ctrl+C.
             await self._controller.stop_agent()

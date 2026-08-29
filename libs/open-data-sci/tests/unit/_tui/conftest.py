@@ -71,6 +71,9 @@ def mock_service() -> MagicMock:
     svc.get_workspace_files = MagicMock(return_value=["data.csv", "output.csv"])
     svc.rewind_turn = AsyncMock()
     svc.astream = MagicMock(return_value=_empty_aiter())
+    svc.resume_with_input = MagicMock(return_value=_empty_aiter())
+    svc.resume_with_approval = MagicMock(return_value=_empty_aiter())
+    svc.is_user_input_required = MagicMock(return_value=False)
     return svc
 
 

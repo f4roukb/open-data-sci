@@ -616,6 +616,116 @@ class TestAgentAstream:
         assert any(isinstance(m, HumanMessage) for m in scheduled[0])
 
 
+# ---------------------------------------------------------------------------
+# is_user_input_required() / astream() / resume_with_input() / resume_with_approval()
+# ---------------------------------------------------------------------------
+
+
+def _fake_state_snapshot(intr_value: object | None) -> MagicMock:
+    """Build a fake ``StateSnapshot`` carrying at most one pending interrupt."""
+    snapshot = MagicMock()
+    if intr_value is None:
+        snapshot.tasks = []
+        return snapshot
+    interrupt_obj = MagicMock()
+    interrupt_obj.value = intr_value
+    task = MagicMock()
+    task.interrupts = [interrupt_obj]
+    snapshot.tasks = [task]
+    return snapshot
+
+
+_INPUT_INTERRUPT_VALUE = {"question": "Pick one?", "choices": ["a", "b"]}
+
+
+def _approval_interrupt_value() -> dict:
+    from opendatasci.human_inputs.human_approval import APPROVAL_INTERRUPT_KIND
+
+    return {
+        "kind": APPROVAL_INTERRUPT_KIND,
+        "command": "rm -rf /tmp/x",
+        "description": "Deletes a temp file.",
+        "heads_up": "",
+    }
+
+
+class TestAgentIsUserInputRequired:
+    async def test_false_when_idle(self) -> None:
+        async with _make_agent_ctx() as agent:
+            agent.graph.get_state = MagicMock(return_value=_fake_state_snapshot(None))
+            assert agent.is_user_input_required() is False
+
+    async def test_true_when_input_interrupt_pending(self) -> None:
+        async with _make_agent_ctx() as agent:
+            agent.graph.get_state = MagicMock(
+                return_value=_fake_state_snapshot(_INPUT_INTERRUPT_VALUE)
+            )
+            assert agent.is_user_input_required() is True
+
+    async def test_true_when_approval_interrupt_pending(self) -> None:
+        async with _make_agent_ctx() as agent:
+            agent.graph.get_state = MagicMock(
+                return_value=_fake_state_snapshot(_approval_interrupt_value())
+            )
+            assert agent.is_user_input_required() is True
+
+
+class TestAgentAstreamRaisesOnInterrupt:
+    async def test_astream_raises_when_input_interrupt_pending(self) -> None:
+        async with _make_agent_ctx() as agent:
+            agent.graph.get_state = MagicMock(
+                return_value=_fake_state_snapshot(_INPUT_INTERRUPT_VALUE)
+            )
+            with pytest.raises(RuntimeError):
+                async for _ in agent.astream(Invocation.from_text("hello")):
+                    pass
+
+    async def test_astream_raises_when_approval_interrupt_pending(self) -> None:
+        async with _make_agent_ctx() as agent:
+            agent.graph.get_state = MagicMock(
+                return_value=_fake_state_snapshot(_approval_interrupt_value())
+            )
+            with pytest.raises(RuntimeError):
+                async for _ in agent.astream(Invocation.from_text("hello")):
+                    pass
+
+
+class TestAgentResumeMethods:
+    async def test_resume_with_input_raises_when_nothing_pending(self) -> None:
+        async with _make_agent_ctx() as agent:
+            agent.graph.get_state = MagicMock(return_value=_fake_state_snapshot(None))
+            with pytest.raises(RuntimeError):
+                async for _ in agent.resume_with_input("answer"):
+                    pass
+
+    async def test_resume_with_approval_raises_when_nothing_pending(self) -> None:
+        async with _make_agent_ctx() as agent:
+            agent.graph.get_state = MagicMock(return_value=_fake_state_snapshot(None))
+            with pytest.raises(RuntimeError):
+                async for _ in agent.resume_with_approval(True):
+                    pass
+
+    async def test_resume_with_input_raises_when_approval_pending(self) -> None:
+        """Calling the free-text resume while an approval is pending must fail loud."""
+        async with _make_agent_ctx() as agent:
+            agent.graph.get_state = MagicMock(
+                return_value=_fake_state_snapshot(_approval_interrupt_value())
+            )
+            with pytest.raises(RuntimeError):
+                async for _ in agent.resume_with_input("yes"):
+                    pass
+
+    async def test_resume_with_approval_raises_when_input_pending(self) -> None:
+        """Calling the approval resume while a free-text question is pending must fail loud."""
+        async with _make_agent_ctx() as agent:
+            agent.graph.get_state = MagicMock(
+                return_value=_fake_state_snapshot(_INPUT_INTERRUPT_VALUE)
+            )
+            with pytest.raises(RuntimeError):
+                async for _ in agent.resume_with_approval(True):
+                    pass
+
+
 # ===========================================================================
 # WorkerAgent (opendatasci.agents.agents.WorkerAgent)
 # ===========================================================================

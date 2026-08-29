@@ -38,8 +38,8 @@ existing `event.type == "token"` comparisons continue to work alongside
 | `ToolResultEvent` | `"tool_result"` | `content`, `tool_call_id`, `is_error` | Tool returned its result |
 | `TaskDoneEvent` | `"task_done"` | `task_idx`, `success` | A concurrent worker finished |
 | `SubagentEvent` | `"subagent_event"` | `content`, `task_idx`, `event_type`, `success`, `summary` | Lifecycle event from inside a running worker |
-| `InputRequiredEvent` | `"input_required"` | `content`, `choices` | Agent paused at a free-text interrupt; call `astream(Invocation.from_text(answer))` to resume |
-| `ApprovalRequiredEvent` | `"approval_required"` | `command`, `description`, `heads_up` | Agent paused waiting for command approval; call `astream(Invocation.from_text("yes"))` or `astream(Invocation.from_text("no"))` to resume |
+| `InputRequiredEvent` | `"input_required"` | `content`, `choices` | Agent paused at a free-text/choice interrupt; call `agent.resume_with_input(answer)` to resume |
+| `ApprovalRequiredEvent` | `"approval_required"` | `command`, `description`, `heads_up` | Agent paused waiting for command approval; call `agent.resume_with_approval(True)` or `agent.resume_with_approval(False)` to resume |
 | `UsageEvent` | `"usage"` | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_creation_tokens` | Token usage update (fields are `int \| None`) |
 | `ResponseEvent` | `"response"` | `content` | End-of-turn marker with the full assembled response |
 | `ErrorEvent` | `"error"` | `content` | Unrecoverable error |
@@ -69,7 +69,7 @@ async for event in agent.astream(Invocation.from_text("Analyse this dataset")):
 
     elif isinstance(event, InputRequiredEvent):
         ans = input(f"{event.content} ({'/'.join(event.choices)}): ")
-        async for follow_up in agent.astream(Invocation.from_text(ans)):
+        async for follow_up in agent.resume_with_input(ans):
             ...
 
     elif isinstance(event, ApprovalRequiredEvent):
@@ -77,7 +77,7 @@ async for event in agent.astream(Invocation.from_text("Analyse this dataset")):
         if event.heads_up:
             print(f"Warning: {event.heads_up}")
         answer = input("Allow? (yes/no): ")
-        async for follow_up in agent.astream(Invocation.from_text(answer)):
+        async for follow_up in agent.resume_with_approval(answer.strip().lower().startswith("y")):
             ...
 
     elif isinstance(event, UsageEvent):

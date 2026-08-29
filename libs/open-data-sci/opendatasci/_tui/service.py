@@ -54,6 +54,20 @@ class OpenDataSciTuiService:
         async for event in self._agent.astream(invocation):
             yield event
 
+    async def resume_with_input(self, answer: str) -> AsyncIterator[AgentStreamEvent]:
+        """Resume a pending question/choice prompt with the user's *answer*."""
+        async for event in self._agent.resume_with_input(answer):
+            yield event
+
+    async def resume_with_approval(self, approved: bool) -> AsyncIterator[AgentStreamEvent]:
+        """Resume a pending command-approval prompt with the user's decision."""
+        async for event in self._agent.resume_with_approval(approved):
+            yield event
+
+    def is_user_input_required(self) -> bool:
+        """True iff the agent is paused awaiting the user's answer to a pending question or approval request."""
+        return self._agent.is_user_input_required()
+
     async def reset_session(self) -> None:
         """Reset the execution session and clear agent conversation."""
         self._sandbox.reset()

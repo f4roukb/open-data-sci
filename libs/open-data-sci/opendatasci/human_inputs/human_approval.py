@@ -21,8 +21,6 @@ logger = logging.getLogger(__name__)
 
 APPROVAL_INTERRUPT_KIND = "command_approval"
 
-_APPROVAL_ANSWER_YES = "yes"
-
 _FALLBACK_HEADS_UP = (
     "I tried to assess what this command could do to your device or your active "
     "work, but the check failed temporarily. If you are not sure the command is "
@@ -142,7 +140,7 @@ class HumanApprovalManager(HumanApprovalBaseManager):
                 description=f"The agent wants to run this command in your workspace: {command}",
                 heads_up=_FALLBACK_HEADS_UP,
             )
-        answer: str = interrupt(
+        answer: bool = interrupt(
             {
                 "kind": APPROVAL_INTERRUPT_KIND,
                 "command": command,
@@ -150,7 +148,7 @@ class HumanApprovalManager(HumanApprovalBaseManager):
                 "heads_up": assessment.heads_up or "",
             }
         )
-        return str(answer).strip().lower() == _APPROVAL_ANSWER_YES
+        return answer
 
     async def _assess(self, command: str) -> CommandImpactAssessment:
         messages = [
