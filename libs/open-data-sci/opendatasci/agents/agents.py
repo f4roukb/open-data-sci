@@ -104,7 +104,9 @@ class Invocation:
 
 class BaseOpenDataSciAgent(ABC):
     @abstractmethod
-    def astream(self, invocation: Invocation | list[Invocation]) -> AsyncIterator[AgentStreamEvent]: ...
+    def astream(
+        self, invocation: Invocation | list[Invocation]
+    ) -> AsyncIterator[AgentStreamEvent]: ...
 
     @abstractmethod
     async def rewind_turn(self) -> None: ...
@@ -305,7 +307,10 @@ class Agent(BaseOpenDataSciAgent):
         worker_items = [item for item in items if item.origin == MessageOrigin.TASK]
         user_items = [item for item in items if item.origin == MessageOrigin.USER]
         return [
-            *(TaskMessage(content=item.content, created_at=item.created_at) for item in worker_items),
+            *(
+                TaskMessage(content=item.content, created_at=item.created_at)
+                for item in worker_items
+            ),
             *(UserMessage(content=item.content, created_at=item.created_at) for item in user_items),
         ]
 

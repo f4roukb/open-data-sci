@@ -25,9 +25,7 @@ class MessageOrigin(StrEnum):
     TASK = auto()
 
 
-def _with_metadata_tag(
-    content: str | list[str | dict], tag: str
-) -> str | list[str | dict]:
+def _with_metadata_tag(content: str | list[str | dict], tag: str) -> str | list[str | dict]:
     """Prepend *tag* to *content*, preserving a content-block list's shape."""
     if isinstance(content, list):
         return [{"type": "text", "text": tag}, *content]
