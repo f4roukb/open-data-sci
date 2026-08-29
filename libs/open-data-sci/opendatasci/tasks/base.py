@@ -114,3 +114,22 @@ class AgentTaskManagerBase(ABC):
         them.
         """
         ...
+
+    @abstractmethod
+    async def drain_context_updates(self) -> list[AgentTaskRecord]:
+        """Return and clear every completed record collected since the last drain.
+
+        Non-blocking: returns immediately, empty if nothing has completed.
+        Independent of :meth:`watch_completions` — both observe the same
+        underlying completions, but draining one does not consume the other,
+        so each can have its own consumer without racing.
+
+        Assumes at most one caller drains at a time; concurrent drainers
+        would race for the same records.
+        """
+        ...
+
+    @abstractmethod
+    def has_context_updates(self) -> bool:
+        """Cheap, non-blocking peek: ``True`` iff :meth:`drain_context_updates` would return non-empty."""
+        ...
