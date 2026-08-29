@@ -401,13 +401,13 @@ class CLIController:
         """Consume background-task completions and feed them to the agent, unprompted.
 
         Runs for the lifetime of the session (started in ``boot``, cancelled
-        in ``close``). ``watch_completions`` blocks until the next terminal
+        in ``close``). ``listen_task_updates`` blocks until the next terminal
         task, so this stays idle between completions rather than polling.
         The raw completion is never shown as a chat message — only the
         agent's eventual response to it appears in the UI.
         """
         assert self._service is not None
-        async for record in self._service.task_manager.watch_completions():
+        async for record in self._service.task_manager.listen_task_updates():
             query, display = _format_completion_message(record)
             if self._agent_running or self._awaiting_choice or self._awaiting_approval:
                 self._enqueue_pending(query, display, origin=PendingMessageOrigin.TASK)

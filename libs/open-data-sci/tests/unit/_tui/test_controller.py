@@ -958,7 +958,7 @@ class TestBackgroundTaskWatcher:
             task_id=uuid4(), summary="s", status=AgentTaskStatus.COMPLETED, result="done"
         )
         mock_service.task_manager = MagicMock()
-        mock_service.task_manager.watch_completions = MagicMock(
+        mock_service.task_manager.listen_task_updates = MagicMock(
             return_value=self._completions(record)
         )
         mock_service.astream.return_value = _aiter()
@@ -977,7 +977,7 @@ class TestBackgroundTaskWatcher:
             task_id=uuid4(), summary="s", status=AgentTaskStatus.COMPLETED, result="done"
         )
         mock_service.task_manager = MagicMock()
-        mock_service.task_manager.watch_completions = MagicMock(
+        mock_service.task_manager.listen_task_updates = MagicMock(
             return_value=self._completions(record)
         )
         loaded_controller._agent_running = True

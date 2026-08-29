@@ -34,6 +34,7 @@ class LocalAgentTaskManager(AgentTaskManagerBase):
         self._tasks: dict[UUID, asyncio.Task[Any]] = {}
         self._output_root = output_root
         self._completions: asyncio.Queue[AgentTaskRecord] = asyncio.Queue()
+        self._context_updates: list[AgentTaskRecord] = []
 
     async def submit_task(self, work: Callable[[UUID], Awaitable[Any]], summary: str) -> UUID:
         task_id = uuid4()
@@ -48,6 +49,7 @@ class LocalAgentTaskManager(AgentTaskManagerBase):
                 record.finished_at = time.time()
                 await self.upsert_record(record)
                 self._completions.put_nowait(record)
+                self._context_updates.append(record)
                 raise
             except Exception as exc:
                 logger.exception("Background task %s (%s) failed", task_id, summary)
@@ -56,6 +58,7 @@ class LocalAgentTaskManager(AgentTaskManagerBase):
                 record.finished_at = time.time()
                 await self.upsert_record(record)
                 self._completions.put_nowait(record)
+                self._context_updates.append(record)
             else:
                 record.status = AgentTaskStatus.COMPLETED
                 record.result = result
@@ -63,6 +66,7 @@ class LocalAgentTaskManager(AgentTaskManagerBase):
                 await self.upsert_record(record)
                 await self._publish_task_result(task_id, record)
                 self._completions.put_nowait(record)
+                self._context_updates.append(record)
             finally:
                 self._tasks.pop(task_id, None)
 
@@ -119,6 +123,13 @@ class LocalAgentTaskManager(AgentTaskManagerBase):
         )
         await self.upsert_record(record)
 
-    async def watch_completions(self) -> AsyncIterator[AgentTaskRecord]:
+    async def listen_task_updates(self) -> AsyncIterator[AgentTaskRecord]:
         while True:
             yield await self._completions.get()
+
+    async def gather_task_updates(self) -> list[AgentTaskRecord]:
+        records, self._context_updates = self._context_updates, []
+        return records
+
+    def has_task_updates(self) -> bool:
+        return bool(self._context_updates)

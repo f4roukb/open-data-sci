@@ -104,13 +104,32 @@ class AgentTaskManagerBase(ABC):
         ...
 
     @abstractmethod
-    def watch_completions(self) -> AsyncIterator[AgentTaskRecord]:
+    def listen_task_updates(self) -> AsyncIterator[AgentTaskRecord]:
         """Yield each task's record exactly once, as soon as it reaches a terminal status.
 
         Blocks between completions — this is a push source, not a poll.
-        Single-consumer by contract (one watcher per manager instance/
+        Single-consumer by contract (one listener per manager instance/
         session): each terminal record is delivered exactly once, so two
         concurrent consumers would race for records rather than both seeing
         them.
         """
+        ...
+
+    @abstractmethod
+    async def gather_task_updates(self) -> list[AgentTaskRecord]:
+        """Return and clear every completed record collected since the last call.
+
+        Non-blocking: returns immediately, empty if nothing has completed.
+        Independent of :meth:`listen_task_updates` — both observe the same
+        underlying completions, but gathering one does not consume the other,
+        so each can have its own consumer without racing.
+
+        Assumes at most one caller gathers at a time; concurrent gatherers
+        would race for the same records.
+        """
+        ...
+
+    @abstractmethod
+    def has_task_updates(self) -> bool:
+        """Cheap, non-blocking peek: ``True`` iff :meth:`gather_task_updates` would return non-empty."""
         ...

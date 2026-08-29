@@ -44,7 +44,7 @@ class OpenDataSciTuiService:
 
     @property
     def task_manager(self) -> AgentTaskManagerBase:
-        """The agent's background-task manager (see ``watch_completions``)."""
+        """The agent's background-task manager (see ``listen_task_updates``)."""
         return self._agent.task_manager
 
     async def astream(
