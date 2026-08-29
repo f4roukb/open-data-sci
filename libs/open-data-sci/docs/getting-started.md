@@ -47,6 +47,10 @@ sudo pacman -S github-cli
 
 `gh` runs unauthenticated inside the sandbox (the sandbox denies read access to `~/.config/gh`, so it can't inherit a host `gh auth login` session) — fine for public read-only lookups, subject to GitHub's unauthenticated rate limits.
 
+### Sandbox filesystem access
+
+Sandboxed code can write only inside the active workspace. For reads, the sandbox denies every top-level dotfile/dotdir directly under your home directory (`~/.ssh`, `~/.aws`, `~/.config`, `~/.netrc`, `~/.config/gh`, etc.) by naming convention, plus a few macOS-specific credential stores (Keychain, browser/WebKit cookie jars) — not an exhaustive hand-picked list, so it also catches locations that weren't explicitly enumerated. It's a heuristic, not a guarantee: don't rely on it as the sole protection for anything you can't afford to leak. If your Python toolchain (pyenv/uv/rye) happens to live under one of those directories, only the minimal path down to the interpreter itself is left readable — everything else nearby (e.g. a Linux credential keyring next to a `uv`-managed interpreter) stays denied.
+
 ### Provider extras
 
 The default installation includes the Anthropic and OpenAI clients. Install additional extras to unlock other providers:
