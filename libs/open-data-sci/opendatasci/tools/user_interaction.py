@@ -6,6 +6,7 @@ from langchain_core.tools import BaseTool
 from langgraph.types import interrupt
 from pydantic import BaseModel, PrivateAttr
 
+from opendatasci.agents.interrupts import InterruptKind
 from opendatasci.tools.base import OpenDataSciBaseTool
 
 
@@ -72,7 +73,13 @@ Args:
         if key in self._cache:
             return self._cache[key]
 
-        answer: str = interrupt({"question": question, "choices": [choice_a, choice_b, choice_c]})
+        answer: str = interrupt(
+            {
+                "kind": InterruptKind.INPUT,
+                "question": question,
+                "choices": [choice_a, choice_b, choice_c],
+            }
+        )
         self._cache[key] = answer
         return answer
 

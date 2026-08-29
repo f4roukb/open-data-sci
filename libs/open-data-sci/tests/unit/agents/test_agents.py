@@ -639,10 +639,10 @@ _INPUT_INTERRUPT_VALUE = {"question": "Pick one?", "choices": ["a", "b"]}
 
 
 def _approval_interrupt_value() -> dict:
-    from opendatasci.human_inputs.human_approval import APPROVAL_INTERRUPT_KIND
+    from opendatasci.human_inputs.interrupt_kind import InterruptKind
 
     return {
-        "kind": APPROVAL_INTERRUPT_KIND,
+        "kind": InterruptKind.APPROVAL,
         "command": "rm -rf /tmp/x",
         "description": "Deletes a temp file.",
         "heads_up": "",

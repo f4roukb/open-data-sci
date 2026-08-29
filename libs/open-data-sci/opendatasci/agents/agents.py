@@ -29,11 +29,11 @@ from opendatasci._utils.pydantic_utils import FrozenStrictBaseModel
 from opendatasci._utils.streaming_utils import format_stream_error
 from opendatasci.agents.chat_history import ChatHistoryBuilder
 from opendatasci.agents.graphs import AgentCompiledGraph, AgentGraphFactory
+from opendatasci.agents.interrupts import InterruptKind
 from opendatasci.agents.states import AgentState
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.base import BaseContextStore
 from opendatasci.context.local import LocalContextStore
-from opendatasci.human_inputs.human_approval import APPROVAL_INTERRUPT_KIND
 from opendatasci.memory.chat_memory import ChatHistoryCompactor
 from opendatasci.memory.messages import MessageOrigin, TaskMessage, UserMessage
 from opendatasci.memory.turn_memory import TurnRewinder
@@ -339,7 +339,7 @@ class Agent(BaseOpenDataSciAgent):
 
     @staticmethod
     def _is_approval_interrupt(intr_value: dict[str, Any]) -> bool:
-        return isinstance(intr_value, dict) and intr_value.get("kind") == APPROVAL_INTERRUPT_KIND
+        return isinstance(intr_value, dict) and intr_value.get("kind") == InterruptKind.APPROVAL
 
     def _require_pending_interrupt(self, *, approval: bool) -> None:
         intr_value = self._pending_interrupt_value(self._graph.get_state(self._graph_config))
