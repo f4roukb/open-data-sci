@@ -34,7 +34,7 @@ def _with_metadata_tag(content: list[dict[str, Any]], tag: str) -> list[dict[str
 class UserMessage(HumanMessage, RenderableMessageMixin["UserMessage"]):
     """A message that originated directly from the user."""
 
-    content: list[dict[str, Any]]
+    content: list[dict[str, Any]]  # type: ignore[assignment]
     origin: MessageOrigin = MessageOrigin.USER
     created_at: datetime = Field(default_factory=datetime_now)
     is_input_on_interrupt: bool = False
@@ -65,7 +65,7 @@ class UserMessage(HumanMessage, RenderableMessageMixin["UserMessage"]):
 class CompactionMessage(HumanMessage, RenderableMessageMixin["CompactionMessage"]):
     """A harness message carrying a compacted history recall block."""
 
-    content: list[dict[str, Any]]
+    content: list[dict[str, Any]]  # type: ignore[assignment]
     origin: MessageOrigin = MessageOrigin.HARNESS
     created_at: datetime = Field(default_factory=datetime_now)
 
@@ -95,7 +95,7 @@ class CompactionMessage(HumanMessage, RenderableMessageMixin["CompactionMessage"
 class AgentToAgentMessage(HumanMessage, RenderableMessageMixin["AgentToAgentMessage"]):
     """A message sent from one agent to another."""
 
-    content: list[dict[str, Any]]
+    content: list[dict[str, Any]]  # type: ignore[assignment]
     origin: MessageOrigin
     created_at: datetime = Field(default_factory=datetime_now)
 
@@ -125,7 +125,7 @@ class AgentToAgentMessage(HumanMessage, RenderableMessageMixin["AgentToAgentMess
 class TaskMessage(HumanMessage, RenderableMessageMixin["TaskMessage"]):
     """A worker's output delivered back to the main agent (e.g. a finished background task)."""
 
-    content: list[dict[str, Any]]
+    content: list[dict[str, Any]]  # type: ignore[assignment]
     origin: MessageOrigin = MessageOrigin.TASK
     created_at: datetime = Field(default_factory=datetime_now)
 
@@ -155,7 +155,7 @@ class TaskMessage(HumanMessage, RenderableMessageMixin["TaskMessage"]):
 class SummaryMessage(HumanMessage, RenderableMessageMixin["SummaryMessage"]):
     """Harness-constructed message carrying a turn-summary recall."""
 
-    content: list[dict[str, Any]]
+    content: list[dict[str, Any]]  # type: ignore[assignment]
     origin: MessageOrigin = MessageOrigin.HARNESS
     created_at: datetime = Field(default_factory=datetime_now)
     turn_start_timestamp: datetime
@@ -197,7 +197,7 @@ class SummaryMessage(HumanMessage, RenderableMessageMixin["SummaryMessage"]):
 class PlanMessage(HumanMessage, RenderableMessageMixin["PlanMessage"]):
     """Harness-constructed message carrying the current session plan."""
 
-    content: list[dict[str, Any]]
+    content: list[dict[str, Any]]  # type: ignore[assignment]
     origin: MessageOrigin = MessageOrigin.HARNESS
     created_at: datetime = Field(default_factory=datetime_now)
 
