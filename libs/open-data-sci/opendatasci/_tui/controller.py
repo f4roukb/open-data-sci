@@ -26,8 +26,10 @@ from rich.markup import escape as escape_markup
 
 from opendatasci._tui.service import OpenDataSciTuiService
 from opendatasci._tui.session import CLISessionInfo
+from opendatasci.agents.agents import Invocation
 from opendatasci.agents.agents_factory import create_agent
 from opendatasci.configs import OpenDataSciConfig
+from opendatasci.memory.messages import MessageOrigin
 from opendatasci.streaming import BaseAgentStreamEvent
 from opendatasci.streaming.events import (
     ApprovalRequiredEvent,
@@ -66,7 +68,7 @@ from .file_refs import (
     _parse_file_refs,
     _split_existing_file_refs,
 )
-from .message_queue import PendingMessageQueue
+from .message_queue import PendingMessageOrigin, PendingMessageQueue
 from .presenter import _TurnPresenter, apply_usage_event
 from .theme import active as theme
 
@@ -348,19 +350,32 @@ class CLIController:
         self._active_turn_status = self._ui.add_turn_status_bar()
         return SubmitAction.RUN, agent_query
 
-    def _enqueue_pending(self, agent_query: str, display: str) -> None:
-        """Pin *display* in the UI and queue *agent_query* for when the agent is free."""
-        message = self._pending_queue.enqueue(agent_query, display)
-        self._pending_handles[message.id] = self._ui.add_pending_message(display)
+    def _enqueue_pending(
+        self,
+        agent_query: str,
+        display: str,
+        *,
+        origin: PendingMessageOrigin = PendingMessageOrigin.USER,
+    ) -> None:
+        """Queue *agent_query* for when the agent is free.
+
+        Only user-typed text is pinned in the UI as a pending indicator —
+        the user never typed a worker result, so it shouldn't appear to be
+        waiting on them either.
+        """
+        message = self._pending_queue.enqueue(agent_query, display, origin=origin)
+        if origin is PendingMessageOrigin.USER:
+            self._pending_handles[message.id] = self._ui.add_pending_message(display)
 
     # ── Agent run ─────────────────────────────────────────────────────────────
 
-    async def run_agent(self, query: str) -> None:
+    async def run_agent(self, query: str | list[Invocation]) -> None:
         """Run *query*, then keep draining the pending-message queue.
 
-        Each queued message is run as its own turn, in submission order,
-        as long as the previous turn didn't end on a choice prompt (which
-        requires the user's input before anything else can proceed).
+        Once a turn finishes, every message queued in the meantime is sent
+        together as a single new turn, as long as the turn didn't end on a
+        choice prompt (which requires the user's input before anything else
+        can proceed).
         """
         if self._service is None:
             if self._boot_failed:
@@ -380,24 +395,25 @@ class CLIController:
             await self._run_turn(query)
             if self._awaiting_choice or self._awaiting_approval or self._pending_queue.is_empty():
                 return
-            query = self._dequeue_pending()
+            query = self._drain_pending_batch()
 
     async def _watch_background_tasks(self) -> None:
-        """Consume background-task completions and surface them, unprompted.
+        """Consume background-task completions and feed them to the agent, unprompted.
 
         Runs for the lifetime of the session (started in ``boot``, cancelled
         in ``close``). ``watch_completions`` blocks until the next terminal
         task, so this stays idle between completions rather than polling.
+        The raw completion is never shown as a chat message — only the
+        agent's eventual response to it appears in the UI.
         """
         assert self._service is not None
         async for record in self._service.task_manager.watch_completions():
             query, display = _format_completion_message(record)
             if self._agent_running or self._awaiting_choice or self._awaiting_approval:
-                self._enqueue_pending(query, display)
+                self._enqueue_pending(query, display, origin=PendingMessageOrigin.TASK)
             else:
-                self._ui.add_message("agent", display)
                 self._active_turn_status = self._ui.add_turn_status_bar()
-                await self.run_agent(query)
+                await self.run_agent([Invocation.from_text(query, origin=MessageOrigin.TASK)])
 
     async def _poll_background_task_status(self) -> None:
         """Refresh the header's "running background tasks" line every few seconds.
@@ -419,23 +435,40 @@ class CLIController:
                 parts.append(f"{record.summary} — {latest}" if latest else record.summary)
             self._ui.set_background_tasks("; ".join(parts))
 
-    def _dequeue_pending(self) -> str:
-        """Pop the next queued message, surface it as a normal user turn, return its query."""
-        message = self._pending_queue.pop_next()
-        assert message is not None  # caller already checked the queue is non-empty
-        handle = self._pending_handles.pop(message.id, None)
-        if handle is not None:
-            handle.remove()
-        self._ui.add_message("user", message.display)
-        self._active_turn_status = self._ui.add_turn_status_bar()
-        return message.agent_query
+    def _drain_pending_batch(self) -> list[Invocation]:
+        """Drain every queued message, surface user-typed ones in the UI, and return the batch.
 
-    async def _run_turn(self, query: str) -> None:
+        Messages are shown in the order they arrived. Background-task
+        completions are never shown as chat messages — they're queued only
+        so the agent gets fed the result once it's free.
+        """
+        messages = self._pending_queue.drain_all()
+        assert messages  # caller already checked the queue is non-empty
+        batch: list[Invocation] = []
+        for message in messages:
+            handle = self._pending_handles.pop(message.id, None)
+            if handle is not None:
+                handle.remove()
+            is_task = message.origin is PendingMessageOrigin.TASK
+            if not is_task:
+                self._ui.add_message("user", message.display)
+            batch.append(
+                Invocation.from_text(
+                    message.content,
+                    origin=MessageOrigin.TASK if is_task else MessageOrigin.USER,
+                    created_at=message.created_at,
+                )
+            )
+        self._active_turn_status = self._ui.add_turn_status_bar()
+        return batch
+
+    async def _run_turn(self, query: str | list[Invocation]) -> None:
         assert self._service is not None
         self._agent_running = True
         presenter = _TurnPresenter(self._ui)
+        invocation = query if isinstance(query, list) else Invocation.from_text(query)
         try:
-            async for event in self._service.astream(query):
+            async for event in self._service.astream(invocation):
                 if not isinstance(event, BaseAgentStreamEvent):
                     logger.warning("astream() yielded unexpected type %r; skipping", type(event))
                     continue
@@ -742,8 +775,12 @@ class CLIController:
         await self._ui.add_message("agent", "⏹ Agent stopped. You can continue from here.").finish()
 
     async def cancel_pending_messages(self) -> None:
-        """Discard every message currently queued behind a running agent turn."""
-        removed = self._pending_queue.cancel_all()
+        """Discard every user-typed message currently queued behind a running agent turn.
+
+        Worker (background task) results are left queued — the user never
+        typed them, so they aren't the user's to cancel.
+        """
+        removed = self._pending_queue.cancel_all_user_messages()
         for message in removed:
             self._discard_pending_handle(message.id)
         if removed:
@@ -755,8 +792,8 @@ class CLIController:
             await self._ui.add_message("agent", "No pending messages to cancel.").finish()
 
     async def cancel_last_pending_message(self) -> None:
-        """Discard only the most recently queued message."""
-        message = self._pending_queue.cancel_last()
+        """Discard only the most recently queued user-typed message."""
+        message = self._pending_queue.cancel_last_user_message()
         if message is None:
             await self._ui.add_message("agent", "No pending messages to cancel.").finish()
             return

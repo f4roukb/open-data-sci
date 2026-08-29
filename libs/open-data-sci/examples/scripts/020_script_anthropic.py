@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from opendatasci import OpenDataSciConfig, create_agent
+from opendatasci import Invocation, OpenDataSciConfig, create_agent
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
@@ -67,7 +67,7 @@ async def analyse(csv_path: Path, config: OpenDataSciConfig, output_dir: Path) -
 
     final = ""
     async with create_agent(str(csv_path), config=config) as agent:
-        async for event in agent.astream(_PROMPT):
+        async for event in agent.astream(Invocation.from_text(_PROMPT)):
             if event.type == "token":
                 print(event.content, end="", flush=True)
             elif event.type == "response":

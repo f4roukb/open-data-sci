@@ -50,7 +50,7 @@ Key pattern (identical across all variants):
 
 ```python
 async with create_agent(path, config=config) as agent:
-    async for event in agent.astream(prompt):
+    async for event in agent.astream(Invocation.from_text(prompt)):
         if event.type == "token":
             print(event.content, end="", flush=True)
         elif event.type == "response":

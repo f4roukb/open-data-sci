@@ -4,13 +4,13 @@ import re
 import shlex
 from abc import ABC, abstractmethod
 from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from opendatasci._utils.pydantic_utils import MutableStrictBaseModel
 
-@dataclass
-class SandboxExecResult:
+
+class SandboxExecResult(MutableStrictBaseModel):
     """Result of a single Python or TUI execution in the sandbox."""
 
     success: bool

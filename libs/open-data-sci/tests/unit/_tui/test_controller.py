@@ -4,6 +4,7 @@
 import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 import pytest
 
@@ -912,7 +913,7 @@ class TestFormatCompletionMessage:
         from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
 
         record = AgentTaskRecord(
-            task_id="1", summary="my task", status=AgentTaskStatus.COMPLETED, result="the answer"
+            task_id=uuid4(), summary="my task", status=AgentTaskStatus.COMPLETED, result="the answer"
         )
         query, display = _format_completion_message(record)
         assert "my task" in query
@@ -924,7 +925,7 @@ class TestFormatCompletionMessage:
         from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
 
         record = AgentTaskRecord(
-            task_id="1", summary="my task", status=AgentTaskStatus.FAILED, error="boom"
+            task_id=uuid4(), summary="my task", status=AgentTaskStatus.FAILED, error="boom"
         )
         query, _ = _format_completion_message(record)
         assert "failed" in query.lower()
@@ -934,7 +935,7 @@ class TestFormatCompletionMessage:
         from opendatasci._tui.controller import _format_completion_message
         from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
 
-        record = AgentTaskRecord(task_id="1", summary="my task", status=AgentTaskStatus.CANCELLED)
+        record = AgentTaskRecord(task_id=uuid4(), summary="my task", status=AgentTaskStatus.CANCELLED)
         query, _ = _format_completion_message(record)
         assert "cancelled" in query.lower()
 
@@ -954,7 +955,7 @@ class TestBackgroundTaskWatcher:
         from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
 
         record = AgentTaskRecord(
-            task_id="1", summary="s", status=AgentTaskStatus.COMPLETED, result="done"
+            task_id=uuid4(), summary="s", status=AgentTaskStatus.COMPLETED, result="done"
         )
         mock_service.task_manager = MagicMock()
         mock_service.task_manager.watch_completions = MagicMock(
@@ -973,7 +974,7 @@ class TestBackgroundTaskWatcher:
         from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
 
         record = AgentTaskRecord(
-            task_id="1", summary="s", status=AgentTaskStatus.COMPLETED, result="done"
+            task_id=uuid4(), summary="s", status=AgentTaskStatus.COMPLETED, result="done"
         )
         mock_service.task_manager = MagicMock()
         mock_service.task_manager.watch_completions = MagicMock(
@@ -993,7 +994,7 @@ class TestBackgroundTaskStatusPoll:
     ) -> None:
         from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
 
-        running = AgentTaskRecord(task_id="1", summary="crunching numbers", status=AgentTaskStatus.RUNNING)
+        running = AgentTaskRecord(task_id=uuid4(), summary="crunching numbers", status=AgentTaskStatus.RUNNING)
         mock_service.task_manager = MagicMock()
         mock_service.task_manager.list_tasks = AsyncMock(return_value=[running])
 

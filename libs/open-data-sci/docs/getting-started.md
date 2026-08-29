@@ -213,11 +213,12 @@ The Python API is async-first. Every public method that touches the network is a
 
 ```python
 import asyncio
-from opendatasci import create_agent
+from opendatasci import create_agent, Invocation
 
 async def main() -> None:
     async with create_agent("sales.csv") as agent:
-        async for event in agent.astream("What is the average revenue by region?"):
+        invocation = Invocation.from_text("What is the average revenue by region?")
+        async for event in agent.astream(invocation):
             if event.type == "token":
                 print(event.content, end="", flush=True)
             elif event.type == "response":
@@ -229,7 +230,7 @@ asyncio.run(main())
 ### With a custom provider
 
 ```python
-from opendatasci import create_agent, OpenDataSciConfig
+from opendatasci import create_agent, Invocation, OpenDataSciConfig
 
 config = OpenDataSciConfig(
     provider="openai",
@@ -239,16 +240,16 @@ config = OpenDataSciConfig(
 )
 
 async with create_agent("data.parquet", config=config) as agent:
-    async for event in agent.astream("Train a gradient-boosting model on the target column."):
+    async for event in agent.astream(Invocation.from_text("Train a gradient-boosting model on the target column.")):
         ...
 ```
 
 ### Consuming stream events
 
-`agent.astream()` yields [`AgentStreamEvent`](api/types.md) objects. Each event has a `type` and `content` string, plus optional `metadata`.
+`agent.astream()` takes a single `Invocation` or a `list[Invocation]` and yields [`AgentStreamEvent`](api/types.md) objects. A list is not multiple separate requests — every item is folded into one turn, producing exactly one response. Each event has a `type` and `content` string, plus optional `metadata`.
 
 ```python
-async for event in agent.astream(query):
+async for event in agent.astream(invocation):
     match event.type:
         case "token":
             # Incremental response text
@@ -267,7 +268,7 @@ async for event in agent.astream(query):
         case "input_required":
             # Agent needs a choice from the user — resume by calling astream() again
             choice = input(event.content + " ")
-            async for follow_up in agent.astream(choice):
+            async for follow_up in agent.astream(Invocation.from_text(choice)):
                 pass  # handle follow_up events as usual
         case "response":
             # Final assembled answer — end of turn

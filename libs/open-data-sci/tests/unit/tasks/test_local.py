@@ -2,6 +2,7 @@
 
 import asyncio
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
@@ -197,55 +198,60 @@ class TestUpsertRecord:
     @pytest.mark.asyncio
     async def test_upsert_inserts_new_record(self) -> None:
         manager = LocalAgentTaskManager()
-        record = AgentTaskRecord(task_id="abc", summary="s", status=AgentTaskStatus.RUNNING)
+        task_id = uuid4()
+        record = AgentTaskRecord(task_id=task_id, summary="s", status=AgentTaskStatus.RUNNING)
 
         await manager.upsert_record(record)
 
-        assert await manager.get_task("abc") is record
+        assert await manager.get_task(task_id) is record
 
     @pytest.mark.asyncio
     async def test_upsert_overwrites_existing_record(self) -> None:
         manager = LocalAgentTaskManager()
+        task_id = uuid4()
         await manager.upsert_record(
-            AgentTaskRecord(task_id="abc", summary="s", status=AgentTaskStatus.RUNNING)
+            AgentTaskRecord(task_id=task_id, summary="s", status=AgentTaskStatus.RUNNING)
         )
-        replacement = AgentTaskRecord(task_id="abc", summary="s", status=AgentTaskStatus.COMPLETED)
+        replacement = AgentTaskRecord(task_id=task_id, summary="s", status=AgentTaskStatus.COMPLETED)
 
         await manager.upsert_record(replacement)
 
-        assert await manager.get_task("abc") is replacement
+        assert await manager.get_task(task_id) is replacement
 
     @pytest.mark.asyncio
     async def test_evicts_oldest_record_once_at_capacity(self) -> None:
         manager = LocalAgentTaskManager()
-        for i in range(_MAX_RECORDS):
+        task_ids = [uuid4() for _ in range(_MAX_RECORDS)]
+        for task_id in task_ids:
             await manager.upsert_record(
-                AgentTaskRecord(task_id=f"task-{i}", summary="s", status=AgentTaskStatus.RUNNING)
+                AgentTaskRecord(task_id=task_id, summary="s", status=AgentTaskStatus.RUNNING)
             )
 
+        new_task_id = uuid4()
         await manager.upsert_record(
-            AgentTaskRecord(task_id="task-new", summary="s", status=AgentTaskStatus.RUNNING)
+            AgentTaskRecord(task_id=new_task_id, summary="s", status=AgentTaskStatus.RUNNING)
         )
 
         assert len(await manager.list_tasks()) == _MAX_RECORDS
-        assert await manager.get_task("task-0") is None
-        assert await manager.get_task("task-1") is not None
-        assert await manager.get_task("task-new") is not None
+        assert await manager.get_task(task_ids[0]) is None
+        assert await manager.get_task(task_ids[1]) is not None
+        assert await manager.get_task(new_task_id) is not None
 
     @pytest.mark.asyncio
     async def test_updating_existing_record_does_not_evict(self) -> None:
         manager = LocalAgentTaskManager()
-        for i in range(_MAX_RECORDS):
+        task_ids = [uuid4() for _ in range(_MAX_RECORDS)]
+        for task_id in task_ids:
             await manager.upsert_record(
-                AgentTaskRecord(task_id=f"task-{i}", summary="s", status=AgentTaskStatus.RUNNING)
+                AgentTaskRecord(task_id=task_id, summary="s", status=AgentTaskStatus.RUNNING)
             )
 
         await manager.upsert_record(
-            AgentTaskRecord(task_id="task-0", summary="s", status=AgentTaskStatus.COMPLETED)
+            AgentTaskRecord(task_id=task_ids[0], summary="s", status=AgentTaskStatus.COMPLETED)
         )
 
         assert len(await manager.list_tasks()) == _MAX_RECORDS
-        assert await manager.get_task("task-0") is not None
+        assert await manager.get_task(task_ids[0]) is not None
 
 
 class TestPushTaskProgress:

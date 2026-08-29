@@ -8,6 +8,7 @@ from typing import Any, AsyncIterator
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
+    BaseMessage,
     RemoveMessage,
     SystemMessage,
 )
@@ -22,7 +23,9 @@ from opendatasci._utils.message_utils import (
     get_final_ai_message,
     get_message_text_content,
     is_final_ai_message,
+    to_text_content_blocks,
 )
+from opendatasci._utils.pydantic_utils import FrozenStrictBaseModel
 from opendatasci._utils.streaming_utils import format_stream_error
 from opendatasci.agents.chat_history import ChatHistoryBuilder
 from opendatasci.agents.graphs import AgentCompiledGraph, AgentGraphFactory
@@ -32,7 +35,7 @@ from opendatasci.context.base import BaseContextStore
 from opendatasci.context.local import LocalContextStore
 from opendatasci.human_inputs.human_approval import APPROVAL_INTERRUPT_KIND
 from opendatasci.memory.chat_memory import ChatHistoryCompactor
-from opendatasci.memory.messages import UserMessage
+from opendatasci.memory.messages import MessageOrigin, TaskMessage, UserMessage
 from opendatasci.memory.turn_memory import TurnRewinder
 from opendatasci.models.factory import (
     _RetryRunnable,
@@ -68,9 +71,42 @@ logger = logging.getLogger(__name__)
 AGENT_RECURSION_LIMIT: int = 1000
 
 
+class Invocation(FrozenStrictBaseModel):
+    """One message to fold into a single turn, alongside others.
+
+    ``origin`` marks whether this is a background task's output
+    (:attr:`MessageOrigin.TASK`) or user-typed text (:attr:`MessageOrigin.USER`);
+    the two are rendered as different message types so the model can tell
+    them apart. ``content`` follows the same content-block shape as
+    :attr:`~langchain_core.messages.BaseMessage.content` (a list of
+    ``{"type": ..., ...}`` blocks), not a plain string.
+    """
+
+    content: list[dict[str, Any]]
+    created_at: datetime
+    origin: MessageOrigin = MessageOrigin.USER
+
+    @classmethod
+    def from_text(
+        cls,
+        text: str,
+        *,
+        origin: MessageOrigin = MessageOrigin.USER,
+        created_at: datetime | None = None,
+    ) -> "Invocation":
+        """Build an Invocation from plain text."""
+        return cls(
+            content=to_text_content_blocks(text),
+            created_at=created_at if created_at is not None else datetime.now(timezone.utc),
+            origin=origin,
+        )
+
+
 class BaseOpenDataSciAgent(ABC):
     @abstractmethod
-    def astream(self, query: str) -> AsyncIterator[AgentStreamEvent]: ...
+    def astream(
+        self, invocation: Invocation | list[Invocation]
+    ) -> AsyncIterator[AgentStreamEvent]: ...
 
     @abstractmethod
     async def rewind_turn(self) -> None: ...
@@ -263,32 +299,64 @@ class Agent(BaseOpenDataSciAgent):
 
     @classmethod
     def _prepare_user_message(cls, query: str) -> UserMessage:
-        return UserMessage(content=query, created_at=datetime.now(timezone.utc))
+        return UserMessage(
+            content=to_text_content_blocks(query), created_at=datetime.now(timezone.utc)
+        )
+
+    @classmethod
+    def _prepare_batch_messages(cls, items: list[Invocation]) -> list[BaseMessage]:
+        """Build one message per item, worker results first, then user text."""
+        worker_items = [item for item in items if item.origin == MessageOrigin.TASK]
+        user_items = [item for item in items if item.origin == MessageOrigin.USER]
+        return [
+            *(
+                TaskMessage(content=item.content, created_at=item.created_at)
+                for item in worker_items
+            ),
+            *(UserMessage(content=item.content, created_at=item.created_at) for item in user_items),
+        ]
+
+    @classmethod
+    def _resume_text(cls, items: list[Invocation]) -> str:
+        """Flatten every text block across *items* into a single plain string."""
+        return "\n".join(
+            block.get("text", "")
+            for item in items
+            for block in item.content
+            if isinstance(block, dict) and block.get("type") == "text"
+        ).strip()
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    async def astream(self, user_input: str) -> AsyncIterator[AgentStreamEvent]:
-        """Stream a response to *user_input*, yielding :class:`AgentStreamEvent` objects.
+    async def astream(
+        self, invocation: Invocation | list[Invocation]
+    ) -> AsyncIterator[AgentStreamEvent]:
+        """Stream a response to *invocation*, yielding :class:`AgentStreamEvent` objects.
 
         If the previous call ended with an :class:`~opendatasci.streaming.InputRequiredEvent`,
-        pass the user's answer here to resume; otherwise *user_input* starts a new turn.
+        pass the user's answer as a single :class:`Invocation` to resume; otherwise
+        *invocation* starts a new turn.
+
+        A list of :class:`Invocation` is **not** several separate requests — it is one
+        request whose items are all folded into a single turn, producing exactly one
+        response.
         """
         thread_id = self._session_manager.get_or_create_thread()  # type: ignore[union-attr]
         config: RunnableConfig = {
             "recursion_limit": AGENT_RECURSION_LIMIT,
             "configurable": {"thread_id": str(thread_id)},
         }
+        items = invocation if isinstance(invocation, list) else [invocation]
 
         graph_state = self._graph.get_state(config)
         if is_interrupt_state_snapshot(graph_state):
-            graph_input: Any = Command(resume=user_input)
+            graph_input: Any = Command(resume=type(self)._resume_text(items))
         else:
             self._context_store.prune()  # type: ignore[union-attr]
-            user_msg = type(self)._prepare_user_message(user_input)
             graph_input = {
-                "messages": [user_msg],
+                "messages": type(self)._prepare_batch_messages(items),
                 "active_skills": [],
                 "active_skill_domains": [],
                 "is_plan_mode": False,

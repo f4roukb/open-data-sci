@@ -31,10 +31,11 @@
 === "Python SDK"
 
     ```python
-    from opendatasci import create_agent
+    from opendatasci import create_agent, Invocation
 
     async with create_agent("data.csv") as agent:
-        async for event in agent.astream("Summarise this dataset."):
+        invocation = Invocation.from_text("Summarise this dataset.")
+        async for event in agent.astream(invocation):
             if event.type == "token":
                 print(event.content, end="", flush=True)
     ```

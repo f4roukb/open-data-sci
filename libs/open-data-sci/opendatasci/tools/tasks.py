@@ -137,12 +137,21 @@ other subtasks. Each subtask runs to completion independently before results are
 - Write every subtask description as fully self-contained: include dataset names,
   variable names, target columns, and any context the worker needs from the conversation.
 - Assign a ``skill`` when the subtask benefits from domain-specific guidance.
-- Set ``run_mode``: use ``"foreground"`` (default) to wait for the result and get it back
-  immediately. Prefer ``"background"`` for long-running subtasks (e.g. heavy training runs,
-  large-scale data processing, anything that would otherwise stall the conversation) —
-  the tool schedules each subtask in the background and returns immediately with one
-  task ID per subtask, so you can keep helping the user instead of blocking on completion.
-  Check on scheduled work with `check_task`/`list_tasks`, stop it with `stop_task`.
+- Assign a ``run_mode``:
+
+  # When to use "background"
+  - You don't need the result right away and can keep helping the user with
+    something else in the meantime.
+  - The subtask is expected to take a while (heavy training runs, large-scale
+    data processing, anything that would otherwise stall the conversation).
+
+  # When to use "foreground" (default)
+  - You need the result before you can proceed with anything else.
+  - The subtask is quick — scheduling overhead outweighs the benefit.
+
+  ``"background"`` schedules each subtask in the background and returns immediately
+  with one task ID per subtask instead of blocking on completion. Check on scheduled
+  work with `check_task`/`list_tasks`, stop it with `stop_task`.
 
 Args:
     subtasks:      1-3 subtask descriptors (see TaskDetails fields).

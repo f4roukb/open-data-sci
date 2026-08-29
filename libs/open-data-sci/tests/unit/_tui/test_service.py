@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 
+from opendatasci.agents.agents import Invocation
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci._tui.service import OpenDataSciTuiService
 from opendatasci._tui.session import CLISessionInfo
@@ -97,24 +98,25 @@ class TestOpenDataSciServiceAstream:
 
         agent.astream = _fake_astream
 
-        events = [e async for e in svc.astream("test query")]
+        events = [e async for e in svc.astream(Invocation.from_text("test query"))]
         assert fake_event in events
 
     async def test_astream_passes_query_to_agent(self) -> None:
         svc, agent, _ = _make_service()
-        received_queries: list[str] = []
+        received_queries: list[Invocation] = []
 
-        async def _fake_astream(query: str):
+        async def _fake_astream(query: Invocation):
             received_queries.append(query)
             return
             yield  # make it a generator
 
         agent.astream = _fake_astream
 
-        async for _ in svc.astream("my special query"):
+        async for _ in svc.astream(Invocation.from_text("my special query")):
             pass
 
-        assert received_queries == ["my special query"]
+        assert len(received_queries) == 1
+        assert received_queries[0].content == [{"type": "text", "text": "my special query"}]
 
 
 # ---------------------------------------------------------------------------

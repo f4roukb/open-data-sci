@@ -8,15 +8,15 @@ This background-scheduling layer is backed by `opendatasci.tasks`.
 
 - **`AgentTaskRecord`** — a point-in-time snapshot of one background task: its `summary`, `status`, timestamps, any `AgentTaskProgressReport`s recorded against it, and its `result` or `error` once it reaches a terminal state.
 - **`AgentTaskStatus`** — `running`, `completed`, `failed`, or `cancelled`.
-- **`AgentTaskProgressUpdate`** / **`AgentTaskProgressReport`** — an incremental progress checkpoint (what's done, what's ongoing, blockers, and an ETA) that can be appended to `AgentTaskRecord.progress`, in call order, so a caller can see how a long-running task is progressing without waiting for it to finish. Nothing currently populates these automatically.
+- **`AgentTaskProgressUpdate`** / **`AgentTaskProgressReport`** — an incremental progress checkpoint (what's done, what's ongoing, blockers, and an ETA) that can be appended to `AgentTaskRecord.progress`, in call order, so a caller can see how a long-running task is progressing without waiting for it to finish. A worker running in the background is given a `report_progress` tool, bound to its own `task_id`, that populates these as it works.
 
 ## Task manager
 
-**`AgentTaskManagerBase`** is the abstract interface a task-tracking backend implements: create a record and schedule work against it (`submit_task`), read one record (`get_task`) or all of them (`list_tasks`), and request cancellation (`cancel_task`). There is no method here for *writing* to a task's record — a task manager exposes reading tasks, not mutating them. `submit_task` only hands the scheduled work its `task_id`, not the record itself.
+**`AgentTaskManagerBase`** is the abstract interface a task-tracking backend implements: create a record and schedule work against it (`submit_task`), read one record (`get_task`) or all of them (`list_tasks`), request cancellation (`cancel_task`), write to a record (`upsert_record`, the primitive every mutation goes through — including `push_task_progress`, which appends an `AgentTaskProgressReport`), and await completions (`watch_completions`, an async iterator — not a poll — that yields each task exactly once as it reaches a terminal status).
 
 The bundled **`LocalAgentTaskManager`** runs submitted work as in-process `asyncio` tasks, keeping records for the lifetime of the manager instance (i.e. the agent session). When constructed with an `output_root`, it also publishes each completed task's result to disk at `<output_root>/<task_id>.md` — by default `.opendatasci/workers/outputs/<task_id>.md` — so the result survives past the manager's in-memory, session-scoped lifetime. Publishing is skipped when no `output_root` is configured.
 
-The agent constructs its own `LocalAgentTaskManager` internally as part of its tool set; it is not currently an injectable constructor argument of `Agent` the way `sandbox_factory` or `session_manager` are.
+The agent constructs its own `LocalAgentTaskManager` internally and exposes it as `agent.task_manager`, so a caller driving the agent (the TUI, or a hosted-service equivalent) can consume `watch_completions()` itself to learn about background completions without polling. It is not currently an injectable constructor argument of `Agent` the way `sandbox_factory` or `session_manager` are — a future storage backend (DB/cloud-backed) would implement the same `AgentTaskManagerBase` interface, though task *execution* stays in-process for now.
 
 ## Reference
 

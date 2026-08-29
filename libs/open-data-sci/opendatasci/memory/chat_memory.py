@@ -1,7 +1,6 @@
 """Agent-level chat memory: rolling turn summaries and per-call context assembly."""
 
 import logging
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -14,10 +13,12 @@ from opendatasci._utils.message_utils import (
     render_turn,
 )
 from opendatasci._utils.mixins import LLMDigestibleMixin
+from opendatasci._utils.pydantic_utils import MutableStrictBaseModel
 from opendatasci.memory.messages import (
+    TaskMessage,
+    UserMessage,
     get_turn_end_timestamp,
     get_turn_start_timestamp,
-    is_user_message,
 )
 from opendatasci.prompts.prompt_templates import (
     CHAT_COMPACTOR_SYSTEM_PROMPT,
@@ -32,8 +33,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class ChatTurnSummary(LLMDigestibleMixin):
+class ChatTurnSummary(MutableStrictBaseModel, LLMDigestibleMixin):
     """Summary of a single completed conversation turn."""
 
     # Metadata
@@ -54,8 +54,7 @@ class ChatTurnSummary(LLMDigestibleMixin):
         )
 
 
-@dataclass
-class ChatHistoryCompaction(LLMDigestibleMixin):
+class ChatHistoryCompaction(MutableStrictBaseModel, LLMDigestibleMixin):
     """A folded compaction of multiple :class:`ChatTurnSummary` records.
 
     Produced by :class:`ChatHistoryCompactor` when the user explicitly requests
@@ -140,8 +139,8 @@ class ChatTurnSummarizer:
                 logger.exception("Summarizer failed, using fallback")
 
         user_msg = turn_messages[0]
-        if not is_user_message(user_msg):
-            raise ValueError("First message in turn is not a user message")
+        if not isinstance(user_msg, (UserMessage, TaskMessage)):
+            raise ValueError("First message in turn is not a UserMessage or TaskMessage")
         final_ai_msg = get_final_ai_message(turn_messages)
 
         user_msg_text_content = get_message_text_content(user_msg)
@@ -161,8 +160,7 @@ class ChatTurnSummarizer:
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class ChatTurnContext:
+class ChatTurnContext(MutableStrictBaseModel):
     """The assembled messages for a single LLM call.
 
     Attributes:

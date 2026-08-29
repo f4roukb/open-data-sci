@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from langchain_core.messages import AIMessage, HumanMessage
 
+from opendatasci._utils.message_utils import get_message_text_content, to_text_content_blocks
 from opendatasci._utils.mixins import RenderableMessageMixin
 from opendatasci.memory.messages import (
     AgentMessage,
@@ -21,80 +22,91 @@ _TS = datetime(2024, 6, 1, tzinfo=timezone.utc)
 
 class TestUserMessage:
     def test_is_subtype_of_human_message(self) -> None:
-        assert isinstance(UserMessage(content="hi"), HumanMessage)
+        assert isinstance(UserMessage(content=to_text_content_blocks("hi")), HumanMessage)
 
     def test_is_renderable(self) -> None:
-        assert isinstance(UserMessage(content="hi"), RenderableMessageMixin)
+        assert isinstance(UserMessage(content=to_text_content_blocks("hi")), RenderableMessageMixin)
 
     def test_is_user_message(self) -> None:
-        assert is_user_message(UserMessage(content="hi"))
+        assert is_user_message(UserMessage(content=to_text_content_blocks("hi")))
 
     def test_render_returns_user_message(self) -> None:
-        msg = UserMessage(content="hi", created_at=_TS)
+        msg = UserMessage(content=to_text_content_blocks("hi"), created_at=_TS)
         assert isinstance(msg.render(), UserMessage)
 
     def test_render_includes_user_origin_tag(self) -> None:
-        msg = UserMessage(content="hi", created_at=_TS)
-        assert "<origin>user</origin>" in msg.render().content
+        msg = UserMessage(content=to_text_content_blocks("hi"), created_at=_TS)
+        assert "<origin>user</origin>" in get_message_text_content(msg.render())
 
     def test_render_includes_timestamp(self) -> None:
-        msg = UserMessage(content="hi", created_at=_TS)
-        assert "2024-06-01" in msg.render().content
+        msg = UserMessage(content=to_text_content_blocks("hi"), created_at=_TS)
+        assert "2024-06-01" in get_message_text_content(msg.render())
 
     def test_render_preserves_original_text_in_content(self) -> None:
-        msg = UserMessage(content="hello world", created_at=_TS)
-        assert "hello world" in msg.render().content
+        msg = UserMessage(content=to_text_content_blocks("hello world"), created_at=_TS)
+        assert "hello world" in get_message_text_content(msg.render())
 
     def test_render_does_not_mutate_original(self) -> None:
-        msg = UserMessage(content="hi")
+        msg = UserMessage(content=to_text_content_blocks("hi"))
         msg.render()
-        assert msg.content == "hi"
+        assert msg.content == to_text_content_blocks("hi")
 
 
 class TestCompactionMessage:
     def test_is_subtype_of_human_message(self) -> None:
-        assert isinstance(CompactionMessage(content="compact"), HumanMessage)
+        assert isinstance(CompactionMessage(content=to_text_content_blocks("compact")), HumanMessage)
 
     def test_is_not_user_message(self) -> None:
-        assert not is_user_message(CompactionMessage(content="compact"))
+        assert not is_user_message(CompactionMessage(content=to_text_content_blocks("compact")))
 
     def test_render_returns_compaction_message(self) -> None:
-        msg = CompactionMessage(content="compact", created_at=_TS)
+        msg = CompactionMessage(content=to_text_content_blocks("compact"), created_at=_TS)
         assert isinstance(msg.render(), CompactionMessage)
 
     def test_render_includes_harness_origin_tag(self) -> None:
-        msg = CompactionMessage(content="compact", created_at=_TS)
-        assert "<origin>harness</origin>" in msg.render().content
+        msg = CompactionMessage(content=to_text_content_blocks("compact"), created_at=_TS)
+        assert "<origin>harness</origin>" in get_message_text_content(msg.render())
 
     def test_render_does_not_mutate_original(self) -> None:
-        msg = CompactionMessage(content="compact")
+        msg = CompactionMessage(content=to_text_content_blocks("compact"))
         msg.render()
-        assert msg.content == "compact"
+        assert msg.content == to_text_content_blocks("compact")
 
 
 class TestAgentToAgentMessage:
     def test_is_subtype_of_human_message(self) -> None:
-        assert isinstance(AgentToAgentMessage(content="task", origin=MessageOrigin.AGENT), HumanMessage)
+        assert isinstance(
+            AgentToAgentMessage(content=to_text_content_blocks("task"), origin=MessageOrigin.AGENT),
+            HumanMessage,
+        )
 
     def test_is_not_user_message(self) -> None:
-        assert not is_user_message(AgentToAgentMessage(content="task", origin=MessageOrigin.AGENT))
+        assert not is_user_message(
+            AgentToAgentMessage(content=to_text_content_blocks("task"), origin=MessageOrigin.AGENT)
+        )
 
     def test_render_returns_agent_to_agent_message(self) -> None:
-        msg = AgentToAgentMessage(content="task", origin=MessageOrigin.AGENT, created_at=_TS)
+        msg = AgentToAgentMessage(
+            content=to_text_content_blocks("task"), origin=MessageOrigin.AGENT, created_at=_TS
+        )
         assert isinstance(msg.render(), AgentToAgentMessage)
 
     def test_render_includes_origin_tag(self) -> None:
-        msg = AgentToAgentMessage(content="task", origin=MessageOrigin.AGENT, created_at=_TS)
-        assert "<origin>agent</origin>" in msg.render().content
+        msg = AgentToAgentMessage(
+            content=to_text_content_blocks("task"), origin=MessageOrigin.AGENT, created_at=_TS
+        )
+        assert "<origin>agent</origin>" in get_message_text_content(msg.render())
 
     def test_render_reflects_provided_origin(self) -> None:
-        msg = AgentToAgentMessage(content="task", origin=MessageOrigin.HARNESS, created_at=_TS)
-        assert "<origin>harness</origin>" in msg.render().content
+        msg = AgentToAgentMessage(
+            content=to_text_content_blocks("task"), origin=MessageOrigin.HARNESS, created_at=_TS
+        )
+        assert "<origin>harness</origin>" in get_message_text_content(msg.render())
 
     def test_render_does_not_mutate_original(self) -> None:
-        msg = AgentToAgentMessage(content="task", origin=MessageOrigin.AGENT)
+        msg = AgentToAgentMessage(content=to_text_content_blocks("task"), origin=MessageOrigin.AGENT)
         msg.render()
-        assert msg.content == "task"
+        assert msg.content == to_text_content_blocks("task")
 
 
 _TS_START = datetime(2024, 5, 31, tzinfo=timezone.utc)
@@ -103,7 +115,7 @@ _TS_END = datetime(2024, 6, 1, tzinfo=timezone.utc)
 
 def _summary_msg(content: str = "summary") -> SummaryMessage:
     return SummaryMessage(
-        content=content,
+        content=to_text_content_blocks(content),
         created_at=_TS_END,
         turn_start_timestamp=_TS_START,
         turn_end_timestamp=_TS_END,
@@ -118,37 +130,37 @@ class TestSummaryMessage:
         assert isinstance(_summary_msg().render(), SummaryMessage)
 
     def test_render_includes_harness_origin_tag(self) -> None:
-        assert "<origin>harness</origin>" in _summary_msg().render().content
+        assert "<origin>harness</origin>" in get_message_text_content(_summary_msg().render())
 
     def test_render_includes_summary_metadata_block(self) -> None:
-        assert "<summary_metadata>" in _summary_msg().render().content
+        assert "<summary_metadata>" in get_message_text_content(_summary_msg().render())
 
     def test_render_includes_turn_start_timestamp(self) -> None:
-        assert "2024-05-31" in _summary_msg().render().content
+        assert "2024-05-31" in get_message_text_content(_summary_msg().render())
 
     def test_render_includes_turn_end_timestamp(self) -> None:
-        assert "2024-06-01" in _summary_msg().render().content
+        assert "2024-06-01" in get_message_text_content(_summary_msg().render())
 
     def test_render_preserves_content(self) -> None:
-        assert "my summary text" in _summary_msg("my summary text").render().content
+        assert "my summary text" in get_message_text_content(_summary_msg("my summary text").render())
 
     def test_render_does_not_mutate_original(self) -> None:
         msg = _summary_msg("original")
         msg.render()
-        assert msg.content == "original"
+        assert msg.content == to_text_content_blocks("original")
 
 
 class TestPlanMessage:
     def test_is_subtype_of_human_message(self) -> None:
-        assert isinstance(PlanMessage(content="plan"), HumanMessage)
+        assert isinstance(PlanMessage(content=to_text_content_blocks("plan")), HumanMessage)
 
     def test_render_returns_plan_message(self) -> None:
-        msg = PlanMessage(content="plan", created_at=_TS)
+        msg = PlanMessage(content=to_text_content_blocks("plan"), created_at=_TS)
         assert isinstance(msg.render(), PlanMessage)
 
     def test_render_includes_harness_origin_tag(self) -> None:
-        msg = PlanMessage(content="p", created_at=_TS)
-        assert "<origin>harness</origin>" in msg.render().content
+        msg = PlanMessage(content=to_text_content_blocks("p"), created_at=_TS)
+        assert "<origin>harness</origin>" in get_message_text_content(msg.render())
 
 
 class TestAgentMessage:
@@ -182,10 +194,10 @@ class TestAgentMessage:
 
 class TestIsUserMessage:
     def test_user_message_returns_true(self) -> None:
-        assert is_user_message(UserMessage(content="hi"))
+        assert is_user_message(UserMessage(content=to_text_content_blocks("hi")))
 
     def test_compaction_message_returns_false(self) -> None:
-        assert not is_user_message(CompactionMessage(content="compact"))
+        assert not is_user_message(CompactionMessage(content=to_text_content_blocks("compact")))
 
     def test_ai_message_returns_false(self) -> None:
         assert not is_user_message(AIMessage(content="resp"))

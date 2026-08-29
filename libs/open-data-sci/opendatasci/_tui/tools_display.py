@@ -13,11 +13,11 @@ Usage::
 """
 
 import types
-from dataclasses import dataclass
+
+from opendatasci._utils.pydantic_utils import FrozenStrictBaseModel
 
 
-@dataclass(frozen=True)
-class ToolDisplay:
+class ToolDisplay(FrozenStrictBaseModel):
     """Display metadata for a single tool.
 
     Attributes:

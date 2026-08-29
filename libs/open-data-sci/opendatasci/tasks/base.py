@@ -2,10 +2,13 @@
 
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from enum import StrEnum, auto
 from typing import Any, AsyncIterator, Awaitable, Callable
 from uuid import UUID
+
+from pydantic import Field
+
+from opendatasci._utils.pydantic_utils import MutableStrictBaseModel
 
 
 class AgentTaskStatus(StrEnum):
@@ -15,8 +18,7 @@ class AgentTaskStatus(StrEnum):
     CANCELLED = auto()
 
 
-@dataclass
-class AgentTaskProgressUpdate:
+class AgentTaskProgressUpdate(MutableStrictBaseModel):
     """A worker's self-reported snapshot of what it has done, is doing, and is blocked on."""
 
     done: str
@@ -24,17 +26,15 @@ class AgentTaskProgressUpdate:
     blockers: str
 
 
-@dataclass
-class AgentTaskProgressReport:
+class AgentTaskProgressReport(MutableStrictBaseModel):
     """One progress checkpoint recorded against a task, in call order."""
 
     progress_update: AgentTaskProgressUpdate
     eta_seconds: float | None
-    reported_at: float = field(default_factory=time.time)
+    reported_at: float = Field(default_factory=time.time)
 
 
-@dataclass
-class AgentTaskRecord:
+class AgentTaskRecord(MutableStrictBaseModel):
     """Point-in-time snapshot of a background task's lifecycle."""
 
     task_id: UUID
@@ -43,8 +43,8 @@ class AgentTaskRecord:
     status: AgentTaskStatus
     result: Any = None
     error: str | None = None
-    progress: list[AgentTaskProgressReport] = field(default_factory=list)
-    created_at: float = field(default_factory=time.time)
+    progress: list[AgentTaskProgressReport] = Field(default_factory=list)
+    created_at: float = Field(default_factory=time.time)
     finished_at: float | None = None
 
 
