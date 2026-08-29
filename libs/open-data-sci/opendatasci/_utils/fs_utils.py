@@ -20,15 +20,12 @@ def _corridor_deny_paths(root: str, keep_paths: list[str]) -> list[str]:
     """Deny-read paths for everything under *root* except a minimal corridor
     down to each already-resolved path in *keep_paths*.
 
-    Used when a directory that would otherwise be denied wholesale (e.g. a
-    home dotdir matched by :func:`find_maybe_sensitive_paths`) turns out
-    to be an ancestor of somewhere the sandbox must be able to read, such as
-    the interpreter running the sandboxed code. Rather than exempting the
-    whole directory — which could also expose unrelated sensitive data living
-    next to it (e.g. ``~/.local/share/keyrings`` beside
-    ``~/.local/share/uv``) — this walks from *root* down to each keep target
-    and denies every sibling encountered along the way, so only the exact
-    path to the keep target opens up.
+    Rather than exempting *root* wholesale — which could also expose
+    unrelated sensitive data living next to a keep target (e.g.
+    ``~/.local/share/keyrings`` beside ``~/.local/share/uv``) — this walks
+    from *root* down to each keep target and denies every sibling
+    encountered along the way, so only the exact path to the keep target
+    opens up.
     """
     relevant_keep_paths = [keep for keep in keep_paths if _is_within(root, keep)]
     deny_paths: list[str] = []
@@ -63,14 +60,10 @@ def find_maybe_sensitive_paths() -> list[str]:
     macOS locations that don't follow the dotfile convention: Keychain,
     and WebKit/browser cookie jars under ``~/Library``.
 
-    If one of those directories turns out to be an ancestor of the Python
-    interpreter running the sandbox itself (pyenv/uv/rye commonly install
-    interpreters under a home dotdir, e.g. ``~/.local`` or ``~/.pyenv``), it
-    is not exempted outright — that would also reopen unrelated sensitive
-    data that might live alongside the toolchain. Instead only a minimal
-    read corridor down to the interpreter is carved out via
-    :func:`_corridor_deny_paths`, keeping everything else in that directory
-    denied.
+    Never denies a path the sandboxed Python interpreter needs to start up
+    (see :func:`_interpreter_startup_paths`), even one living under an
+    otherwise-denied dotdir (pyenv/uv/rye commonly install interpreters
+    under e.g. ``~/.local`` or ``~/.pyenv``).
     """
     home = os.path.realpath(os.path.expanduser("~"))
     candidate_paths: list[str] = []
@@ -87,14 +80,14 @@ def find_maybe_sensitive_paths() -> list[str]:
 
     interpreter_paths = [os.path.realpath(path) for path in _interpreter_startup_paths()]
 
-    deny_paths: list[str] = []
+    maybe_sensitive_paths: list[str] = []
     for candidate in candidate_paths:
         if not os.path.exists(candidate):
             continue
         resolved = os.path.realpath(candidate)
         if any(_is_within(resolved, keep) for keep in interpreter_paths):
-            deny_paths.extend(_corridor_deny_paths(resolved, interpreter_paths))
+            maybe_sensitive_paths.extend(_corridor_deny_paths(resolved, interpreter_paths))
         else:
-            deny_paths.append(resolved)
+            maybe_sensitive_paths.append(resolved)
 
-    return deny_paths
+    return maybe_sensitive_paths

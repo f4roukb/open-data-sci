@@ -33,7 +33,7 @@ from sandbox_runtime import SandboxManager, SandboxRuntimeConfig
 from sandbox_runtime.utils.platform import get_platform
 
 from opendatasci._utils.accelerator_utils import discover_accelerator_devices
-from opendatasci._utils.credential_utils import find_maybe_sensitive_paths
+from opendatasci._utils.fs_utils import find_maybe_sensitive_paths
 from opendatasci._utils.package_extras_utils import is_deep_learning_extra_active
 from opendatasci.sandbox.base import (
     BaseSandbox,
