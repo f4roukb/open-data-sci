@@ -290,7 +290,7 @@ class TestPushTaskProgress:
         # behavior is that this doesn't raise.
 
 
-class TestWatchCompletions:
+class TestListenTaskUpdates:
     @pytest.mark.asyncio
     async def test_yields_completed_task(self) -> None:
         manager = LocalAgentTaskManager()
@@ -300,7 +300,7 @@ class TestWatchCompletions:
 
         task_id = await manager.submit_task(_work, summary="s")
 
-        watcher = manager.watch_completions()
+        watcher = manager.listen_task_updates()
         record = await asyncio.wait_for(watcher.__anext__(), timeout=1)
         assert record.task_id == task_id
         assert record.status == AgentTaskStatus.COMPLETED
@@ -313,14 +313,14 @@ class TestWatchCompletions:
             raise RuntimeError("boom")
 
         await manager.submit_task(_fails, summary="s")
-        watcher = manager.watch_completions()
+        watcher = manager.listen_task_updates()
         record = await asyncio.wait_for(watcher.__anext__(), timeout=1)
         assert record.status == AgentTaskStatus.FAILED
 
     @pytest.mark.asyncio
     async def test_blocks_until_next_completion(self) -> None:
         manager = LocalAgentTaskManager()
-        watcher = manager.watch_completions()
+        watcher = manager.listen_task_updates()
 
         pending = asyncio.ensure_future(watcher.__anext__())
         await asyncio.sleep(0.05)
@@ -334,14 +334,14 @@ class TestWatchCompletions:
         assert record.status == AgentTaskStatus.COMPLETED
 
 
-class TestContextUpdates:
+class TestTaskUpdates:
     @pytest.mark.asyncio
-    async def test_has_context_updates_false_by_default(self) -> None:
+    async def test_has_task_updates_false_by_default(self) -> None:
         manager = LocalAgentTaskManager()
-        assert manager.has_context_updates() is False
+        assert manager.has_task_updates() is False
 
     @pytest.mark.asyncio
-    async def test_completed_task_becomes_a_context_update(self) -> None:
+    async def test_completed_task_becomes_a_task_update(self) -> None:
         manager = LocalAgentTaskManager()
 
         async def _work(task_id: object) -> str:
@@ -350,12 +350,12 @@ class TestContextUpdates:
         task_id = await manager.submit_task(_work, summary="s")
         await asyncio.sleep(0)
 
-        assert manager.has_context_updates() is True
-        records = await manager.drain_context_updates()
+        assert manager.has_task_updates() is True
+        records = await manager.gather_task_updates()
         assert [r.task_id for r in records] == [task_id]
 
     @pytest.mark.asyncio
-    async def test_multiple_completions_accumulate_and_drain_together(self) -> None:
+    async def test_multiple_completions_accumulate_and_gather_together(self) -> None:
         manager = LocalAgentTaskManager()
 
         async def _work(task_id: object) -> str:
@@ -365,11 +365,11 @@ class TestContextUpdates:
         id2 = await manager.submit_task(_work, summary="two")
         await asyncio.sleep(0)
 
-        records = await manager.drain_context_updates()
+        records = await manager.gather_task_updates()
         assert {r.task_id for r in records} == {id1, id2}
 
     @pytest.mark.asyncio
-    async def test_drain_clears_the_buffer(self) -> None:
+    async def test_gather_clears_the_buffer(self) -> None:
         manager = LocalAgentTaskManager()
 
         async def _work(task_id: object) -> str:
@@ -378,13 +378,13 @@ class TestContextUpdates:
         await manager.submit_task(_work, summary="s")
         await asyncio.sleep(0)
 
-        await manager.drain_context_updates()
+        await manager.gather_task_updates()
 
-        assert manager.has_context_updates() is False
-        assert await manager.drain_context_updates() == []
+        assert manager.has_task_updates() is False
+        assert await manager.gather_task_updates() == []
 
     @pytest.mark.asyncio
-    async def test_failed_and_cancelled_tasks_are_also_context_updates(self) -> None:
+    async def test_failed_and_cancelled_tasks_are_also_task_updates(self) -> None:
         manager = LocalAgentTaskManager()
         started = asyncio.Event()
 
@@ -404,12 +404,12 @@ class TestContextUpdates:
         await manager.cancel_task(hang_id)
         await asyncio.sleep(0)
 
-        records = await manager.drain_context_updates()
+        records = await manager.gather_task_updates()
         assert {r.status for r in records} == {AgentTaskStatus.FAILED, AgentTaskStatus.CANCELLED}
 
     @pytest.mark.asyncio
-    async def test_independent_of_watch_completions(self) -> None:
-        # Draining one buffer must not consume the other: both observe the
+    async def test_independent_of_listen_task_updates(self) -> None:
+        # Gathering must not consume the listener's stream: both observe the
         # same completions, but each has its own consumer.
         manager = LocalAgentTaskManager()
 
@@ -418,10 +418,10 @@ class TestContextUpdates:
 
         task_id = await manager.submit_task(_work, summary="s")
 
-        watcher = manager.watch_completions()
-        watched_record = await asyncio.wait_for(watcher.__anext__(), timeout=1)
-        assert watched_record.task_id == task_id
+        listener = manager.listen_task_updates()
+        listened_record = await asyncio.wait_for(listener.__anext__(), timeout=1)
+        assert listened_record.task_id == task_id
 
-        assert manager.has_context_updates() is True
-        drained = await manager.drain_context_updates()
-        assert [r.task_id for r in drained] == [task_id]
+        assert manager.has_task_updates() is True
+        gathered = await manager.gather_task_updates()
+        assert [r.task_id for r in gathered] == [task_id]
