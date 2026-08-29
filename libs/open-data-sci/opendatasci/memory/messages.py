@@ -43,7 +43,9 @@ class UserMessage(HumanMessage, RenderableMessageMixin["UserMessage"]):
     @classmethod
     def _validate_content_blocks(cls, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not all(isinstance(block, dict) and "type" in block for block in blocks):
-            raise ValueError("content must be a list of content-block dicts, each with a 'type' key")
+            raise ValueError(
+                "content must be a list of content-block dicts, each with a 'type' key"
+            )
         return blocks
 
     def _get_content(self) -> list[dict[str, Any]]:
@@ -71,7 +73,9 @@ class CompactionMessage(HumanMessage, RenderableMessageMixin["CompactionMessage"
     @classmethod
     def _validate_content_blocks(cls, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not all(isinstance(block, dict) and "type" in block for block in blocks):
-            raise ValueError("content must be a list of content-block dicts, each with a 'type' key")
+            raise ValueError(
+                "content must be a list of content-block dicts, each with a 'type' key"
+            )
         return blocks
 
     def _get_content(self) -> list[dict[str, Any]]:
@@ -99,7 +103,9 @@ class AgentToAgentMessage(HumanMessage, RenderableMessageMixin["AgentToAgentMess
     @classmethod
     def _validate_content_blocks(cls, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not all(isinstance(block, dict) and "type" in block for block in blocks):
-            raise ValueError("content must be a list of content-block dicts, each with a 'type' key")
+            raise ValueError(
+                "content must be a list of content-block dicts, each with a 'type' key"
+            )
         return blocks
 
     def _get_content(self) -> list[dict[str, Any]]:
@@ -127,7 +133,9 @@ class TaskMessage(HumanMessage, RenderableMessageMixin["TaskMessage"]):
     @classmethod
     def _validate_content_blocks(cls, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not all(isinstance(block, dict) and "type" in block for block in blocks):
-            raise ValueError("content must be a list of content-block dicts, each with a 'type' key")
+            raise ValueError(
+                "content must be a list of content-block dicts, each with a 'type' key"
+            )
         return blocks
 
     def _get_content(self) -> list[dict[str, Any]]:
@@ -157,7 +165,9 @@ class SummaryMessage(HumanMessage, RenderableMessageMixin["SummaryMessage"]):
     @classmethod
     def _validate_content_blocks(cls, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not all(isinstance(block, dict) and "type" in block for block in blocks):
-            raise ValueError("content must be a list of content-block dicts, each with a 'type' key")
+            raise ValueError(
+                "content must be a list of content-block dicts, each with a 'type' key"
+            )
         return blocks
 
     def _get_content(self) -> list[dict[str, Any]]:
@@ -195,7 +205,9 @@ class PlanMessage(HumanMessage, RenderableMessageMixin["PlanMessage"]):
     @classmethod
     def _validate_content_blocks(cls, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not all(isinstance(block, dict) and "type" in block for block in blocks):
-            raise ValueError("content must be a list of content-block dicts, each with a 'type' key")
+            raise ValueError(
+                "content must be a list of content-block dicts, each with a 'type' key"
+            )
         return blocks
 
     def _get_content(self) -> list[dict[str, Any]]:

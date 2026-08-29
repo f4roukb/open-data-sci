@@ -87,7 +87,11 @@ class WorkerAgent:
         """Execute *task* to completion and return the final text response."""
         self._current_system_prompt = system_prompt
         initial_state = AgentState(
-            messages=[AgentToAgentMessage(content=to_text_content_blocks(task), origin=MessageOrigin.AGENT)],
+            messages=[
+                AgentToAgentMessage(
+                    content=to_text_content_blocks(task), origin=MessageOrigin.AGENT
+                )
+            ],
             active_skills=list(initial_active_skills or []),
             active_skill_domains=list(initial_active_skill_domains or []),
         )

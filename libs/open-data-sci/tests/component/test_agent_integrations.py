@@ -300,7 +300,7 @@ class TestTurnSummarizerIntegration:
         # The flushed summary carries the turn details.
         assert record is not None
         recap = agent._chat_history_builder._build_summary_messages([record])
-        formatted = recap[0].content
+        formatted = recap[0].content[0]["text"]
         assert "Asked to greet" in formatted
         assert "The agent said hello" in formatted
 
@@ -320,5 +320,5 @@ class TestTurnSummarizerIntegration:
         # using the raw query and explanation text.
         assert record is not None
         recap = agent._chat_history_builder._build_summary_messages([record])
-        assert "Greet me!" in recap[0].content
+        assert "Greet me!" in recap[0].content[0]["text"]
 

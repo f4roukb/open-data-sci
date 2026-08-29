@@ -299,7 +299,9 @@ class Agent(BaseOpenDataSciAgent):
 
     @classmethod
     def _prepare_user_message(cls, query: str) -> UserMessage:
-        return UserMessage(content=to_text_content_blocks(query), created_at=datetime.now(timezone.utc))
+        return UserMessage(
+            content=to_text_content_blocks(query), created_at=datetime.now(timezone.utc)
+        )
 
     @classmethod
     def _prepare_batch_messages(cls, items: list[Invocation]) -> list[BaseMessage]:

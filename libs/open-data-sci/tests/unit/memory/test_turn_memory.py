@@ -4,7 +4,7 @@
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
 from opendatasci._utils.message_utils import to_text_content_blocks
-from opendatasci.memory.messages import AgentMessage, UserMessage
+from opendatasci.memory.messages import AgentMessage, TaskMessage, UserMessage
 from opendatasci.memory.turn_memory import TurnRewinder
 
 
@@ -145,3 +145,48 @@ class TestTurnRewinder:
         messages = [AgentMessage(content="x")]
         result = self.rewinder.rewind_last_turn(messages)
         assert result is not messages
+
+    # ------------------------------------------------------------------
+    # Batched openers: TaskMessage(s) + UserMessage in one opener
+    # ------------------------------------------------------------------
+
+    def test_task_message_in_opener_is_kept_by_default(self) -> None:
+        messages = [
+            TaskMessage(content=to_text_content_blocks("worker result")),
+            UserMessage(content=to_text_content_blocks("hi")),
+            AgentMessage(content="there"),
+        ]
+        result = self.rewinder.rewind_last_turn(messages)
+        assert len(result) == 1
+        assert isinstance(result[0], TaskMessage)
+
+    def test_task_message_in_opener_is_kept_with_keep_user_message(self) -> None:
+        messages = [
+            TaskMessage(content=to_text_content_blocks("worker result")),
+            UserMessage(content=to_text_content_blocks("hi")),
+            AgentMessage(content="there"),
+        ]
+        result = self.rewinder.rewind_last_turn(messages, keep_user_message=True)
+        assert len(result) == 2
+        assert isinstance(result[0], TaskMessage)
+        assert isinstance(result[1], UserMessage)
+
+    def test_task_only_opener_is_kept(self) -> None:
+        messages = [
+            TaskMessage(content=to_text_content_blocks("worker result")),
+            AgentMessage(content="there"),
+        ]
+        result = self.rewinder.rewind_last_turn(messages)
+        assert len(result) == 1
+        assert isinstance(result[0], TaskMessage)
+
+    def test_task_message_in_ongoing_opener_is_kept(self) -> None:
+        messages = [
+            TaskMessage(content=to_text_content_blocks("worker result")),
+            UserMessage(content=to_text_content_blocks("ongoing")),
+            AgentMessage(content="", tool_calls=[{"id": "1", "name": "tool", "args": {}}]),
+            ToolMessage(content="tool result", tool_call_id="1"),
+        ]
+        result = self.rewinder.rewind_last_turn(messages)
+        assert len(result) == 1
+        assert isinstance(result[0], TaskMessage)

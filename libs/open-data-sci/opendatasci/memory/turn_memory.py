@@ -8,7 +8,7 @@ from langchain_core.messages.utils import count_tokens_approximately
 from pydantic import BaseModel
 
 from opendatasci._utils.message_utils import render_turn
-from opendatasci.memory.messages import is_ongoing_turn
+from opendatasci.memory.messages import TaskMessage, is_ongoing_turn
 from opendatasci.prompts.prompt_templates import MIDTURN_COMPACTOR_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -98,16 +98,19 @@ class TurnRewinder:
         in-progress turn (started but no final agent response yet) is treated
         the same as a completed one.
 
-        By default the message(s) that opened the turn are also dropped.
-        Pass ``keep_user_message=True`` to retain them and drop only the
-        agent response and any intermediate tool messages. A turn may open
-        with more than one leading message; the whole run is treated as
-        one opener.
+        By default the message(s) that opened the turn are also dropped,
+        **except** any :class:`~opendatasci.memory.messages.TaskMessage` —
+        a background task's result is never the user's to discard, so it is
+        always retained. Pass ``keep_user_message=True`` to additionally
+        retain the non-task opener message(s) and drop only the agent
+        response and any intermediate tool messages. A turn may open with
+        more than one leading message; the whole run is treated as one
+        opener.
 
         Args:
             chat_history: The full conversation message list.
-            keep_user_message: When ``True``, the messages that opened
-                the last turn are retained. Defaults to ``False``.
+            keep_user_message: When ``True``, the non-task messages that
+                opened the last turn are also retained. Defaults to ``False``.
 
         Returns:
             A new list with the last turn removed, or a copy of
@@ -129,5 +132,6 @@ class TurnRewinder:
         while start_idx > 0 and isinstance(chat_history[start_idx - 1], HumanMessage):
             start_idx -= 1
 
-        cut = end_of_opener + 1 if keep_user_message else start_idx
-        return list(chat_history[:cut])
+        opener = chat_history[start_idx : end_of_opener + 1]
+        kept_opener = [msg for msg in opener if isinstance(msg, TaskMessage) or keep_user_message]
+        return list(chat_history[:start_idx]) + kept_opener
