@@ -258,7 +258,7 @@ class Agent(BaseOpenDataSciAgent):
 
         Exposed so a caller driving this agent (the TUI, or a hosted-service
         equivalent) can watch for background-task completions via
-        :meth:`AgentTaskManagerBase.watch_completions`.
+        :meth:`AgentTaskManagerBase.listen_task_updates`.
         """
         return self._agent_task_manager  # type: ignore[return-value]
 

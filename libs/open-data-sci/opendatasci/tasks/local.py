@@ -123,13 +123,13 @@ class LocalAgentTaskManager(AgentTaskManagerBase):
         )
         await self.upsert_record(record)
 
-    async def watch_completions(self) -> AsyncIterator[AgentTaskRecord]:
+    async def listen_task_updates(self) -> AsyncIterator[AgentTaskRecord]:
         while True:
             yield await self._completions.get()
 
-    async def drain_context_updates(self) -> list[AgentTaskRecord]:
+    async def gather_task_updates(self) -> list[AgentTaskRecord]:
         records, self._context_updates = self._context_updates, []
         return records
 
-    def has_context_updates(self) -> bool:
+    def has_task_updates(self) -> bool:
         return bool(self._context_updates)
