@@ -495,21 +495,6 @@ class TestAgentConversation:
 
 
 # ---------------------------------------------------------------------------
-# Callbacks
-# ---------------------------------------------------------------------------
-
-
-class TestAgentInterruptState:
-    async def test_prepare_user_message_records_query_and_timestamp_in_metadata(self) -> None:
-        async with _make_agent_ctx() as agent:
-            msg = agent._prepare_user_message("hello")
-            assert msg.content == to_text_content_blocks("hello")
-            assert msg.created_at is not None
-            assert isinstance(msg, UserMessage)
-            assert msg.is_input_on_interrupt is False
-
-
-# ---------------------------------------------------------------------------
 # Constructor — explicit-dependency branches
 # ---------------------------------------------------------------------------
 
@@ -557,32 +542,6 @@ class TestActiveLlmWithToolsDispatch:
                 )
                 is agent._llm_with_tools_self_review
             )
-
-
-# ---------------------------------------------------------------------------
-# _prepare_user_message
-# ---------------------------------------------------------------------------
-
-
-class TestPrepareUserMessage:
-    async def test_prepare_user_message_records_timestamp_in_metadata(self) -> None:
-        async with _make_agent_ctx() as agent:
-            msg = agent._prepare_user_message("a query")
-            assert msg.created_at is not None
-
-    async def test_prepare_user_message_returns_user_message_marked_not_interrupt(self) -> None:
-        async with _make_agent_ctx() as agent:
-            msg = agent._prepare_user_message("hello")
-            assert isinstance(msg, UserMessage)
-            assert msg.content == to_text_content_blocks("hello")
-            assert msg.is_input_on_interrupt is False
-
-    async def test_prepare_user_message_uses_session_id_not_per_turn_uuid(self) -> None:
-        async with _make_agent_ctx() as agent:
-            session_id = agent._session_id
-            agent._prepare_user_message("first")
-            agent._prepare_user_message("second")
-            assert agent._session_id == session_id
 
 
 # ---------------------------------------------------------------------------

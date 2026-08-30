@@ -312,12 +312,6 @@ class Agent(BaseOpenDataSciAgent):
         ).build()
 
     @classmethod
-    def _prepare_user_message(cls, query: str) -> UserMessage:
-        return UserMessage(
-            content=to_text_content_blocks(query), created_at=datetime.now(timezone.utc)
-        )
-
-    @classmethod
     def _message_from_invocation(cls, item: Invocation) -> BaseMessage:
         match item.origin:
             case MessageOrigin.USER:
