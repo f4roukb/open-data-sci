@@ -1,12 +1,23 @@
 """Unit tests for opendatasci.agents.graph."""
 
 
+from typing import Any, Optional
 from unittest.mock import MagicMock
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
 from opendatasci.agents.graphs import AgentGraphFactory
+from opendatasci.agents.nodes import BaseNode
+from opendatasci.agents.states import AgentState
+
+
+class _StubTaskUpdateSyncNode(BaseNode):
+    async def ainvoke(
+        self, state: AgentState, config: Optional[RunnableConfig] = None
+    ) -> dict[str, Any]:
+        return {}
 
 
 def _make_builder(**kwargs) -> AgentGraphFactory:
@@ -60,17 +71,11 @@ class TestAgentGraphFactory:
         assert "sync_task_updates" not in graph.nodes
 
     def test_sync_task_updates_node_added_when_supplied(self) -> None:
-        async def sync_task_updates(state, config=None) -> dict:
-            return {}
-
-        graph = _make_builder(sync_task_updates=sync_task_updates).build()
+        graph = _make_builder(task_update_sync_node=_StubTaskUpdateSyncNode()).build()
         assert "sync_task_updates" in graph.nodes
 
     def test_sync_task_updates_sits_between_tools_and_agent(self) -> None:
-        async def sync_task_updates(state, config=None) -> dict:
-            return {}
-
-        graph = _make_builder(sync_task_updates=sync_task_updates).build()
+        graph = _make_builder(task_update_sync_node=_StubTaskUpdateSyncNode()).build()
         graph_repr = graph.get_graph()
         edges = {(e.source, e.target) for e in graph_repr.edges}
         assert ("tools", "sync_task_updates") in edges

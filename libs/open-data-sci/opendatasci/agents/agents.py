@@ -30,6 +30,7 @@ from opendatasci._utils.streaming_utils import format_stream_error
 from opendatasci.agents.chat_history import ChatHistoryBuilder
 from opendatasci.agents.graphs import AgentCompiledGraph, AgentGraphFactory
 from opendatasci.agents.interrupts import InterruptKind
+from opendatasci.agents.nodes import TaskUpdateSyncNode
 from opendatasci.agents.states import AgentState
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.base import BaseContextStore
@@ -254,6 +255,10 @@ class Agent(BaseOpenDataSciAgent):
             context_store=self._context_store,
             session_id=self._session_id,
         )
+        self._task_update_sync_node = TaskUpdateSyncNode(
+            agent_task_manager=self._agent_task_manager,
+            task_message_from_record=self._task_message_from_record,
+        )
 
         self._graph: AgentCompiledGraph = self._build_graph(checkpointer)
         return self
@@ -304,17 +309,8 @@ class Agent(BaseOpenDataSciAgent):
             build_system_context=self._build_system_context,
             chat_history_builder=self._chat_history_builder,
             checkpointer=checkpointer,
-            sync_task_updates=self._sync_task_updates_node,
+            task_update_sync_node=self._task_update_sync_node,
         ).build()
-
-    async def _sync_task_updates_node(
-        self, state: AgentState, config: RunnableConfig | None = None
-    ) -> dict[str, Any]:
-        """Graph node sitting on ``tools -> agent``: fold any finished background tasks in mid-turn."""
-        records = await self._agent_task_manager.gather_task_updates()  # type: ignore[union-attr]
-        if not records:
-            return {}
-        return {"messages": [self._task_message_from_record(record) for record in records]}
 
     @classmethod
     def _prepare_user_message(cls, query: str) -> UserMessage:

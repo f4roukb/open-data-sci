@@ -6,9 +6,10 @@ from unittest.mock import AsyncMock, MagicMock
 from langchain_core.messages import AIMessage, SystemMessage
 
 from opendatasci._utils.message_utils import get_message_text_content, to_text_content_blocks
-from opendatasci.agents.nodes import AgentNode
+from opendatasci.agents.nodes import AgentNode, TaskUpdateSyncNode
 from opendatasci.agents.states import AgentState
-from opendatasci.memory.messages import AgentMessage, UserMessage
+from opendatasci.memory.messages import AgentMessage, TaskMessage, UserMessage
+from opendatasci.tasks.local import LocalAgentTaskManager
 
 
 def _make_state(messages: list | None = None) -> AgentState:
@@ -231,3 +232,65 @@ class TestAgentNodeWithCompaction:
         await node.ainvoke(_make_state([UserMessage(content=to_text_content_blocks("original"))]))
         called_messages = llm.ainvoke.call_args[0][0]
         assert called_messages == compacted
+
+
+# ---------------------------------------------------------------------------
+# TaskUpdateSyncNode — folds finished background tasks into context mid-turn
+# ---------------------------------------------------------------------------
+
+
+def _make_task_record(summary: str = "s", result: object = "r", status: object = None):
+    import uuid
+
+    from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
+
+    return AgentTaskRecord(
+        task_id=uuid.uuid4(),
+        summary=summary,
+        status=status or AgentTaskStatus.COMPLETED,
+        result=result,
+    )
+
+
+def _record_to_task_message(record) -> TaskMessage:
+    return TaskMessage(content=to_text_content_blocks(f"{record.summary}: {record.result}"))
+
+
+class TestTaskUpdateSyncNode:
+    async def test_returns_empty_dict_when_nothing_to_drain(self) -> None:
+        node = TaskUpdateSyncNode(
+            agent_task_manager=LocalAgentTaskManager(),
+            task_message_from_record=_record_to_task_message,
+        )
+        assert await node.ainvoke(_make_state()) == {}
+
+    async def test_drains_and_wraps_records_as_task_messages(self) -> None:
+        manager = LocalAgentTaskManager()
+        record = _make_task_record(summary="mid-turn work", result="done")
+        manager._context_updates.append(record)
+        node = TaskUpdateSyncNode(
+            agent_task_manager=manager,
+            task_message_from_record=_record_to_task_message,
+        )
+
+        result = await node.ainvoke(_make_state())
+
+        assert len(result["messages"]) == 1
+        assert isinstance(result["messages"][0], TaskMessage)
+        assert "mid-turn work" in result["messages"][0].content[0]["text"]
+        # The buffer is drained — a second call finds nothing left.
+        assert await node.ainvoke(_make_state()) == {}
+
+    async def test_multiple_records_all_wrapped(self) -> None:
+        manager = LocalAgentTaskManager()
+        manager._context_updates.append(_make_task_record(summary="a"))
+        manager._context_updates.append(_make_task_record(summary="b"))
+        node = TaskUpdateSyncNode(
+            agent_task_manager=manager,
+            task_message_from_record=_record_to_task_message,
+        )
+
+        result = await node.ainvoke(_make_state())
+
+        assert len(result["messages"]) == 2
+        assert all(isinstance(m, TaskMessage) for m in result["messages"])

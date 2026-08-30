@@ -7,8 +7,9 @@ from langchain_core.runnables import RunnableConfig
 from opendatasci._utils.mixins import RenderableMessageMixin
 from opendatasci.agents.chat_history import ChatHistoryBuilder
 from opendatasci.agents.states import AgentState
-from opendatasci.memory.messages import AgentMessage
+from opendatasci.memory.messages import AgentMessage, TaskMessage
 from opendatasci.models.factory import _RetryRunnable
+from opendatasci.tasks.base import AgentTaskManagerBase, AgentTaskRecord
 
 BuildSystemContext = Callable[[AgentState], list[SystemMessage]]
 
@@ -76,3 +77,30 @@ class AgentNode(BaseNode):
         response = AgentMessage.from_langchain(_raw)
         updates["messages"] = [response]
         return updates
+
+
+class TaskUpdateSyncNode(BaseNode):
+    """Graph node that folds finished background tasks into context mid-turn.
+
+    Sits on the ``tools -> agent`` edge: drains whatever background tasks
+    completed since the last drain from *agent_task_manager* and turns each
+    into a message via *task_message_from_record*, so a task that finishes
+    mid-turn is woven into context before the next reasoning step rather
+    than waiting for the turn to end.
+    """
+
+    def __init__(
+        self,
+        agent_task_manager: AgentTaskManagerBase,
+        task_message_from_record: Callable[[AgentTaskRecord], TaskMessage],
+    ) -> None:
+        self._agent_task_manager = agent_task_manager
+        self._task_message_from_record = task_message_from_record
+
+    async def ainvoke(
+        self, state: AgentState, config: Optional[RunnableConfig] = None
+    ) -> dict[str, Any]:
+        records = await self._agent_task_manager.gather_task_updates()
+        if not records:
+            return {}
+        return {"messages": [self._task_message_from_record(record) for record in records]}

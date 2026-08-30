@@ -842,28 +842,6 @@ class TestAstreamDrainsTaskManagerAtTurnStart:
             assert isinstance(messages[0], UserMessage)
 
 
-class TestSyncTaskUpdatesNode:
-    async def test_returns_empty_dict_when_nothing_to_drain(self) -> None:
-        async with _make_agent_ctx() as agent:
-            result = await agent._sync_task_updates_node(MagicMock())
-            assert result == {}
-
-    async def test_drains_and_wraps_records_as_task_messages(self) -> None:
-        from opendatasci.tasks.local import LocalAgentTaskManager
-
-        manager = LocalAgentTaskManager()
-        record = _make_task_record(summary="mid-turn work", result="done")
-        manager._context_updates.append(record)
-
-        async with _agent_with_overrides_ctx(agent_task_manager=manager) as agent:
-            result = await agent._sync_task_updates_node(MagicMock())
-            assert len(result["messages"]) == 1
-            assert isinstance(result["messages"][0], TaskMessage)
-            assert "mid-turn work" in result["messages"][0].content[0]["text"]
-            # The buffer is drained — a second call finds nothing left.
-            assert await agent._sync_task_updates_node(MagicMock()) == {}
-
-
 # ===========================================================================
 # WorkerAgent (opendatasci.agents.agents.WorkerAgent)
 # ===========================================================================

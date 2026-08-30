@@ -907,38 +907,6 @@ async def _aiter(*events: AgentStreamEvent):
         yield e
 
 
-class TestFormatCompletionDisplay:
-    def test_completed_task_includes_result(self) -> None:
-        from opendatasci._tui.controller import _format_completion_display
-        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
-
-        record = AgentTaskRecord(
-            task_id=uuid4(), summary="my task", status=AgentTaskStatus.COMPLETED, result="the answer"
-        )
-        display = _format_completion_display(record)
-        assert "my task" in display
-        assert "the answer" in display
-
-    def test_failed_task_includes_error(self) -> None:
-        from opendatasci._tui.controller import _format_completion_display
-        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
-
-        record = AgentTaskRecord(
-            task_id=uuid4(), summary="my task", status=AgentTaskStatus.FAILED, error="boom"
-        )
-        display = _format_completion_display(record)
-        assert "failed" in display.lower()
-        assert "boom" in display
-
-    def test_cancelled_task_reported(self) -> None:
-        from opendatasci._tui.controller import _format_completion_display
-        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
-
-        record = AgentTaskRecord(task_id=uuid4(), summary="my task", status=AgentTaskStatus.CANCELLED)
-        display = _format_completion_display(record)
-        assert "cancelled" in display.lower()
-
-
 class TestBackgroundTaskWatcher:
     @staticmethod
     def _completions(*records):
@@ -969,9 +937,10 @@ class TestBackgroundTaskWatcher:
         # with an empty batch; the agent drains its own task manager.
         assert mock_service.astream.call_args[0][0] == []
 
-    async def test_shows_completion_message_when_idle(
+    async def test_no_chat_message_shown_for_raw_completion(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
+        """The raw completion is never surfaced as a chat bubble — only the agent's own response is."""
         from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
 
         record = AgentTaskRecord(
@@ -985,7 +954,7 @@ class TestBackgroundTaskWatcher:
 
         await loaded_controller._watch_background_tasks()
 
-        mock_ui.add_message.assert_any_call("agent", "Background task 's' finished:\n\ndone")
+        mock_ui.add_message.assert_not_called()
 
     async def test_no_new_turn_when_turn_in_progress(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
@@ -1006,7 +975,7 @@ class TestBackgroundTaskWatcher:
         # (or the next turn's start) will pick the result up on its own.
         assert loaded_controller._pending_queue.is_empty()
         assert not mock_service.astream.called
-        mock_ui.add_message.assert_any_call("agent", "Background task 's' finished:\n\ndone")
+        mock_ui.add_message.assert_not_called()
 
     async def test_no_new_turn_while_interrupted(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
