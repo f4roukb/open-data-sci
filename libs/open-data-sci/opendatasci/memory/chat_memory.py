@@ -15,7 +15,11 @@ from opendatasci._utils.message_utils import (
     render_turn,
 )
 from opendatasci._utils.mixins import LLMDigestibleMixin
-from opendatasci._utils.pydantic_utils import FrozenBaseModel, FrozenStrictBaseModel, MutableStrictBaseModel
+from opendatasci._utils.pydantic_utils import (
+    FrozenBaseModel,
+    FrozenStrictBaseModel,
+    MutableStrictBaseModel,
+)
 from opendatasci.memory.messages import (
     TaskMessage,
     UserMessage,
@@ -51,7 +55,7 @@ class TurnStepBatchSummary(FrozenStrictBaseModel):
     def render(self, index: int) -> str:
         artifacts = "; ".join(self.artifacts) if self.artifacts else "none"
         return (
-            f"    <batch index=\"{index}\">\n"
+            f'    <batch index="{index}">\n'
             f"      <goal>{self.goal}</goal>\n"
             f"      <actions>{self.actions}</actions>\n"
             f"      <outcome>{self.outcome}</outcome>\n"
@@ -120,9 +124,7 @@ _MAX_STEP_BATCHES: int = 16
 
 
 class _TurnStepBatchSummaryOutput(FrozenBaseModel):
-    goal: str = Field(
-        description="One sentence: what sub-goal was this batch of steps pursuing?"
-    )
+    goal: str = Field(description="One sentence: what sub-goal was this batch of steps pursuing?")
     actions: str = Field(
         description="What actions the agent took to get there — approaches or tools used. May span several steps."
     )
@@ -150,7 +152,7 @@ class _ChatTurnSummaryOutput(FrozenBaseModel):
             f"only when the apparent sub-goal changes. Keep at most {_MAX_STEP_BATCHES} "
             "batches; if more occurred, keep the most consequential ones and fold the rest "
             "into the last batch's outcome."
-        )
+        ),
     )
 
 

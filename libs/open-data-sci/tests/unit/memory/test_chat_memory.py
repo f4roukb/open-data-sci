@@ -43,12 +43,12 @@ def _completed_turn(query: str = "my query", answer: str = "my answer") -> list[
 
 def _step_batch(
     goal: str = "did something",
-    attempted: str = "tried a tool",
+    actions: str = "tried a tool",
     outcome: str = "it worked",
     artifacts: list[str] | None = None,
 ) -> TurnStepBatchSummary:
     return TurnStepBatchSummary(
-        goal=goal, attempted=attempted, outcome=outcome, artifacts=artifacts or []
+        goal=goal, actions=actions, outcome=outcome, artifacts=artifacts or []
     )
 
 
@@ -81,7 +81,7 @@ class TestChatTurnSummary:
         s = _summary(
             user="What is X?",
             agent="X is Y.",
-            step_batches=[_step_batch(goal="find X", attempted="grepped for X", outcome="found it")],
+            step_batches=[_step_batch(goal="find X", actions="grepped for X", outcome="found it")],
         )
         content = s.to_content()
         assert "What is X?" in content
@@ -97,7 +97,7 @@ class TestChatTurnSummary:
         assert "<step_batches>" in content
         assert "<batch " in content
         assert "<goal>" in content
-        assert "<attempted>" in content
+        assert "<actions>" in content
         assert "<outcome>" in content
         assert "<artifacts>" in content
         assert "<agent_response>" in content
@@ -178,8 +178,8 @@ class TestChatTurnSummarizer:
         record = await s.summarize_turn(turn)
         assert record is not None
         assert len(record.step_batches) == 2
-        assert "read_file" in record.step_batches[0].attempted
-        assert "a.csv" in record.step_batches[0].attempted
+        assert "read_file" in record.step_batches[0].actions
+        assert "a.csv" in record.step_batches[0].actions
         assert record.step_batches[0].outcome == "contents of a.csv"
         assert record.step_batches[1].outcome == "contents of b.csv"
         assert record.step_batches[0].artifacts == []
@@ -206,7 +206,7 @@ class TestChatTurnSummarizer:
             return_value=_ChatTurnSummaryOutput(
                 step_batches=[
                     _TurnStepBatchSummaryOutput(
-                        goal="g", attempted="a", outcome="o", artifacts=[]
+                        goal="g", actions="a", outcome="o", artifacts=[]
                     )
                 ]
             )

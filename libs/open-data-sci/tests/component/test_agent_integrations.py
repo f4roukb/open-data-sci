@@ -313,7 +313,7 @@ class TestTurnSummarizerIntegration:
             step_batches=[
                 _TurnStepBatchSummaryOutput(
                     goal="Greet the user.",
-                    attempted="Replied directly, no tools used.",
+                    actions="Replied directly, no tools used.",
                     outcome="Said hello.",
                     artifacts=[],
                 )
