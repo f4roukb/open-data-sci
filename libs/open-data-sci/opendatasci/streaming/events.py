@@ -92,8 +92,7 @@ class SubagentEvent(BaseAgentStreamEvent):
 class InputRequiredEvent(BaseAgentStreamEvent):
     """The agent is paused at an interrupt and needs input from the user.
 
-    ``content`` is the question.  Call ``astream`` again with the user's
-    answer to resume.
+    ``content`` is the question.  Resume with ``resume_with_input(answer)``.
     """
 
     type: ClassVar[str] = "input_required"
@@ -106,8 +105,7 @@ class ApprovalRequiredEvent(BaseAgentStreamEvent):
 
     ``description`` is an LLM-generated plain-language summary of what the
     command does; ``heads_up`` warns about potential negative impact and is
-    empty when none was identified.  Call ``astream`` again with ``"yes"`` or
-    ``"no"`` to resume.
+    empty when none was identified.  Resume with ``resume_with_approval(approved)``.
     """
 
     type: ClassVar[str] = "approval_required"

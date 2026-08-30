@@ -27,6 +27,7 @@ class SubmitAction(str, Enum):
 
     NONE = ""
     RUN = "run"
+    RESUME_INPUT = "resume_input"
     QUIT = "quit"
 
 

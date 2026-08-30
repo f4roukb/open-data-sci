@@ -266,9 +266,14 @@ async for event in agent.astream(invocation):
             ok = event.metadata["success"]
             print(f"\n[worker {idx}] {'ok' if ok else 'failed'}")
         case "input_required":
-            # Agent needs a choice from the user — resume by calling astream() again
+            # Agent needs a choice from the user — resume with resume_with_input()
             choice = input(event.content + " ")
-            async for follow_up in agent.astream(Invocation.from_text(choice)):
+            async for follow_up in agent.resume_with_input(choice):
+                pass  # handle follow_up events as usual
+        case "approval_required":
+            # Agent needs yes/no approval before running a command — resume with resume_with_approval()
+            answer = input(event.content + " Allow? (y/n): ")
+            async for follow_up in agent.resume_with_approval(answer.strip().lower().startswith("y")):
                 pass  # handle follow_up events as usual
         case "response":
             # Final assembled answer — end of turn

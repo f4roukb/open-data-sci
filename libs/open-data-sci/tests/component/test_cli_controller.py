@@ -410,12 +410,12 @@ class TestChoicePrompt:
         assert ctrl.awaiting_choice is True
         assert "awaiting-choice" in ui.input_classes
 
-    async def test_letter_answer_returns_run_action(self):
+    async def test_letter_answer_returns_resume_input_action(self):
         svc = _make_service_stub()
         ctrl, _ = _make_controller(service=svc)
         await ctrl._show_choice_prompt("Pick one", ["red", "blue"])
         action, payload = await ctrl.on_submit("B")
-        assert action == "run"
+        assert action == "resume_input"
         assert payload == "blue"
         assert ctrl.awaiting_choice is False
 
@@ -429,7 +429,7 @@ class TestChoicePrompt:
         assert action == ""
         assert ctrl.awaiting_choice is True
         action, payload = await ctrl.on_submit("custom answer")
-        assert action == "run"
+        assert action == "resume_input"
         assert payload == "custom answer"
 
     async def test_cancel_choice_returns_cancel_string(self):

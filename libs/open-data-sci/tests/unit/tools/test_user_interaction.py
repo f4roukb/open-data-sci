@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
+from opendatasci.agents.interrupts import InterruptKind
 from opendatasci.tools.user_interaction import create_user_interaction_tools
 
 _ARGS = {"question": "Q?", "choice_a": "A", "choice_b": "B", "choice_c": "C", "summary": "s", "communication": "c"}
@@ -27,7 +28,13 @@ class TestAskUserMcq:
         tool = _get_tool()
         with patch("opendatasci.tools.user_interaction.interrupt", return_value="A") as mock_intr:
             await tool.ainvoke(_ARGS)
-        mock_intr.assert_called_once_with({"question": "Q?", "choices": ["A", "B", "C"]})
+        mock_intr.assert_called_once_with(
+            {
+                "kind": InterruptKind.INPUT_REQUIRED,
+                "question": "Q?",
+                "choices": ["A", "B", "C"],
+            }
+        )
 
     @pytest.mark.asyncio
     async def test_returns_interrupt_result(self) -> None:

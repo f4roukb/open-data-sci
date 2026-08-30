@@ -29,11 +29,11 @@ from opendatasci._utils.pydantic_utils import FrozenStrictBaseModel
 from opendatasci._utils.streaming_utils import format_stream_error
 from opendatasci.agents.chat_history import ChatHistoryBuilder
 from opendatasci.agents.graphs import AgentCompiledGraph, AgentGraphFactory
+from opendatasci.agents.interrupts import InterruptKind
 from opendatasci.agents.states import AgentState
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.base import BaseContextStore
 from opendatasci.context.local import LocalContextStore
-from opendatasci.human_inputs.human_approval import APPROVAL_INTERRUPT_KIND
 from opendatasci.memory.chat_memory import ChatHistoryCompactor
 from opendatasci.memory.messages import MessageOrigin, TaskMessage, UserMessage
 from opendatasci.memory.turn_memory import TurnRewinder
@@ -107,6 +107,15 @@ class BaseOpenDataSciAgent(ABC):
     def astream(
         self, invocation: Invocation | list[Invocation]
     ) -> AsyncIterator[AgentStreamEvent]: ...
+
+    @abstractmethod
+    def resume_with_input(self, answer: str) -> AsyncIterator[AgentStreamEvent]: ...
+
+    @abstractmethod
+    def resume_with_approval(self, approved: bool) -> AsyncIterator[AgentStreamEvent]: ...
+
+    @abstractmethod
+    def is_user_input_required(self) -> bool: ...
 
     @abstractmethod
     async def rewind_turn(self) -> None: ...
@@ -316,15 +325,35 @@ class Agent(BaseOpenDataSciAgent):
             *(UserMessage(content=item.content, created_at=item.created_at) for item in user_items),
         ]
 
-    @classmethod
-    def _resume_text(cls, items: list[Invocation]) -> str:
-        """Flatten every text block across *items* into a single plain string."""
-        return "\n".join(
-            block.get("text", "")
-            for item in items
-            for block in item.content
-            if isinstance(block, dict) and block.get("type") == "text"
-        ).strip()
+    def _thread_config(self, thread_id: Any) -> RunnableConfig:
+        return {
+            "recursion_limit": AGENT_RECURSION_LIMIT,
+            "configurable": {"thread_id": str(thread_id)},
+        }
+
+    @staticmethod
+    def _pending_interrupt_value(graph_state: Any) -> dict[str, Any] | None:
+        if not is_interrupt_state_snapshot(graph_state):
+            return None
+        return graph_state.tasks[0].interrupts[0].value  # type: ignore[no-any-return]
+
+    @staticmethod
+    def _is_approval_interrupt(intr_value: dict[str, Any]) -> bool:
+        return (
+            isinstance(intr_value, dict)
+            and intr_value.get("kind") == InterruptKind.APPROVAL_REQUIRED
+        )
+
+    def _require_pending_interrupt(self, *, approval: bool) -> None:
+        intr_value = self._pending_interrupt_value(self._graph.get_state(self._graph_config))
+        if intr_value is None:
+            raise RuntimeError(
+                "no interrupt is currently pending; call astream() to run a turn instead"
+            )
+        is_approval = self._is_approval_interrupt(intr_value)
+        if is_approval != approval:
+            expected = "resume_with_approval()" if is_approval else "resume_with_input()"
+            raise RuntimeError(f"a different kind of input is pending; call {expected} instead")
 
     # ------------------------------------------------------------------
     # Public API
@@ -335,34 +364,67 @@ class Agent(BaseOpenDataSciAgent):
     ) -> AsyncIterator[AgentStreamEvent]:
         """Stream a response to *invocation*, yielding :class:`AgentStreamEvent` objects.
 
-        If the previous call ended with an :class:`~opendatasci.streaming.InputRequiredEvent`,
-        pass the user's answer as a single :class:`Invocation` to resume; otherwise
-        *invocation* starts a new turn.
+        Starts (or continues) a turn. A list of :class:`Invocation` is **not**
+        several separate requests — it is one request whose items are all folded
+        into a single turn, producing exactly one response.
 
-        A list of :class:`Invocation` is **not** several separate requests — it is one
-        request whose items are all folded into a single turn, producing exactly one
-        response.
+        Raises :class:`RuntimeError` if the agent is currently paused awaiting a
+        response to an :class:`~opendatasci.streaming.InputRequiredEvent` or
+        :class:`~opendatasci.streaming.ApprovalRequiredEvent` — resume it with
+        :meth:`resume_with_input` or :meth:`resume_with_approval` instead.
         """
+        if self.is_user_input_required():
+            raise RuntimeError(
+                "the agent is awaiting a response to a pending question or approval "
+                "request; call resume_with_input() or resume_with_approval() instead"
+            )
         thread_id = self._session_manager.get_or_create_thread()  # type: ignore[union-attr]
-        config: RunnableConfig = {
-            "recursion_limit": AGENT_RECURSION_LIMIT,
-            "configurable": {"thread_id": str(thread_id)},
-        }
+        config = self._thread_config(thread_id)
         items = invocation if isinstance(invocation, list) else [invocation]
 
-        graph_state = self._graph.get_state(config)
-        if is_interrupt_state_snapshot(graph_state):
-            graph_input: Any = Command(resume=type(self)._resume_text(items))
-        else:
-            self._context_store.prune()  # type: ignore[union-attr]
-            graph_input = {
-                "messages": type(self)._prepare_batch_messages(items),
-                "active_skills": [],
-                "active_skill_domains": [],
-                "is_plan_mode": False,
-                "is_self_review_mode": False,
-            }
+        self._context_store.prune()  # type: ignore[union-attr]
+        graph_input: Any = {
+            "messages": type(self)._prepare_batch_messages(items),
+            "active_skills": [],
+            "active_skill_domains": [],
+            "is_plan_mode": False,
+            "is_self_review_mode": False,
+        }
 
+        async for event in self._stream_turn(graph_input, thread_id, config):
+            yield event
+
+    async def resume_with_input(self, answer: str) -> AsyncIterator[AgentStreamEvent]:
+        """Answer a pending :class:`~opendatasci.streaming.InputRequiredEvent` with *answer*.
+
+        Raises :class:`RuntimeError` if the agent isn't currently paused on a
+        free-text/choice question.
+        """
+        self._require_pending_interrupt(approval=False)
+        thread_id = self._session_manager.get_or_create_thread()  # type: ignore[union-attr]
+        config = self._thread_config(thread_id)
+        async for event in self._stream_turn(Command(resume=answer), thread_id, config):
+            yield event
+
+    async def resume_with_approval(self, approved: bool) -> AsyncIterator[AgentStreamEvent]:
+        """Answer a pending :class:`~opendatasci.streaming.ApprovalRequiredEvent` with *approved*.
+
+        Raises :class:`RuntimeError` if the agent isn't currently paused on a
+        command-approval request.
+        """
+        self._require_pending_interrupt(approval=True)
+        thread_id = self._session_manager.get_or_create_thread()  # type: ignore[union-attr]
+        config = self._thread_config(thread_id)
+        async for event in self._stream_turn(Command(resume=approved), thread_id, config):
+            yield event
+
+    def is_user_input_required(self) -> bool:
+        """True iff the agent is paused awaiting the user's answer to a pending question or approval request."""
+        return is_interrupt_state_snapshot(self._graph.get_state(self._graph_config))
+
+    async def _stream_turn(
+        self, graph_input: Any, thread_id: Any, config: RunnableConfig
+    ) -> AsyncIterator[AgentStreamEvent]:
         processor = AgentTurnStreamProcessor()
 
         try:
@@ -375,9 +437,9 @@ class Agent(BaseOpenDataSciAgent):
             return
 
         graph_state = self._graph.get_state(config)
-        if is_interrupt_state_snapshot(graph_state):
-            intr_value = graph_state.tasks[0].interrupts[0].value
-            if isinstance(intr_value, dict) and intr_value.get("kind") == APPROVAL_INTERRUPT_KIND:
+        intr_value = self._pending_interrupt_value(graph_state)
+        if intr_value is not None:
+            if self._is_approval_interrupt(intr_value):
                 yield ApprovalRequiredEvent(
                     command=intr_value["command"],
                     description=intr_value["description"],

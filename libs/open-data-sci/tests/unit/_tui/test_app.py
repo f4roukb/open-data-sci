@@ -332,6 +332,7 @@ class TestEscDuringTurn:
         controller.awaiting_choice = awaiting_choice
         controller.stop_agent = AsyncMock()
         app._run_agent = MagicMock()
+        app._resume_with_input = MagicMock()
         return app
 
     async def test_bare_esc_stops_running_turn(self) -> None:
@@ -370,5 +371,5 @@ class TestEscDuringTurn:
 
         await app.action_focus_input()
 
-        app._run_agent.assert_called_once_with("cancel")
+        app._resume_with_input.assert_called_once_with("cancel")
         app._controller.stop_agent.assert_not_awaited()

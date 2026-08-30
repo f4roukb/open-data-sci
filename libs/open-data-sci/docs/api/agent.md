@@ -35,14 +35,18 @@ async with Agent(workspace=workspace, config=config) as agent:
 
 ### Handling an interrupt
 
-Some tools pause the agent and ask the user to pick an option (for example, to confirm a destructive operation). When this happens an `AgentStreamEvent` with `type="input_required"` is yielded. Resume the agent by calling `astream()` again with the user's answer:
+Some tools pause the agent and ask the user something before continuing — a free-text or multiple-choice question, or a yes/no command-approval request. While paused, `astream()` cannot be used to start a new turn; resume with the dedicated method matching the event you received instead:
 
 ```python
 async for event in agent.astream(invocation):
     if event.type == "input_required":
-        choice = input(f"{event.content} [{', '.join(event.metadata['choices'])}]: ")
-        async for follow_up in agent.astream(Invocation.from_text(choice)):
+        choice = input(f"{event.content} [{', '.join(event.choices)}]: ")
+        async for follow_up in agent.resume_with_input(choice):
             # process follow_up events as usual
+            ...
+    elif event.type == "approval_required":
+        answer = input(f"{event.content} Allow? (y/n): ")
+        async for follow_up in agent.resume_with_approval(answer.strip().lower().startswith("y")):
             ...
     elif event.type == "token":
         print(event.content, end="", flush=True)
@@ -72,6 +76,9 @@ print("Compacted:", summary)
       show_source: false
       members:
         - astream
+        - resume_with_input
+        - resume_with_approval
+        - is_user_input_required
         - rewind_turn
         - clear_chat_history
         - compact_chat_history
