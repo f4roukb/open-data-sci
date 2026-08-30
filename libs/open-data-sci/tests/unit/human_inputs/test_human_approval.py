@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from opendatasci.agents.interrupts import InterruptKind
 from opendatasci.human_inputs.human_approval import (
-    APPROVAL_INTERRUPT_KIND,
     CommandImpactAssessment,
     HumanApprovalBaseManager,
     HumanApprovalManager,
@@ -73,7 +73,7 @@ class TestAskForCommandApproval:
             await manager.ask_for_command_approval("rm tmp.txt")
         mock_intr.assert_called_once_with(
             {
-                "kind": APPROVAL_INTERRUPT_KIND,
+                "kind": InterruptKind.APPROVAL_REQUIRED,
                 "command": "rm tmp.txt",
                 "description": "Deletes tmp.txt.",
                 "heads_up": "File is gone.",
@@ -128,7 +128,7 @@ class TestAskForCommandApproval:
             approved = await manager.ask_for_command_approval("rm tmp.txt")
         assert approved is True
         payload = mock_intr.call_args[0][0]
-        assert payload["kind"] == APPROVAL_INTERRUPT_KIND
+        assert payload["kind"] == InterruptKind.APPROVAL_REQUIRED
         assert payload["command"] == "rm tmp.txt"
         assert "rm tmp.txt" in payload["description"]
         assert payload["heads_up"]  # fallback warning is always present

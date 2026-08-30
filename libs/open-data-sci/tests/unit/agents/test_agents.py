@@ -635,14 +635,24 @@ def _fake_state_snapshot(intr_value: object | None) -> MagicMock:
     return snapshot
 
 
-_INPUT_INTERRUPT_VALUE = {"question": "Pick one?", "choices": ["a", "b"]}
+def _input_interrupt_value() -> dict:
+    from opendatasci.agents.interrupts import InterruptKind
+
+    return {
+        "kind": InterruptKind.INPUT_REQUIRED,
+        "question": "Pick one?",
+        "choices": ["a", "b"],
+    }
+
+
+_INPUT_INTERRUPT_VALUE = _input_interrupt_value()
 
 
 def _approval_interrupt_value() -> dict:
-    from opendatasci.human_inputs.interrupt_kind import InterruptKind
+    from opendatasci.agents.interrupts import InterruptKind
 
     return {
-        "kind": InterruptKind.APPROVAL,
+        "kind": InterruptKind.APPROVAL_REQUIRED,
         "command": "rm -rf /tmp/x",
         "description": "Deletes a temp file.",
         "heads_up": "",
