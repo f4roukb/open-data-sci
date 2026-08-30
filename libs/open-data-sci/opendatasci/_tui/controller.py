@@ -46,7 +46,7 @@ from opendatasci.streaming.events import (
     ToolResultEvent,
     UsageEvent,
 )
-from opendatasci.tasks.base import AgentTaskStatus
+from opendatasci.tasks.base import BackgroundTaskStatus
 from opendatasci.tools.mcp import load_mcp_servers
 
 from . import theme as _theme
@@ -462,7 +462,7 @@ class CLIController:
         while True:
             await asyncio.sleep(_BACKGROUND_STATUS_POLL_SECONDS)
             records = await self._service.task_manager.list_tasks()
-            running = [r for r in records if r.status == AgentTaskStatus.RUNNING]
+            running = [r for r in records if r.status == BackgroundTaskStatus.RUNNING]
             if not running:
                 self._ui.set_background_tasks("")
                 continue

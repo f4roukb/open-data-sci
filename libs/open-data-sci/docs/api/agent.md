@@ -129,7 +129,7 @@ async with Agent(
 
 `WorkerAgent` is the sub-agent spawned internally when the orchestrator delegates subtasks to concurrent workers. You do not normally construct this directly.
 
-Subtasks normally run to completion and return their result immediately. For long-running work, the orchestrator can instead schedule a subtask in the background and check on it later. `agent.task_manager` exposes the underlying `AgentTaskManagerBase` so a caller driving the agent can await `listen_task_updates()` and learn about finished background tasks without polling — see [Background Tasks](tasks.md) for the full task-tracking data model.
+Subtasks normally run to completion and return their result immediately. For long-running work, the orchestrator can instead schedule a subtask in the background and check on it later. `agent.task_manager` exposes the underlying `BackgroundTaskManagerBase` so a caller driving the agent can await `listen_task_updates()` and learn about finished background tasks without polling — see [Background Tasks](tasks.md) for the full task-tracking data model.
 
 The agent also consumes its own task manager internally, so a background task's result reaches the model without any caller action: once at the start of the next turn, and again mid-turn immediately after a tool call returns, so a task that finishes while the agent is still working can change what it does next within the same turn rather than waiting for the turn to end.
 

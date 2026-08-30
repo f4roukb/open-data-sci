@@ -181,16 +181,16 @@ class TestAgentInit:
             assert _get_messages(agent) == []
 
     async def test_task_manager_property_exposes_shared_manager(self) -> None:
-        from opendatasci.tasks.base import AgentTaskManagerBase
+        from opendatasci.tasks.base import BackgroundTaskManagerBase
 
         async with _make_agent_ctx() as agent:
-            assert isinstance(agent.task_manager, AgentTaskManagerBase)
+            assert isinstance(agent.task_manager, BackgroundTaskManagerBase)
             assert agent.task_manager is agent._background_task_manager
 
     async def test_task_manager_property_returns_explicit_override(self) -> None:
-        from opendatasci.tasks.local import LocalAgentTaskManager
+        from opendatasci.tasks.local import BackgroundTaskManager
 
-        explicit_manager = LocalAgentTaskManager()
+        explicit_manager = BackgroundTaskManager()
         async with _agent_with_overrides_ctx(background_task_manager=explicit_manager) as agent:
             assert agent.task_manager is explicit_manager
 
@@ -745,12 +745,12 @@ class TestAgentResumeMethods:
 
 
 def _make_task_record(summary: str = "s", result: object = "r", status: object = None):
-    from opendatasci.tasks.base import WorkerTaskRecord, AgentTaskStatus
+    from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
 
-    return WorkerTaskRecord(
+    return BackgroundTaskRecord(
         task_id=uuid.uuid4(),
         summary=summary,
-        status=status or AgentTaskStatus.COMPLETED,
+        status=status or BackgroundTaskStatus.COMPLETED,
         result=result,
     )
 
@@ -779,9 +779,9 @@ class TestPrepareBatchMessages:
 class TestAstreamDrainsTaskManagerAtTurnStart:
     async def test_finished_task_injected_ahead_of_user_text(self) -> None:
         from opendatasci.streaming.events import TokenEvent
-        from opendatasci.tasks.local import LocalAgentTaskManager
+        from opendatasci.tasks.local import BackgroundTaskManager
 
-        manager = LocalAgentTaskManager()
+        manager = BackgroundTaskManager()
         record = _make_task_record(summary="background work", result="42")
         manager._context_updates.append(record)
 

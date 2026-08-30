@@ -14,14 +14,14 @@ from opendatasci._utils.pydantic_utils import MutableStrictBaseModel
 from opendatasci.memory.messages import TaskMessage
 
 
-class AgentTaskStatus(StrEnum):
+class BackgroundTaskStatus(StrEnum):
     RUNNING = auto()
     COMPLETED = auto()
     FAILED = auto()
     CANCELLED = auto()
 
 
-class AgentTaskProgressUpdate(MutableStrictBaseModel):
+class BackgroundTaskProgressUpdate(MutableStrictBaseModel):
     """A worker's self-reported snapshot of what it has done, is doing, and is blocked on."""
 
     done: str
@@ -29,44 +29,43 @@ class AgentTaskProgressUpdate(MutableStrictBaseModel):
     blockers: str
 
 
-class AgentTaskProgressReport(MutableStrictBaseModel):
+class BackgroundTaskProgressReport(MutableStrictBaseModel):
     """One progress checkpoint recorded against a task, in call order."""
 
-    progress_update: AgentTaskProgressUpdate
+    progress_update: BackgroundTaskProgressUpdate
     eta_seconds: float | None
     reported_at: float = Field(default_factory=time.time)
 
 
-class WorkerTaskRecord(MutableStrictBaseModel):
+class BackgroundTaskRecord(MutableStrictBaseModel):
     """Point-in-time snapshot of a background task's lifecycle."""
 
     task_id: UUID
     summary: str
-    """Human-facing label for the task (e.g. the caller-supplied ``summary``)."""
-    status: AgentTaskStatus
+    status: BackgroundTaskStatus
     result: Any = None
     error: str | None = None
-    progress: list[AgentTaskProgressReport] = Field(default_factory=list)
+    progress: list[BackgroundTaskProgressReport] = Field(default_factory=list)
     created_at: float = Field(default_factory=time.time)
     finished_at: float | None = None
 
     def to_update_message(self) -> TaskMessage:
         """Render this finished background task as the content fed to the model."""
-        if self.status == AgentTaskStatus.COMPLETED:
+        if self.status == BackgroundTaskStatus.COMPLETED:
             text = f"Background task '{self.summary}' finished:\n\n{self.result}"
-        elif self.status == AgentTaskStatus.FAILED:
+        elif self.status == BackgroundTaskStatus.FAILED:
             text = f"Background task '{self.summary}' failed: {self.error}"
         else:
             text = f"Background task '{self.summary}' was cancelled."
         return TaskMessage(content=to_text_content_blocks(text), created_at=datetime.now(timezone.utc))
 
 
-class AgentTaskManagerBase(ABC):
+class BackgroundTaskManagerBase(ABC):
     """Registers and tracks background tasks: submit, check on, cancel."""
 
     @abstractmethod
     async def submit_task(self, work: Callable[[UUID], Awaitable[Any]], summary: str) -> UUID:
-        """Create a :class:`WorkerTaskRecord`, schedule *work* to run against it, and return its ID.
+        """Create a :class:`BackgroundTaskRecord`, schedule *work* to run against it, and return its ID.
 
         The record is created and stored before *work* starts; *work* only
         receives the ``task_id``, not the record itself. There is no method
@@ -76,12 +75,12 @@ class AgentTaskManagerBase(ABC):
         ...
 
     @abstractmethod
-    async def get_task(self, task_id: UUID) -> WorkerTaskRecord | None:
+    async def get_task(self, task_id: UUID) -> BackgroundTaskRecord | None:
         """Return the current record for *task_id*, or ``None`` if unknown."""
         ...
 
     @abstractmethod
-    async def list_tasks(self) -> list[WorkerTaskRecord]:
+    async def list_tasks(self) -> list[BackgroundTaskRecord]:
         """Return records for all tasks currently tracked."""
         ...
 
@@ -94,7 +93,7 @@ class AgentTaskManagerBase(ABC):
         ...
 
     @abstractmethod
-    async def upsert_record(self, record: WorkerTaskRecord) -> None:
+    async def upsert_record(self, record: BackgroundTaskRecord) -> None:
         """Insert or overwrite *record* wholesale, keyed by ``record.task_id``.
 
         Exposed publicly so a worker running independently of the manager
@@ -107,7 +106,7 @@ class AgentTaskManagerBase(ABC):
     async def push_task_progress(
         self,
         task_id: UUID,
-        update: AgentTaskProgressUpdate,
+        update: BackgroundTaskProgressUpdate,
         eta_seconds: float | None = None,
     ) -> None:
         """Append one progress checkpoint to *task_id*'s record.
@@ -117,7 +116,7 @@ class AgentTaskManagerBase(ABC):
         ...
 
     @abstractmethod
-    def listen_task_updates(self) -> AsyncIterator[WorkerTaskRecord]:
+    def listen_task_updates(self) -> AsyncIterator[BackgroundTaskRecord]:
         """Yield each task's record exactly once, as soon as it reaches a terminal status.
 
         Blocks between completions — this is a push source, not a poll.
@@ -129,7 +128,7 @@ class AgentTaskManagerBase(ABC):
         ...
 
     @abstractmethod
-    async def gather_task_updates(self) -> list[WorkerTaskRecord]:
+    async def gather_task_updates(self) -> list[BackgroundTaskRecord]:
         """Return and clear every completed record collected since the last call.
 
         Non-blocking: returns immediately, empty if nothing has completed.

@@ -919,10 +919,10 @@ class TestBackgroundTaskWatcher:
     async def test_kicks_new_turn_when_idle(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
-        from opendatasci.tasks.base import WorkerTaskRecord, AgentTaskStatus
+        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
 
-        record = WorkerTaskRecord(
-            task_id=uuid4(), summary="s", status=AgentTaskStatus.COMPLETED, result="done"
+        record = BackgroundTaskRecord(
+            task_id=uuid4(), summary="s", status=BackgroundTaskStatus.COMPLETED, result="done"
         )
         mock_service.task_manager.listen_task_updates = MagicMock(
             return_value=self._completions(record)
@@ -941,10 +941,10 @@ class TestBackgroundTaskWatcher:
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
         """The raw completion is never surfaced as a chat bubble — only the agent's own response is."""
-        from opendatasci.tasks.base import WorkerTaskRecord, AgentTaskStatus
+        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
 
-        record = WorkerTaskRecord(
-            task_id=uuid4(), summary="s", status=AgentTaskStatus.COMPLETED, result="done"
+        record = BackgroundTaskRecord(
+            task_id=uuid4(), summary="s", status=BackgroundTaskStatus.COMPLETED, result="done"
         )
         mock_service.task_manager.listen_task_updates = MagicMock(
             return_value=self._completions(record)
@@ -959,10 +959,10 @@ class TestBackgroundTaskWatcher:
     async def test_no_new_turn_when_turn_in_progress(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
-        from opendatasci.tasks.base import WorkerTaskRecord, AgentTaskStatus
+        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
 
-        record = WorkerTaskRecord(
-            task_id=uuid4(), summary="s", status=AgentTaskStatus.COMPLETED, result="done"
+        record = BackgroundTaskRecord(
+            task_id=uuid4(), summary="s", status=BackgroundTaskStatus.COMPLETED, result="done"
         )
         mock_service.task_manager.listen_task_updates = MagicMock(
             return_value=self._completions(record)
@@ -980,10 +980,10 @@ class TestBackgroundTaskWatcher:
     async def test_no_new_turn_while_interrupted(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
-        from opendatasci.tasks.base import WorkerTaskRecord, AgentTaskStatus
+        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
 
-        record = WorkerTaskRecord(
-            task_id=uuid4(), summary="s", status=AgentTaskStatus.COMPLETED, result="done"
+        record = BackgroundTaskRecord(
+            task_id=uuid4(), summary="s", status=BackgroundTaskStatus.COMPLETED, result="done"
         )
         mock_service.task_manager.listen_task_updates = MagicMock(
             return_value=self._completions(record)
@@ -1001,9 +1001,9 @@ class TestBackgroundTaskStatusPoll:
     async def test_running_tasks_shown_in_header(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
-        from opendatasci.tasks.base import WorkerTaskRecord, AgentTaskStatus
+        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
 
-        running = WorkerTaskRecord(task_id=uuid4(), summary="crunching numbers", status=AgentTaskStatus.RUNNING)
+        running = BackgroundTaskRecord(task_id=uuid4(), summary="crunching numbers", status=BackgroundTaskStatus.RUNNING)
         mock_service.task_manager = MagicMock()
         mock_service.task_manager.list_tasks = AsyncMock(return_value=[running])
 

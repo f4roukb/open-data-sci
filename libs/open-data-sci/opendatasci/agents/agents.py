@@ -58,8 +58,8 @@ from opendatasci.streaming import (
     MessageEvent,
     ResponseEvent,
 )
-from opendatasci.tasks.base import AgentTaskManagerBase, WorkerTaskRecord
-from opendatasci.tasks.local import LocalAgentTaskManager
+from opendatasci.tasks.base import BackgroundTaskManagerBase, BackgroundTaskRecord
+from opendatasci.tasks.local import BackgroundTaskManager
 from opendatasci.tools.factory import (
     create_execution_mode_tools,
     create_plan_mode_tools,
@@ -129,7 +129,7 @@ class BaseOpenDataSciAgent(ABC):
 
     @property
     @abstractmethod
-    def task_manager(self) -> AgentTaskManagerBase: ...
+    def task_manager(self) -> BackgroundTaskManagerBase: ...
 
 
 class Agent(BaseOpenDataSciAgent):
@@ -155,7 +155,7 @@ class Agent(BaseOpenDataSciAgent):
         skill_store: Registry that the agent queries to resolve named skills
             at runtime.  Defaults to the built-in :class:`LocalSkillStore`.
         background_task_manager: Tracks background tasks spawned via the ``task``
-            tool.  Defaults to a file-backed :class:`LocalAgentTaskManager`.
+            tool.  Defaults to a file-backed :class:`BackgroundTaskManager`.
         session_manager: Tracks the session's conversation threads in the
             graph checkpointer; clearing the conversation creates a new
             thread.  Defaults to a file-backed :class:`LocalSessionManager`.
@@ -176,7 +176,7 @@ class Agent(BaseOpenDataSciAgent):
         workspace: BaseWorkspace,
         context_store: BaseContextStore | None = None,
         skill_store: BaseSkillStore | None = None,
-        background_task_manager: AgentTaskManagerBase | None = None,
+        background_task_manager: BackgroundTaskManagerBase | None = None,
         sandbox_factory: BaseSandboxFactory | None = None,
         checkpointer: BaseCheckpointSaver[Any] | None = None,
         tools: list[BaseTool] | None = None,
@@ -209,7 +209,7 @@ class Agent(BaseOpenDataSciAgent):
             self._context_store = LocalContextStore(workspace_path=workspace_path)
         if self._background_task_manager is None:
             output_root = Path(self._context_store.root) / "workers" / "outputs"
-            self._background_task_manager = LocalAgentTaskManager(output_root=output_root)
+            self._background_task_manager = BackgroundTaskManager(output_root=output_root)
         if self._session_manager is None:
             self._session_manager = LocalSessionManager(
                 workspace_path=Path(self._workspace.get_reference()),
@@ -266,12 +266,12 @@ class Agent(BaseOpenDataSciAgent):
         await self._exit_stack.aclose()
 
     @property
-    def task_manager(self) -> AgentTaskManagerBase:
+    def task_manager(self) -> BackgroundTaskManagerBase:
         """The task manager tracking this agent's background (``task``, ``run_mode="background"``) work.
 
         Exposed so a caller driving this agent (the TUI, or a hosted-service
         equivalent) can watch for background-task completions via
-        :meth:`AgentTaskManagerBase.listen_task_updates`.
+        :meth:`BackgroundTaskManagerBase.listen_task_updates`.
         """
         return self._background_task_manager  # type: ignore[return-value]
 
@@ -319,7 +319,7 @@ class Agent(BaseOpenDataSciAgent):
 
     @classmethod
     def _prepare_batch_messages(
-        cls, task_records: list[WorkerTaskRecord], user_items: list[Invocation]
+        cls, task_records: list[BackgroundTaskRecord], user_items: list[Invocation]
     ) -> list[BaseMessage]:
         """Build one message per item, worker results first, then user text."""
         return [

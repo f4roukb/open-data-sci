@@ -10,7 +10,7 @@ from opendatasci._utils.message_utils import get_message_text_content, to_text_c
 from opendatasci.agents.nodes import AgentNode, SynchronizationNode
 from opendatasci.agents.states import AgentState
 from opendatasci.memory.messages import AgentMessage, TaskMessage, UserMessage
-from opendatasci.tasks.local import LocalAgentTaskManager
+from opendatasci.tasks.local import BackgroundTaskManager
 
 
 def _make_state(messages: list | None = None) -> AgentState:
@@ -245,21 +245,21 @@ class TestAgentNodeWithCompaction:
 
 
 def _make_task_record(summary: str = "s", result: object = "r", status: object = None):
-    from opendatasci.tasks.base import WorkerTaskRecord, AgentTaskStatus
+    from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
 
-    return WorkerTaskRecord(
+    return BackgroundTaskRecord(
         task_id=uuid.uuid4(),
         summary=summary,
-        status=status or AgentTaskStatus.COMPLETED,
+        status=status or BackgroundTaskStatus.COMPLETED,
         result=result,
     )
 
 
 class TestTaskMessageFromRecord:
     def test_completed_task_includes_summary_and_result(self) -> None:
-        from opendatasci.tasks.base import AgentTaskStatus
+        from opendatasci.tasks.base import BackgroundTaskStatus
 
-        record = _make_task_record(summary="my task", result="the answer", status=AgentTaskStatus.COMPLETED)
+        record = _make_task_record(summary="my task", result="the answer", status=BackgroundTaskStatus.COMPLETED)
         msg = record.to_update_message()
         assert isinstance(msg, TaskMessage)
         text = msg.content[0]["text"]
@@ -267,10 +267,10 @@ class TestTaskMessageFromRecord:
         assert "the answer" in text
 
     def test_failed_task_includes_error(self) -> None:
-        from opendatasci.tasks.base import WorkerTaskRecord, AgentTaskStatus
+        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
 
-        record = WorkerTaskRecord(
-            task_id=uuid.uuid4(), summary="my task", status=AgentTaskStatus.FAILED, error="boom"
+        record = BackgroundTaskRecord(
+            task_id=uuid.uuid4(), summary="my task", status=BackgroundTaskStatus.FAILED, error="boom"
         )
         msg = record.to_update_message()
         text = msg.content[0]["text"]
@@ -278,20 +278,20 @@ class TestTaskMessageFromRecord:
         assert "boom" in text
 
     def test_cancelled_task_reported(self) -> None:
-        from opendatasci.tasks.base import WorkerTaskRecord, AgentTaskStatus
+        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
 
-        record = WorkerTaskRecord(task_id=uuid.uuid4(), summary="my task", status=AgentTaskStatus.CANCELLED)
+        record = BackgroundTaskRecord(task_id=uuid.uuid4(), summary="my task", status=BackgroundTaskStatus.CANCELLED)
         msg = record.to_update_message()
         assert "cancelled" in msg.content[0]["text"].lower()
 
 
 class TestSynchronizationNode:
     async def test_returns_empty_dict_when_nothing_to_drain(self) -> None:
-        node = SynchronizationNode(background_task_manager=LocalAgentTaskManager())
+        node = SynchronizationNode(background_task_manager=BackgroundTaskManager())
         assert await node.ainvoke(_make_state()) == {}
 
     async def test_drains_and_wraps_records_as_task_messages(self) -> None:
-        manager = LocalAgentTaskManager()
+        manager = BackgroundTaskManager()
         record = _make_task_record(summary="mid-turn work", result="done")
         manager._context_updates.append(record)
         node = SynchronizationNode(background_task_manager=manager)
@@ -305,7 +305,7 @@ class TestSynchronizationNode:
         assert await node.ainvoke(_make_state()) == {}
 
     async def test_multiple_records_all_wrapped(self) -> None:
-        manager = LocalAgentTaskManager()
+        manager = BackgroundTaskManager()
         manager._context_updates.append(_make_task_record(summary="a"))
         manager._context_updates.append(_make_task_record(summary="b"))
         node = SynchronizationNode(background_task_manager=manager)

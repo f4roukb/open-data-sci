@@ -14,8 +14,8 @@ from opendatasci.human_inputs.human_approval import (
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory
 from opendatasci.skills import BaseSkillStore
 from opendatasci.skills.local import LocalSkillStore
-from opendatasci.tasks.base import AgentTaskManagerBase
-from opendatasci.tasks.local import LocalAgentTaskManager
+from opendatasci.tasks.base import BackgroundTaskManagerBase
+from opendatasci.tasks.local import BackgroundTaskManager
 from opendatasci.tools.coding import (
     create_cli_tools,
     create_code_verification_tools,
@@ -113,7 +113,7 @@ def create_execution_mode_tools(
     session_id: str | None = None,
     skill_store: BaseSkillStore | None = None,
     datasci_config: OpenDataSciConfig | None = None,
-    background_task_manager: AgentTaskManagerBase | None = None,
+    background_task_manager: BackgroundTaskManagerBase | None = None,
 ) -> list[BaseTool]:
     """Return the main agent's full tool set — the default, execution-mode list.
 
@@ -146,7 +146,7 @@ def create_execution_mode_tools(
         output_root = (
             Path(context_store.root) / "workers" / "outputs" if context_store is not None else None
         )
-        background_task_manager = LocalAgentTaskManager(output_root=output_root)
+        background_task_manager = BackgroundTaskManager(output_root=output_root)
     # A single manager instance is shared by every tool that supports human approval.
     approval_manager: HumanApprovalBaseManager = HumanApprovalManager(datasci_config)
     tools = _base_tools(

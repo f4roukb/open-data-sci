@@ -10,7 +10,7 @@ from typing import Any, AsyncIterator
 from opendatasci.agents.agents import BaseOpenDataSciAgent, Invocation
 from opendatasci.sandbox.base import BaseSandbox
 from opendatasci.streaming import AgentStreamEvent
-from opendatasci.tasks.base import AgentTaskManagerBase
+from opendatasci.tasks.base import BackgroundTaskManagerBase
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class OpenDataSciTuiService:
         await self._sandbox.close()
 
     @property
-    def task_manager(self) -> AgentTaskManagerBase:
+    def task_manager(self) -> BackgroundTaskManagerBase:
         """The agent's background-task manager (see ``listen_task_updates``)."""
         return self._agent.task_manager
 

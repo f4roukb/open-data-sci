@@ -23,10 +23,10 @@ from opendatasci.prompts.prompt_templates import WORKER_SYSTEM_PROMPT
 from opendatasci.sandbox.base import BaseSandboxFactory
 from opendatasci.skills import BaseSkillStore
 from opendatasci.tasks.base import (
-    AgentTaskManagerBase,
-    AgentTaskProgressUpdate,
-    WorkerTaskRecord,
-    AgentTaskStatus,
+    BackgroundTaskManagerBase,
+    BackgroundTaskProgressUpdate,
+    BackgroundTaskRecord,
+    BackgroundTaskStatus,
 )
 from opendatasci.tools.base import OpenDataSciBaseTool
 from opendatasci.tools.coding import create_cli_tools, create_coding_tools
@@ -77,7 +77,7 @@ Args:
     args_schema: type[BaseModel] = CallArgs
 
     task_id: UUID
-    background_task_manager: AgentTaskManagerBase
+    background_task_manager: BackgroundTaskManagerBase
 
     @override
     async def _arun(
@@ -90,7 +90,7 @@ Args:
     ) -> str:
         await self.background_task_manager.push_task_progress(
             self.task_id,
-            AgentTaskProgressUpdate(done=done, ongoing=ongoing, blockers=blockers),
+            BackgroundTaskProgressUpdate(done=done, ongoing=ongoing, blockers=blockers),
             eta_seconds=eta_seconds,
         )
         return "Progress recorded."
@@ -168,7 +168,7 @@ Args:
     datasci_config: OpenDataSciConfig
     sandbox_factory: BaseSandboxFactory
     skill_store: BaseSkillStore
-    background_task_manager: AgentTaskManagerBase
+    background_task_manager: BackgroundTaskManagerBase
 
     async def _arun_one(
         self,
@@ -314,7 +314,7 @@ def create_task_tools(
     workspace: BaseWorkspace,
     datasci_config: OpenDataSciConfig,
     sandbox_factory: BaseSandboxFactory,
-    background_task_manager: AgentTaskManagerBase,
+    background_task_manager: BackgroundTaskManagerBase,
     skill_store: BaseSkillStore,
 ) -> list[BaseTool]:
     """Return the ``task`` tool — task creation only.
@@ -350,7 +350,7 @@ def _isoformat(timestamp: float | None) -> str | None:
     return datetime.fromtimestamp(timestamp).isoformat() if timestamp is not None else None
 
 
-def _record_to_dict(record: WorkerTaskRecord) -> dict[str, Any]:
+def _record_to_dict(record: BackgroundTaskRecord) -> dict[str, Any]:
     data: dict[str, Any] = {
         "task_id": str(record.task_id),
         "summary": record.summary,
@@ -368,9 +368,9 @@ def _record_to_dict(record: WorkerTaskRecord) -> dict[str, Any]:
             for report in record.progress
         ],
     }
-    if record.status == AgentTaskStatus.COMPLETED:
+    if record.status == BackgroundTaskStatus.COMPLETED:
         data["result"] = record.result
-    elif record.status == AgentTaskStatus.FAILED:
+    elif record.status == BackgroundTaskStatus.FAILED:
         data["error"] = record.error
     return data
 
@@ -393,7 +393,7 @@ Args:
 
     args_schema: type[BaseModel] = CallArgs
 
-    background_task_manager: AgentTaskManagerBase
+    background_task_manager: BackgroundTaskManagerBase
 
     @override
     async def _arun(self, task_id: UUID, **kwargs: Any) -> str:
@@ -407,7 +407,7 @@ class ListTasksTool(OpenDataSciBaseTool):
     """List previously scheduled background tasks, filtered by status."""
 
     class CallArgs(BaseModel):
-        status_in: set[AgentTaskStatus] = Field(default_factory=lambda: {AgentTaskStatus.RUNNING})
+        status_in: set[BackgroundTaskStatus] = Field(default_factory=lambda: {BackgroundTaskStatus.RUNNING})
 
     name: str = "list_tasks"
     description: str = """
@@ -421,11 +421,11 @@ Args:
 
     args_schema: type[BaseModel] = CallArgs
 
-    background_task_manager: AgentTaskManagerBase
+    background_task_manager: BackgroundTaskManagerBase
 
     @override
-    async def _arun(self, status_in: set[AgentTaskStatus] | None = None, **kwargs: Any) -> str:
-        status_in = status_in or {AgentTaskStatus.RUNNING}
+    async def _arun(self, status_in: set[BackgroundTaskStatus] | None = None, **kwargs: Any) -> str:
+        status_in = status_in or {BackgroundTaskStatus.RUNNING}
         records = [r for r in await self.background_task_manager.list_tasks() if r.status in status_in]
         if not records:
             return "No background tasks match the given status filter."
@@ -458,7 +458,7 @@ Args:
 
     args_schema: type[BaseModel] = CallArgs
 
-    background_task_manager: AgentTaskManagerBase
+    background_task_manager: BackgroundTaskManagerBase
 
     @override
     async def _arun(self, task_id: UUID, **kwargs: Any) -> str:
@@ -468,7 +468,7 @@ Args:
         return f"Stop requested for task_id={task_id}."
 
 
-def create_task_management_tools(background_task_manager: AgentTaskManagerBase) -> list[BaseTool]:
+def create_task_management_tools(background_task_manager: BackgroundTaskManagerBase) -> list[BaseTool]:
     """Return the ``check_task``, ``list_tasks``, and ``stop_task`` tools.
 
     *background_task_manager* must be the same instance passed to :func:`create_task_tools`

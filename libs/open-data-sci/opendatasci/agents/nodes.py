@@ -9,7 +9,7 @@ from opendatasci.agents.chat_history import ChatHistoryBuilder
 from opendatasci.agents.states import AgentState
 from opendatasci.memory.messages import AgentMessage
 from opendatasci.models.factory import _RetryRunnable
-from opendatasci.tasks.base import AgentTaskManagerBase
+from opendatasci.tasks.base import BackgroundTaskManagerBase
 
 BuildSystemContext = Callable[[AgentState], list[SystemMessage]]
 
@@ -82,7 +82,7 @@ class AgentNode(BaseNode):
 class SynchronizationNode(BaseNode):
     """Graph node that folds finished background tasks into context mid-turn."""
 
-    def __init__(self, background_task_manager: AgentTaskManagerBase) -> None:
+    def __init__(self, background_task_manager: BackgroundTaskManagerBase) -> None:
         self._background_task_manager = background_task_manager
 
     async def ainvoke(

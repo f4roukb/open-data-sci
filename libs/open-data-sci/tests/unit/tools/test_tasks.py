@@ -10,8 +10,8 @@ import pytest
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory
 from opendatasci.skills.base import BaseSkillStore
-from opendatasci.tasks.base import AgentTaskProgressReport, AgentTaskProgressUpdate
-from opendatasci.tasks.local import LocalAgentTaskManager
+from opendatasci.tasks.base import BackgroundTaskProgressReport, BackgroundTaskProgressUpdate
+from opendatasci.tasks.local import BackgroundTaskManager
 from opendatasci.tools.tasks import (
     CheckTaskTool,
     ListTasksTool,
@@ -30,7 +30,7 @@ from opendatasci.workspace.base import BaseWorkspace
 
 class TestCreateTaskManagementTools:
     def test_returns_check_list_and_cancel_tools(self) -> None:
-        tools = create_task_management_tools(LocalAgentTaskManager())
+        tools = create_task_management_tools(BackgroundTaskManager())
         names = {t.name for t in tools}
         assert names == {"check_task", "list_tasks", "stop_task"}
 
@@ -38,7 +38,7 @@ class TestCreateTaskManagementTools:
 class TestCheckTaskTool:
     @pytest.mark.asyncio
     async def test_unknown_task_id(self) -> None:
-        tool = CheckTaskTool(background_task_manager=LocalAgentTaskManager())
+        tool = CheckTaskTool(background_task_manager=BackgroundTaskManager())
         unknown_id = uuid4()
         result = await tool.ainvoke({"task_id": str(unknown_id)})
         assert str(unknown_id) in result
@@ -46,7 +46,7 @@ class TestCheckTaskTool:
 
     @pytest.mark.asyncio
     async def test_completed_task_reports_result(self) -> None:
-        manager = LocalAgentTaskManager()
+        manager = BackgroundTaskManager()
 
         async def _work(task_id: object) -> str:
             return "the answer"
@@ -62,7 +62,7 @@ class TestCheckTaskTool:
 
     @pytest.mark.asyncio
     async def test_failed_task_reports_error(self) -> None:
-        manager = LocalAgentTaskManager()
+        manager = BackgroundTaskManager()
 
         async def _work(task_id: object) -> str:
             raise RuntimeError("boom")
@@ -78,7 +78,7 @@ class TestCheckTaskTool:
 
     @pytest.mark.asyncio
     async def test_includes_progress_reports(self) -> None:
-        manager = LocalAgentTaskManager()
+        manager = BackgroundTaskManager()
 
         async def _work(task_id: object) -> str:
             await asyncio.sleep(10)
@@ -87,8 +87,8 @@ class TestCheckTaskTool:
         task_id = await manager.submit_task(_work, summary="s")
         record = await manager.get_task(task_id)
         record.progress.append(
-            AgentTaskProgressReport(
-                progress_update=AgentTaskProgressUpdate(done="a", ongoing="b", blockers="c"),
+            BackgroundTaskProgressReport(
+                progress_update=BackgroundTaskProgressUpdate(done="a", ongoing="b", blockers="c"),
                 eta_seconds=15.0,
             ),
         )
@@ -112,7 +112,7 @@ class TestCheckTaskTool:
 class TestListTasksTool:
     @pytest.mark.asyncio
     async def test_defaults_to_running_only(self) -> None:
-        manager = LocalAgentTaskManager()
+        manager = BackgroundTaskManager()
 
         async def _slow(task_id: object) -> str:
             await asyncio.sleep(10)
@@ -134,7 +134,7 @@ class TestListTasksTool:
 
     @pytest.mark.asyncio
     async def test_status_in_filters_explicitly(self) -> None:
-        manager = LocalAgentTaskManager()
+        manager = BackgroundTaskManager()
 
         async def _work(task_id: object) -> str:
             return "done"
@@ -148,7 +148,7 @@ class TestListTasksTool:
 
     @pytest.mark.asyncio
     async def test_no_matches_reports_empty(self) -> None:
-        tool = ListTasksTool(background_task_manager=LocalAgentTaskManager())
+        tool = ListTasksTool(background_task_manager=BackgroundTaskManager())
         result = await tool.ainvoke({})
         assert "no background tasks" in result.lower()
 
@@ -156,13 +156,13 @@ class TestListTasksTool:
 class TestStopTaskTool:
     @pytest.mark.asyncio
     async def test_unknown_task_id(self) -> None:
-        tool = StopTaskTool(background_task_manager=LocalAgentTaskManager())
+        tool = StopTaskTool(background_task_manager=BackgroundTaskManager())
         result = await tool.ainvoke({"task_id": str(uuid4())})
         assert "no background task found" in result.lower()
 
     @pytest.mark.asyncio
     async def test_stops_running_task(self) -> None:
-        manager = LocalAgentTaskManager()
+        manager = BackgroundTaskManager()
         started = asyncio.Event()
 
         async def _work(task_id: object) -> str:
@@ -247,7 +247,7 @@ class TestCreateTaskToolsStructure:
             _make_workspace(),
             datasci_config=OpenDataSciConfig(),
             sandbox_factory=_make_sandbox_factory(),
-            background_task_manager=LocalAgentTaskManager(),
+            background_task_manager=BackgroundTaskManager(),
             skill_store=_make_store(),
         )
         assert len(tools) == 1
@@ -257,7 +257,7 @@ class TestCreateTaskToolsStructure:
             _make_workspace(),
             datasci_config=OpenDataSciConfig(),
             sandbox_factory=_make_sandbox_factory(),
-            background_task_manager=LocalAgentTaskManager(),
+            background_task_manager=BackgroundTaskManager(),
             skill_store=_make_store(),
         )
         assert tools[0].name == "task"
@@ -272,7 +272,7 @@ def _make_tool(**overrides) -> TaskTool:
         "datasci_config": OpenDataSciConfig(),
         "sandbox_factory": _make_sandbox_factory(),
         "skill_store": _make_store(),
-        "background_task_manager": LocalAgentTaskManager(),
+        "background_task_manager": BackgroundTaskManager(),
         **overrides,
     }
     return TaskTool(**kwargs)
@@ -363,7 +363,7 @@ class TestRunOne:
 class TestReportProgressTool:
     @pytest.mark.asyncio
     async def test_pushes_progress_to_manager(self) -> None:
-        manager = LocalAgentTaskManager()
+        manager = BackgroundTaskManager()
         started = asyncio.Event()
 
         async def _work(task_id: object) -> str:
@@ -401,7 +401,7 @@ class TestTaskTool:
             datasci_config=datasci_config or OpenDataSciConfig(),
             sandbox_factory=_make_sandbox_factory(),
             skill_store=store or _make_store(),
-            background_task_manager=LocalAgentTaskManager(),
+            background_task_manager=BackgroundTaskManager(),
         )
         return tools[0]
 
@@ -525,7 +525,7 @@ class TestTaskTool:
             datasci_config=OpenDataSciConfig(),
             sandbox_factory=_make_sandbox_factory(),
             skill_store=mock_store,
-            background_task_manager=LocalAgentTaskManager(),
+            background_task_manager=BackgroundTaskManager(),
         )
         tool = tools[0]
         with patch(_AGENT_PATCH) as MockAgent:
