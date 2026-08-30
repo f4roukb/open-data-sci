@@ -424,7 +424,9 @@ class CLIController:
     async def _drain_loop(self) -> None:
         """Keep sending queued messages as new turns until the queue is empty or a prompt opens."""
         assert self._service is not None
-        while not (self._awaiting_choice or self._awaiting_approval or self._pending_queue.is_empty()):
+        while not (
+            self._awaiting_choice or self._awaiting_approval or self._pending_queue.is_empty()
+        ):
             batch = self._drain_pending_batch()
             await self._run_turn(self._service.astream(batch))
 

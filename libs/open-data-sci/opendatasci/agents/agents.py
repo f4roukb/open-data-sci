@@ -339,7 +339,10 @@ class Agent(BaseOpenDataSciAgent):
 
     @staticmethod
     def _is_approval_interrupt(intr_value: dict[str, Any]) -> bool:
-        return isinstance(intr_value, dict) and intr_value.get("kind") == InterruptKind.APPROVAL_REQUIRED
+        return (
+            isinstance(intr_value, dict)
+            and intr_value.get("kind") == InterruptKind.APPROVAL_REQUIRED
+        )
 
     def _require_pending_interrupt(self, *, approval: bool) -> None:
         intr_value = self._pending_interrupt_value(self._graph.get_state(self._graph_config))
