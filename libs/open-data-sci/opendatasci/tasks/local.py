@@ -11,7 +11,7 @@ from opendatasci.tasks.base import (
     AgentTaskManagerBase,
     AgentTaskProgressReport,
     AgentTaskProgressUpdate,
-    AgentTaskRecord,
+    WorkerTaskRecord,
     AgentTaskStatus,
 )
 
@@ -30,15 +30,15 @@ class LocalAgentTaskManager(AgentTaskManagerBase):
     """
 
     def __init__(self, output_root: Path | None = None) -> None:
-        self._records: dict[UUID, AgentTaskRecord] = {}
+        self._records: dict[UUID, WorkerTaskRecord] = {}
         self._tasks: dict[UUID, asyncio.Task[Any]] = {}
         self._output_root = output_root
-        self._completions: asyncio.Queue[AgentTaskRecord] = asyncio.Queue()
-        self._context_updates: list[AgentTaskRecord] = []
+        self._completions: asyncio.Queue[WorkerTaskRecord] = asyncio.Queue()
+        self._context_updates: list[WorkerTaskRecord] = []
 
     async def submit_task(self, work: Callable[[UUID], Awaitable[Any]], summary: str) -> UUID:
         task_id = uuid4()
-        record = AgentTaskRecord(task_id=task_id, summary=summary, status=AgentTaskStatus.RUNNING)
+        record = WorkerTaskRecord(task_id=task_id, summary=summary, status=AgentTaskStatus.RUNNING)
         await self.upsert_record(record)
 
         async def _run() -> None:
@@ -73,7 +73,7 @@ class LocalAgentTaskManager(AgentTaskManagerBase):
         self._tasks[task_id] = asyncio.create_task(_run())
         return task_id
 
-    async def _publish_task_result(self, task_id: UUID, record: AgentTaskRecord) -> None:
+    async def _publish_task_result(self, task_id: UUID, record: WorkerTaskRecord) -> None:
         if self._output_root is None:
             return
         output_path = self._output_root / f"{task_id}.md"
@@ -88,10 +88,10 @@ class LocalAgentTaskManager(AgentTaskManagerBase):
 
         await asyncio.to_thread(_write)
 
-    async def get_task(self, task_id: UUID) -> AgentTaskRecord | None:
+    async def get_task(self, task_id: UUID) -> WorkerTaskRecord | None:
         return self._records.get(task_id)
 
-    async def list_tasks(self) -> list[AgentTaskRecord]:
+    async def list_tasks(self) -> list[WorkerTaskRecord]:
         return list(self._records.values())
 
     async def cancel_task(self, task_id: UUID) -> bool:
@@ -102,7 +102,7 @@ class LocalAgentTaskManager(AgentTaskManagerBase):
             task.cancel()
         return True
 
-    async def upsert_record(self, record: AgentTaskRecord) -> None:
+    async def upsert_record(self, record: WorkerTaskRecord) -> None:
         if record.task_id not in self._records and len(self._records) >= _MAX_RECORDS:
             oldest_task_id = next(iter(self._records))
             del self._records[oldest_task_id]
@@ -123,11 +123,11 @@ class LocalAgentTaskManager(AgentTaskManagerBase):
         )
         await self.upsert_record(record)
 
-    async def listen_task_updates(self) -> AsyncIterator[AgentTaskRecord]:
+    async def listen_task_updates(self) -> AsyncIterator[WorkerTaskRecord]:
         while True:
             yield await self._completions.get()
 
-    async def gather_task_updates(self) -> list[AgentTaskRecord]:
+    async def gather_task_updates(self) -> list[WorkerTaskRecord]:
         records, self._context_updates = self._context_updates, []
         return records
 

@@ -25,7 +25,7 @@ from opendatasci.skills import BaseSkillStore
 from opendatasci.tasks.base import (
     AgentTaskManagerBase,
     AgentTaskProgressUpdate,
-    AgentTaskRecord,
+    WorkerTaskRecord,
     AgentTaskStatus,
 )
 from opendatasci.tools.base import OpenDataSciBaseTool
@@ -77,7 +77,7 @@ Args:
     args_schema: type[BaseModel] = CallArgs
 
     task_id: UUID
-    agent_task_manager: AgentTaskManagerBase
+    background_task_manager: AgentTaskManagerBase
 
     @override
     async def _arun(
@@ -88,7 +88,7 @@ Args:
         eta_seconds: float | None = None,
         **kwargs: Any,
     ) -> str:
-        await self.agent_task_manager.push_task_progress(
+        await self.background_task_manager.push_task_progress(
             self.task_id,
             AgentTaskProgressUpdate(done=done, ongoing=ongoing, blockers=blockers),
             eta_seconds=eta_seconds,
@@ -168,7 +168,7 @@ Args:
     datasci_config: OpenDataSciConfig
     sandbox_factory: BaseSandboxFactory
     skill_store: BaseSkillStore
-    agent_task_manager: AgentTaskManagerBase
+    background_task_manager: AgentTaskManagerBase
 
     async def _arun_one(
         self,
@@ -214,7 +214,7 @@ Args:
             ]
             if task_id is not None:
                 tools.append(
-                    ReportProgressTool(task_id=task_id, agent_task_manager=self.agent_task_manager)
+                    ReportProgressTool(task_id=task_id, background_task_manager=self.background_task_manager)
                 )
 
             agent = WorkerAgent(tools=tools, config=self.datasci_config)
@@ -295,7 +295,7 @@ Args:
 
                     return _work
 
-                task_id = await self.agent_task_manager.submit_task(
+                task_id = await self.background_task_manager.submit_task(
                     _make_work(),
                     summary=subtask.summary,
                 )
@@ -314,7 +314,7 @@ def create_task_tools(
     workspace: BaseWorkspace,
     datasci_config: OpenDataSciConfig,
     sandbox_factory: BaseSandboxFactory,
-    agent_task_manager: AgentTaskManagerBase,
+    background_task_manager: AgentTaskManagerBase,
     skill_store: BaseSkillStore,
 ) -> list[BaseTool]:
     """Return the ``task`` tool — task creation only.
@@ -329,7 +329,7 @@ def create_task_tools(
         workspace:       Workspace the workers operate on.
         datasci_config:  LLM configuration forwarded to each worker.
         sandbox_factory: Factory used to create an isolated sandbox for each worker.
-        agent_task_manager:    Shared task manager used to submit and track background
+        background_task_manager:    Shared task manager used to submit and track background
                          (``run_mode="background"``) task runs. Callers should share
                          the same instance with :func:`create_task_management_tools`
                          so ``check_task``/``list_tasks``/``stop_task`` can see these tasks.
@@ -341,7 +341,7 @@ def create_task_tools(
             datasci_config=datasci_config,
             sandbox_factory=sandbox_factory,
             skill_store=skill_store,
-            agent_task_manager=agent_task_manager,
+            background_task_manager=background_task_manager,
         )
     ]
 
@@ -350,7 +350,7 @@ def _isoformat(timestamp: float | None) -> str | None:
     return datetime.fromtimestamp(timestamp).isoformat() if timestamp is not None else None
 
 
-def _record_to_dict(record: AgentTaskRecord) -> dict[str, Any]:
+def _record_to_dict(record: WorkerTaskRecord) -> dict[str, Any]:
     data: dict[str, Any] = {
         "task_id": str(record.task_id),
         "summary": record.summary,
@@ -393,11 +393,11 @@ Args:
 
     args_schema: type[BaseModel] = CallArgs
 
-    agent_task_manager: AgentTaskManagerBase
+    background_task_manager: AgentTaskManagerBase
 
     @override
     async def _arun(self, task_id: UUID, **kwargs: Any) -> str:
-        record = await self.agent_task_manager.get_task(task_id)
+        record = await self.background_task_manager.get_task(task_id)
         if record is None:
             return f"No background task found with task_id={task_id}."
         return json.dumps(_record_to_dict(record), indent=2, default=str)
@@ -421,12 +421,12 @@ Args:
 
     args_schema: type[BaseModel] = CallArgs
 
-    agent_task_manager: AgentTaskManagerBase
+    background_task_manager: AgentTaskManagerBase
 
     @override
     async def _arun(self, status_in: set[AgentTaskStatus] | None = None, **kwargs: Any) -> str:
         status_in = status_in or {AgentTaskStatus.RUNNING}
-        records = [r for r in await self.agent_task_manager.list_tasks() if r.status in status_in]
+        records = [r for r in await self.background_task_manager.list_tasks() if r.status in status_in]
         if not records:
             return "No background tasks match the given status filter."
 
@@ -458,24 +458,24 @@ Args:
 
     args_schema: type[BaseModel] = CallArgs
 
-    agent_task_manager: AgentTaskManagerBase
+    background_task_manager: AgentTaskManagerBase
 
     @override
     async def _arun(self, task_id: UUID, **kwargs: Any) -> str:
-        cancelled = await self.agent_task_manager.cancel_task(task_id)
+        cancelled = await self.background_task_manager.cancel_task(task_id)
         if not cancelled:
             return f"No background task found with task_id={task_id}."
         return f"Stop requested for task_id={task_id}."
 
 
-def create_task_management_tools(agent_task_manager: AgentTaskManagerBase) -> list[BaseTool]:
+def create_task_management_tools(background_task_manager: AgentTaskManagerBase) -> list[BaseTool]:
     """Return the ``check_task``, ``list_tasks``, and ``stop_task`` tools.
 
-    *agent_task_manager* must be the same instance passed to :func:`create_task_tools`
+    *background_task_manager* must be the same instance passed to :func:`create_task_tools`
     so these tools can see the background tasks scheduled by the ``task`` tool.
     """
     return [
-        CheckTaskTool(agent_task_manager=agent_task_manager),
-        ListTasksTool(agent_task_manager=agent_task_manager),
-        StopTaskTool(agent_task_manager=agent_task_manager),
+        CheckTaskTool(background_task_manager=background_task_manager),
+        ListTasksTool(background_task_manager=background_task_manager),
+        StopTaskTool(background_task_manager=background_task_manager),
     ]

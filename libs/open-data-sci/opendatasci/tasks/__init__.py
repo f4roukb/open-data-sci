@@ -2,14 +2,14 @@ from opendatasci.tasks.base import (
     AgentTaskManagerBase,
     AgentTaskProgressReport,
     AgentTaskProgressUpdate,
-    AgentTaskRecord,
+    WorkerTaskRecord,
     AgentTaskStatus,
 )
 from opendatasci.tasks.local import LocalAgentTaskManager
 
 __all__ = [
     "AgentTaskManagerBase",
-    "AgentTaskRecord",
+    "WorkerTaskRecord",
     "AgentTaskStatus",
     "AgentTaskProgressReport",
     "AgentTaskProgressUpdate",

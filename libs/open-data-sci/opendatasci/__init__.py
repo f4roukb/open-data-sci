@@ -21,7 +21,7 @@ Package layout::
         sandbox/        sandbox abstraction and SRT-backed implementation
         skills/         skill loading and registry
         streaming/      AgentStreamEvent types and stream processors
-        tasks/          background task tracking (AgentTaskManagerBase, LocalAgentTaskManager, AgentTaskRecord)
+        tasks/          background task tracking (AgentTaskManagerBase, LocalAgentTaskManager, WorkerTaskRecord)
         tools/          LangChain tools available to the agent
 """
 

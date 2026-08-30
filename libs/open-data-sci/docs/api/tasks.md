@@ -6,9 +6,9 @@ This background-scheduling layer is backed by `opendatasci.tasks`.
 
 ## Data model
 
-- **`AgentTaskRecord`** — a point-in-time snapshot of one background task: its `summary`, `status`, timestamps, any `AgentTaskProgressReport`s recorded against it, and its `result` or `error` once it reaches a terminal state.
+- **`WorkerTaskRecord`** — a point-in-time snapshot of one background task: its `summary`, `status`, timestamps, any `AgentTaskProgressReport`s recorded against it, and its `result` or `error` once it reaches a terminal state.
 - **`AgentTaskStatus`** — `running`, `completed`, `failed`, or `cancelled`.
-- **`AgentTaskProgressUpdate`** / **`AgentTaskProgressReport`** — an incremental progress checkpoint (what's done, what's ongoing, blockers, and an ETA) that can be appended to `AgentTaskRecord.progress`, in call order, so a caller can see how a long-running task is progressing without waiting for it to finish. A worker running in the background is given a `report_progress` tool, bound to its own `task_id`, that populates these as it works.
+- **`AgentTaskProgressUpdate`** / **`AgentTaskProgressReport`** — an incremental progress checkpoint (what's done, what's ongoing, blockers, and an ETA) that can be appended to `WorkerTaskRecord.progress`, in call order, so a caller can see how a long-running task is progressing without waiting for it to finish. A worker running in the background is given a `report_progress` tool, bound to its own `task_id`, that populates these as it works.
 
 ## Task manager
 
@@ -45,7 +45,7 @@ The agent also consumes its own task manager internally: it calls `gather_task_u
 
 ---
 
-::: opendatasci.tasks.base.AgentTaskRecord
+::: opendatasci.tasks.base.WorkerTaskRecord
     options:
       show_root_heading: true
       show_source: false

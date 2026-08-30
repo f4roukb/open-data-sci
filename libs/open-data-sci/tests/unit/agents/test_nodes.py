@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 from langchain_core.messages import AIMessage, SystemMessage
 
 from opendatasci._utils.message_utils import get_message_text_content, to_text_content_blocks
-from opendatasci.agents.nodes import AgentNode, SynchronizationNode, task_message_from_record
+from opendatasci.agents.nodes import AgentNode, SynchronizationNode
 from opendatasci.agents.states import AgentState
 from opendatasci.memory.messages import AgentMessage, TaskMessage, UserMessage
 from opendatasci.tasks.local import LocalAgentTaskManager
@@ -245,9 +245,9 @@ class TestAgentNodeWithCompaction:
 
 
 def _make_task_record(summary: str = "s", result: object = "r", status: object = None):
-    from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
+    from opendatasci.tasks.base import WorkerTaskRecord, AgentTaskStatus
 
-    return AgentTaskRecord(
+    return WorkerTaskRecord(
         task_id=uuid.uuid4(),
         summary=summary,
         status=status or AgentTaskStatus.COMPLETED,
@@ -260,41 +260,41 @@ class TestTaskMessageFromRecord:
         from opendatasci.tasks.base import AgentTaskStatus
 
         record = _make_task_record(summary="my task", result="the answer", status=AgentTaskStatus.COMPLETED)
-        msg = task_message_from_record(record)
+        msg = record.to_update_message()
         assert isinstance(msg, TaskMessage)
         text = msg.content[0]["text"]
         assert "my task" in text
         assert "the answer" in text
 
     def test_failed_task_includes_error(self) -> None:
-        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
+        from opendatasci.tasks.base import WorkerTaskRecord, AgentTaskStatus
 
-        record = AgentTaskRecord(
+        record = WorkerTaskRecord(
             task_id=uuid.uuid4(), summary="my task", status=AgentTaskStatus.FAILED, error="boom"
         )
-        msg = task_message_from_record(record)
+        msg = record.to_update_message()
         text = msg.content[0]["text"]
         assert "failed" in text.lower()
         assert "boom" in text
 
     def test_cancelled_task_reported(self) -> None:
-        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
+        from opendatasci.tasks.base import WorkerTaskRecord, AgentTaskStatus
 
-        record = AgentTaskRecord(task_id=uuid.uuid4(), summary="my task", status=AgentTaskStatus.CANCELLED)
-        msg = task_message_from_record(record)
+        record = WorkerTaskRecord(task_id=uuid.uuid4(), summary="my task", status=AgentTaskStatus.CANCELLED)
+        msg = record.to_update_message()
         assert "cancelled" in msg.content[0]["text"].lower()
 
 
 class TestSynchronizationNode:
     async def test_returns_empty_dict_when_nothing_to_drain(self) -> None:
-        node = SynchronizationNode(agent_task_manager=LocalAgentTaskManager())
+        node = SynchronizationNode(background_task_manager=LocalAgentTaskManager())
         assert await node.ainvoke(_make_state()) == {}
 
     async def test_drains_and_wraps_records_as_task_messages(self) -> None:
         manager = LocalAgentTaskManager()
         record = _make_task_record(summary="mid-turn work", result="done")
         manager._context_updates.append(record)
-        node = SynchronizationNode(agent_task_manager=manager)
+        node = SynchronizationNode(background_task_manager=manager)
 
         result = await node.ainvoke(_make_state())
 
@@ -308,7 +308,7 @@ class TestSynchronizationNode:
         manager = LocalAgentTaskManager()
         manager._context_updates.append(_make_task_record(summary="a"))
         manager._context_updates.append(_make_task_record(summary="b"))
-        node = SynchronizationNode(agent_task_manager=manager)
+        node = SynchronizationNode(background_task_manager=manager)
 
         result = await node.ainvoke(_make_state())
 

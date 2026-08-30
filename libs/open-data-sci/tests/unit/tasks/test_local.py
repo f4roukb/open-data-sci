@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 
-from opendatasci.tasks.base import AgentTaskProgressUpdate, AgentTaskRecord, AgentTaskStatus
+from opendatasci.tasks.base import AgentTaskProgressUpdate, WorkerTaskRecord, AgentTaskStatus
 from opendatasci.tasks.local import _MAX_RECORDS, LocalAgentTaskManager
 
 
@@ -199,7 +199,7 @@ class TestUpsertRecord:
     async def test_upsert_inserts_new_record(self) -> None:
         manager = LocalAgentTaskManager()
         task_id = uuid4()
-        record = AgentTaskRecord(task_id=task_id, summary="s", status=AgentTaskStatus.RUNNING)
+        record = WorkerTaskRecord(task_id=task_id, summary="s", status=AgentTaskStatus.RUNNING)
 
         await manager.upsert_record(record)
 
@@ -210,9 +210,9 @@ class TestUpsertRecord:
         manager = LocalAgentTaskManager()
         task_id = uuid4()
         await manager.upsert_record(
-            AgentTaskRecord(task_id=task_id, summary="s", status=AgentTaskStatus.RUNNING)
+            WorkerTaskRecord(task_id=task_id, summary="s", status=AgentTaskStatus.RUNNING)
         )
-        replacement = AgentTaskRecord(task_id=task_id, summary="s", status=AgentTaskStatus.COMPLETED)
+        replacement = WorkerTaskRecord(task_id=task_id, summary="s", status=AgentTaskStatus.COMPLETED)
 
         await manager.upsert_record(replacement)
 
@@ -224,12 +224,12 @@ class TestUpsertRecord:
         task_ids = [uuid4() for _ in range(_MAX_RECORDS)]
         for task_id in task_ids:
             await manager.upsert_record(
-                AgentTaskRecord(task_id=task_id, summary="s", status=AgentTaskStatus.RUNNING)
+                WorkerTaskRecord(task_id=task_id, summary="s", status=AgentTaskStatus.RUNNING)
             )
 
         new_task_id = uuid4()
         await manager.upsert_record(
-            AgentTaskRecord(task_id=new_task_id, summary="s", status=AgentTaskStatus.RUNNING)
+            WorkerTaskRecord(task_id=new_task_id, summary="s", status=AgentTaskStatus.RUNNING)
         )
 
         assert len(await manager.list_tasks()) == _MAX_RECORDS
@@ -243,11 +243,11 @@ class TestUpsertRecord:
         task_ids = [uuid4() for _ in range(_MAX_RECORDS)]
         for task_id in task_ids:
             await manager.upsert_record(
-                AgentTaskRecord(task_id=task_id, summary="s", status=AgentTaskStatus.RUNNING)
+                WorkerTaskRecord(task_id=task_id, summary="s", status=AgentTaskStatus.RUNNING)
             )
 
         await manager.upsert_record(
-            AgentTaskRecord(task_id=task_ids[0], summary="s", status=AgentTaskStatus.COMPLETED)
+            WorkerTaskRecord(task_id=task_ids[0], summary="s", status=AgentTaskStatus.COMPLETED)
         )
 
         assert len(await manager.list_tasks()) == _MAX_RECORDS

@@ -185,13 +185,13 @@ class TestAgentInit:
 
         async with _make_agent_ctx() as agent:
             assert isinstance(agent.task_manager, AgentTaskManagerBase)
-            assert agent.task_manager is agent._agent_task_manager
+            assert agent.task_manager is agent._background_task_manager
 
     async def test_task_manager_property_returns_explicit_override(self) -> None:
         from opendatasci.tasks.local import LocalAgentTaskManager
 
         explicit_manager = LocalAgentTaskManager()
-        async with _agent_with_overrides_ctx(agent_task_manager=explicit_manager) as agent:
+        async with _agent_with_overrides_ctx(background_task_manager=explicit_manager) as agent:
             assert agent.task_manager is explicit_manager
 
 
@@ -745,9 +745,9 @@ class TestAgentResumeMethods:
 
 
 def _make_task_record(summary: str = "s", result: object = "r", status: object = None):
-    from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
+    from opendatasci.tasks.base import WorkerTaskRecord, AgentTaskStatus
 
-    return AgentTaskRecord(
+    return WorkerTaskRecord(
         task_id=uuid.uuid4(),
         summary=summary,
         status=status or AgentTaskStatus.COMPLETED,
@@ -786,7 +786,7 @@ class TestAstreamDrainsTaskManagerAtTurnStart:
         manager._context_updates.append(record)
 
         upstream = [TokenEvent(content="x")]
-        async with _agent_with_overrides_ctx(agent_task_manager=manager) as agent:
+        async with _agent_with_overrides_ctx(background_task_manager=manager) as agent:
             with TestAgentAstream()._wire_astream_mocks(agent, upstream):
                 async for _ in agent.astream(Invocation.from_text("hello")):
                     pass

@@ -1,30 +1,17 @@
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Optional
 
 from langchain_core.messages import SystemMessage
 from langchain_core.runnables import RunnableConfig
 
-from opendatasci._utils.message_utils import to_text_content_blocks
 from opendatasci._utils.mixins import RenderableMessageMixin
 from opendatasci.agents.chat_history import ChatHistoryBuilder
 from opendatasci.agents.states import AgentState
-from opendatasci.memory.messages import AgentMessage, TaskMessage
+from opendatasci.memory.messages import AgentMessage
 from opendatasci.models.factory import _RetryRunnable
-from opendatasci.tasks.base import AgentTaskManagerBase, AgentTaskRecord, AgentTaskStatus
+from opendatasci.tasks.base import AgentTaskManagerBase
 
 BuildSystemContext = Callable[[AgentState], list[SystemMessage]]
-
-
-def task_message_from_record(record: AgentTaskRecord) -> TaskMessage:
-    """Render a finished background task as the content fed to the model."""
-    if record.status == AgentTaskStatus.COMPLETED:
-        text = f"Background task '{record.summary}' finished:\n\n{record.result}"
-    elif record.status == AgentTaskStatus.FAILED:
-        text = f"Background task '{record.summary}' failed: {record.error}"
-    else:
-        text = f"Background task '{record.summary}' was cancelled."
-    return TaskMessage(content=to_text_content_blocks(text), created_at=datetime.now(timezone.utc))
 
 
 class BaseNode(ABC):
@@ -95,13 +82,13 @@ class AgentNode(BaseNode):
 class SynchronizationNode(BaseNode):
     """Graph node that folds finished background tasks into context mid-turn."""
 
-    def __init__(self, agent_task_manager: AgentTaskManagerBase) -> None:
-        self._agent_task_manager = agent_task_manager
+    def __init__(self, background_task_manager: AgentTaskManagerBase) -> None:
+        self._background_task_manager = background_task_manager
 
     async def ainvoke(
         self, state: AgentState, config: Optional[RunnableConfig] = None
     ) -> dict[str, Any]:
-        records = await self._agent_task_manager.gather_task_updates()
+        records = await self._background_task_manager.gather_task_updates()
         if not records:
             return {}
-        return {"messages": [task_message_from_record(record) for record in records]}
+        return {"messages": [record.to_update_message() for record in records]}

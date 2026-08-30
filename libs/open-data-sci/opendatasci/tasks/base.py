@@ -2,13 +2,16 @@
 
 import time
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
 from enum import StrEnum, auto
 from typing import Any, AsyncIterator, Awaitable, Callable
 from uuid import UUID
 
 from pydantic import Field
 
+from opendatasci._utils.message_utils import to_text_content_blocks
 from opendatasci._utils.pydantic_utils import MutableStrictBaseModel
+from opendatasci.memory.messages import TaskMessage
 
 
 class AgentTaskStatus(StrEnum):
@@ -34,7 +37,7 @@ class AgentTaskProgressReport(MutableStrictBaseModel):
     reported_at: float = Field(default_factory=time.time)
 
 
-class AgentTaskRecord(MutableStrictBaseModel):
+class WorkerTaskRecord(MutableStrictBaseModel):
     """Point-in-time snapshot of a background task's lifecycle."""
 
     task_id: UUID
@@ -47,13 +50,23 @@ class AgentTaskRecord(MutableStrictBaseModel):
     created_at: float = Field(default_factory=time.time)
     finished_at: float | None = None
 
+    def to_update_message(self) -> TaskMessage:
+        """Render this finished background task as the content fed to the model."""
+        if self.status == AgentTaskStatus.COMPLETED:
+            text = f"Background task '{self.summary}' finished:\n\n{self.result}"
+        elif self.status == AgentTaskStatus.FAILED:
+            text = f"Background task '{self.summary}' failed: {self.error}"
+        else:
+            text = f"Background task '{self.summary}' was cancelled."
+        return TaskMessage(content=to_text_content_blocks(text), created_at=datetime.now(timezone.utc))
+
 
 class AgentTaskManagerBase(ABC):
     """Registers and tracks background tasks: submit, check on, cancel."""
 
     @abstractmethod
     async def submit_task(self, work: Callable[[UUID], Awaitable[Any]], summary: str) -> UUID:
-        """Create a :class:`AgentTaskRecord`, schedule *work* to run against it, and return its ID.
+        """Create a :class:`WorkerTaskRecord`, schedule *work* to run against it, and return its ID.
 
         The record is created and stored before *work* starts; *work* only
         receives the ``task_id``, not the record itself. There is no method
@@ -63,12 +76,12 @@ class AgentTaskManagerBase(ABC):
         ...
 
     @abstractmethod
-    async def get_task(self, task_id: UUID) -> AgentTaskRecord | None:
+    async def get_task(self, task_id: UUID) -> WorkerTaskRecord | None:
         """Return the current record for *task_id*, or ``None`` if unknown."""
         ...
 
     @abstractmethod
-    async def list_tasks(self) -> list[AgentTaskRecord]:
+    async def list_tasks(self) -> list[WorkerTaskRecord]:
         """Return records for all tasks currently tracked."""
         ...
 
@@ -81,7 +94,7 @@ class AgentTaskManagerBase(ABC):
         ...
 
     @abstractmethod
-    async def upsert_record(self, record: AgentTaskRecord) -> None:
+    async def upsert_record(self, record: WorkerTaskRecord) -> None:
         """Insert or overwrite *record* wholesale, keyed by ``record.task_id``.
 
         Exposed publicly so a worker running independently of the manager
@@ -104,7 +117,7 @@ class AgentTaskManagerBase(ABC):
         ...
 
     @abstractmethod
-    def listen_task_updates(self) -> AsyncIterator[AgentTaskRecord]:
+    def listen_task_updates(self) -> AsyncIterator[WorkerTaskRecord]:
         """Yield each task's record exactly once, as soon as it reaches a terminal status.
 
         Blocks between completions — this is a push source, not a poll.
@@ -116,7 +129,7 @@ class AgentTaskManagerBase(ABC):
         ...
 
     @abstractmethod
-    async def gather_task_updates(self) -> list[AgentTaskRecord]:
+    async def gather_task_updates(self) -> list[WorkerTaskRecord]:
         """Return and clear every completed record collected since the last call.
 
         Non-blocking: returns immediately, empty if nothing has completed.
