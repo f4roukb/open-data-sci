@@ -309,7 +309,7 @@ class TestSynchronizationNode:
     async def test_drains_and_wraps_records_as_task_messages(self) -> None:
         manager = BackgroundTaskManager()
         record = _make_task_record(summary="mid-turn work", result="done")
-        manager._context_updates.append(record)
+        manager._task_updates.append(record)
         node = SynchronizationNode(background_task_manager=manager)
 
         result = await node.ainvoke(_make_state())
@@ -322,8 +322,8 @@ class TestSynchronizationNode:
 
     async def test_multiple_records_all_wrapped(self) -> None:
         manager = BackgroundTaskManager()
-        manager._context_updates.append(_make_task_record(summary="a"))
-        manager._context_updates.append(_make_task_record(summary="b"))
+        manager._task_updates.append(_make_task_record(summary="a"))
+        manager._task_updates.append(_make_task_record(summary="b"))
         node = SynchronizationNode(background_task_manager=manager)
 
         result = await node.ainvoke(_make_state())

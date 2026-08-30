@@ -33,8 +33,8 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
         self._records: dict[UUID, BackgroundTaskRecord] = {}
         self._tasks: dict[UUID, asyncio.Task[Any]] = {}
         self._output_root = output_root
-        self._completions: asyncio.Queue[BackgroundTaskRecord] = asyncio.Queue()
-        self._context_updates: list[BackgroundTaskRecord] = []
+        self._task_completions: asyncio.Queue[BackgroundTaskRecord] = asyncio.Queue()
+        self._task_updates: list[BackgroundTaskRecord] = []
 
     async def submit_task(self, work: Callable[[UUID], Awaitable[Any]], summary: str) -> UUID:
         task_id = uuid4()
@@ -50,8 +50,8 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
                 record.status = BackgroundTaskStatus.CANCELLED
                 record.finished_at = time.time()
                 await self.upsert_record(record)
-                self._completions.put_nowait(record)
-                self._context_updates.append(record)
+                self._task_completions.put_nowait(record)
+                self._task_updates.append(record)
                 raise
             except Exception as exc:
                 logger.exception("Background task %s (%s) failed", task_id, summary)
@@ -59,16 +59,16 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
                 record.error = str(exc)
                 record.finished_at = time.time()
                 await self.upsert_record(record)
-                self._completions.put_nowait(record)
-                self._context_updates.append(record)
+                self._task_completions.put_nowait(record)
+                self._task_updates.append(record)
             else:
                 record.status = BackgroundTaskStatus.COMPLETED
                 record.result = result
                 record.finished_at = time.time()
                 await self.upsert_record(record)
                 await self._publish_task_result(task_id, record)
-                self._completions.put_nowait(record)
-                self._context_updates.append(record)
+                self._task_completions.put_nowait(record)
+                self._task_updates.append(record)
             finally:
                 self._tasks.pop(task_id, None)
 
@@ -127,11 +127,11 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
 
     async def listen_task_updates(self) -> AsyncIterator[BackgroundTaskRecord]:
         while True:
-            yield await self._completions.get()
+            yield await self._task_completions.get()
 
     async def gather_task_updates(self) -> list[BackgroundTaskRecord]:
-        records, self._context_updates = self._context_updates, []
+        records, self._task_updates = self._task_updates, []
         return records
 
     def has_task_updates(self) -> bool:
-        return bool(self._context_updates)
+        return bool(self._task_updates)

@@ -861,7 +861,7 @@ class TestAstreamDrainsTaskManagerAtTurnStart:
 
         manager = BackgroundTaskManager()
         record = _make_task_record(summary="background work", result="42")
-        manager._context_updates.append(record)
+        manager._task_updates.append(record)
 
         upstream = [TokenEvent(content="x")]
         async with _agent_with_overrides_ctx(background_task_manager=manager) as agent:
