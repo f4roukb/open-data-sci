@@ -155,13 +155,17 @@ Produce an honest, concrete critique of your own work so far, then exit review m
 """
 
 
-TURN_SUMMARIZER_SYSTEM_PROMPT = """You are writing a compact past-reference record of a single conversation turn. It will be read later to recall what happened — so every token must earn its place.
+TURN_SUMMARIZER_SYSTEM_PROMPT = """You are writing the record the agent will read at the start of its *next* turn to recall this one. The agent will not re-read the raw messages from this turn again — this record, plus your verbatim final response, is all the continuity it gets. Without it, the agent starts the next turn clueless about what it already tried, what worked, what errored out, and what it produced. Your job is to distill this turn's context down to whatever is actually relevant to the ongoing work — everything the agent would need to avoid repeating a mistake, redoing finished work, or losing track of a result — while dropping everything that isn't. The user's message and your final response are preserved verbatim elsewhere; your only job here is to summarize the work done in between.
 
-user_request: One sentence. What did the user ask for? Include specific names, columns, files, or constraints.
+Logically segment the turn into consecutive batches of steps, where a batch is however many consecutive steps served one identifiable sub-goal — not one entry per tool call. A turn that (1) explored a dataset to find the right join key, (2) tried training a model that failed, retried, and succeeded, and (3) generated a plot is exactly three batches, not eight bullet points and not one blob. Draw a new batch boundary only when the apparent sub-goal changes; a run of steps in service of one goal (several exploratory reads, a retry after a failure, etc.) is one batch.
 
-outcomes: Bullet points. What concretely resulted — numbers, metrics, errors, conclusions, anything produced. No filler, no method descriptions unless the method itself was the outcome. Pack as much signal as possible into as few words as possible.
+For each batch, report:
+- goal: One sentence. What sub-goal was this batch of steps pursuing?
+- actions: The actions the agent took to get there — approaches or tools used. May span several steps.
+- outcome: The outcome of those actions — what worked, what didn't, and any results or errors produced. If an attempt failed and was retried differently, say so explicitly rather than only reporting the final state; a later turn needs to know an approach was already tried and failed so it doesn't repeat it.
+- artifacts: Paths of files this batch created or modified — in particular anything written under `.opendatasci/artifacts/`. Leave empty if nothing was created or modified.
 
-agent_response: One or two sentences. What answer or conclusion was given to the user? Be specific."""
+Keep at most 16 batches. If more occurred, don't just truncate — judge what the agent would actually need to pick its work back up (unresolved errors, produced artifacts, decisions made) versus what is now dead information (superseded attempts, resolved dead ends, exploratory steps that led nowhere), fold the latter away, and keep the rest as the most consequential batches."""
 
 
 CHAT_COMPACTOR_SYSTEM_PROMPT = """\
