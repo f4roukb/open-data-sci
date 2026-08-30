@@ -30,13 +30,13 @@ from opendatasci._utils.streaming_utils import format_stream_error
 from opendatasci.agents.chat_history import ChatHistoryBuilder
 from opendatasci.agents.graphs import AgentCompiledGraph, AgentGraphFactory
 from opendatasci.agents.interrupts import InterruptKind
-from opendatasci.agents.nodes import TaskUpdateSyncNode
+from opendatasci.agents.nodes import SynchronizationNode, task_message_from_record
 from opendatasci.agents.states import AgentState
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.base import BaseContextStore
 from opendatasci.context.local import LocalContextStore
 from opendatasci.memory.chat_memory import ChatHistoryCompactor
-from opendatasci.memory.messages import MessageOrigin, TaskMessage, UserMessage
+from opendatasci.memory.messages import MessageOrigin, UserMessage
 from opendatasci.memory.turn_memory import TurnRewinder
 from opendatasci.models.factory import (
     _RetryRunnable,
@@ -58,7 +58,7 @@ from opendatasci.streaming import (
     MessageEvent,
     ResponseEvent,
 )
-from opendatasci.tasks.base import AgentTaskManagerBase, AgentTaskRecord, AgentTaskStatus
+from opendatasci.tasks.base import AgentTaskManagerBase, AgentTaskRecord
 from opendatasci.tasks.local import LocalAgentTaskManager
 from opendatasci.tools.factory import (
     create_execution_mode_tools,
@@ -255,9 +255,8 @@ class Agent(BaseOpenDataSciAgent):
             context_store=self._context_store,
             session_id=self._session_id,
         )
-        self._task_update_sync_node = TaskUpdateSyncNode(
+        self._synchronization_node = SynchronizationNode(
             agent_task_manager=self._agent_task_manager,
-            task_message_from_record=self._task_message_from_record,
         )
 
         self._graph: AgentCompiledGraph = self._build_graph(checkpointer)
@@ -309,7 +308,7 @@ class Agent(BaseOpenDataSciAgent):
             build_system_context=self._build_system_context,
             chat_history_builder=self._chat_history_builder,
             checkpointer=checkpointer,
-            task_update_sync_node=self._task_update_sync_node,
+            synchronization_node=self._synchronization_node,
         ).build()
 
     @classmethod
@@ -318,26 +317,13 @@ class Agent(BaseOpenDataSciAgent):
             content=to_text_content_blocks(query), created_at=datetime.now(timezone.utc)
         )
 
-    @staticmethod
-    def _task_message_from_record(record: AgentTaskRecord) -> TaskMessage:
-        """Render a finished background task as the content fed to the model."""
-        if record.status == AgentTaskStatus.COMPLETED:
-            text = f"Background task '{record.summary}' finished:\n\n{record.result}"
-        elif record.status == AgentTaskStatus.FAILED:
-            text = f"Background task '{record.summary}' failed: {record.error}"
-        else:
-            text = f"Background task '{record.summary}' was cancelled."
-        return TaskMessage(
-            content=to_text_content_blocks(text), created_at=datetime.now(timezone.utc)
-        )
-
     @classmethod
     def _prepare_batch_messages(
         cls, task_records: list[AgentTaskRecord], user_items: list[Invocation]
     ) -> list[BaseMessage]:
         """Build one message per item, worker results first, then user text."""
         return [
-            *(cls._task_message_from_record(record) for record in task_records),
+            *(task_message_from_record(record) for record in task_records),
             *(
                 UserMessage(content=item.content, created_at=item.created_at)
                 for item in user_items

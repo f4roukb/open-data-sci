@@ -755,36 +755,6 @@ def _make_task_record(summary: str = "s", result: object = "r", status: object =
     )
 
 
-class TestTaskMessageFromRecord:
-    def test_completed_task_includes_summary_and_result(self) -> None:
-        from opendatasci.tasks.base import AgentTaskStatus
-
-        record = _make_task_record(summary="my task", result="the answer", status=AgentTaskStatus.COMPLETED)
-        msg = Agent._task_message_from_record(record)
-        assert isinstance(msg, TaskMessage)
-        text = msg.content[0]["text"]
-        assert "my task" in text
-        assert "the answer" in text
-
-    def test_failed_task_includes_error(self) -> None:
-        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
-
-        record = AgentTaskRecord(
-            task_id=uuid.uuid4(), summary="my task", status=AgentTaskStatus.FAILED, error="boom"
-        )
-        msg = Agent._task_message_from_record(record)
-        text = msg.content[0]["text"]
-        assert "failed" in text.lower()
-        assert "boom" in text
-
-    def test_cancelled_task_reported(self) -> None:
-        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
-
-        record = AgentTaskRecord(task_id=uuid.uuid4(), summary="my task", status=AgentTaskStatus.CANCELLED)
-        msg = Agent._task_message_from_record(record)
-        assert "cancelled" in msg.content[0]["text"].lower()
-
-
 class TestPrepareBatchMessages:
     def test_task_records_precede_user_items(self) -> None:
         record = _make_task_record()

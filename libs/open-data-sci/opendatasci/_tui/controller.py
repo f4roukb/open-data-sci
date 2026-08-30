@@ -413,11 +413,9 @@ class CLIController:
     async def _drain_loop(self) -> None:
         """Keep starting new turns until nothing is left to send or a prompt opens.
 
-        Two independent sources can still have content after a turn ends:
-        user messages queued while the agent was busy, and background-task
-        results the agent hasn't drained yet (a task that finished mid-turn
-        but missed every ``tools -> agent`` boundary). Both are drained here
-        so neither waits for an unrelated future event to surface.
+        Drains both the user-message queue and any task-manager content the
+        agent hasn't picked up yet, so neither has to wait for an unrelated
+        future event to surface.
         """
         assert self._service is not None
         while not (
@@ -442,15 +440,10 @@ class CLIController:
         in ``close``). ``listen_task_updates`` blocks until the next terminal
         task, so this stays idle between completions rather than polling.
 
-        The raw completion is never shown as a chat message — only the
-        agent's eventual response to it appears in the UI. This method never
-        feeds task content to the agent directly either — the agent drains
-        its own task manager (turn-start and mid-turn); it only decides
-        whether to proactively kick off a turn so an idle agent doesn't sit
-        on a finished result until the next unrelated user message: no new
-        turn while one is already running or the agent is paused on an
-        interrupt, since the running/next turn will pick the result up on
-        its own.
+        The raw completion is never shown as a chat message, and this method
+        never feeds it to the agent directly — the agent picks up finished
+        tasks on its own. This only decides whether to kick off a turn now,
+        so an idle agent doesn't wait on the next unrelated user message.
         """
         assert self._service is not None
         async for _record in self._service.task_manager.listen_task_updates():

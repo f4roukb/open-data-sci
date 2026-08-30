@@ -34,25 +34,22 @@ class AgentGraphFactory:
         get_llm_with_tools: Callable[[AgentState], _RetryRunnable],
         tools: list[BaseTool],
         build_system_context: BuildSystemContext,
-        chat_history_builder: "ChatHistoryBuilder | None" = None,
-        checkpointer: "BaseCheckpointSaver[Any] | None" = None,
-        task_update_sync_node: "BaseNode | None" = None,
+        chat_history_builder: "ChatHistoryBuilder | None",
+        checkpointer: "BaseCheckpointSaver[Any] | None",
+        synchronization_node: "BaseNode | None",
     ) -> None:
         self._get_llm_with_tools = get_llm_with_tools
         self._tools = tools
         self._build_system_context = build_system_context
         self._chat_history_builder = chat_history_builder
         self._checkpointer = checkpointer
-        self._task_update_sync_node = task_update_sync_node
+        self._synchronization_node = synchronization_node
 
     def build(self) -> AgentCompiledGraph:
         """Compile and return the graph, ready to run.
 
-        When *task_update_sync_node* was supplied, it's inserted as a node
-        between ``tools`` and ``agent`` so any background task that finishes
-        mid-turn is folded into context immediately after the tool call,
-        before the next reasoning step — not just at the start of the next
-        turn.
+        When *synchronization_node* is supplied, it's inserted between
+        ``tools`` and ``agent`` so it runs right after every tool call.
         """
         agent_node = AgentNode(
             get_llm_with_tools=self._get_llm_with_tools,
@@ -65,8 +62,8 @@ class AgentGraphFactory:
         graph.add_node("tools", ToolNode(self._tools, handle_tool_errors=True))
         graph.add_edge(START, "agent")
         graph.add_conditional_edges("agent", _route_after_llm_call, {"tools": "tools", "end": END})
-        if self._task_update_sync_node is not None:
-            graph.add_node("sync_task_updates", self._task_update_sync_node.to_async_callable())
+        if self._synchronization_node is not None:
+            graph.add_node("sync_task_updates", self._synchronization_node.to_async_callable())
             graph.add_edge("tools", "sync_task_updates")
             graph.add_edge("sync_task_updates", "agent")
         else:
@@ -93,6 +90,7 @@ class WorkerGraphFactory:
         agent_node = AgentNode(
             get_llm_with_tools=lambda state: self._llm_with_tools,
             build_system_context=self._build_system_context,
+            chat_history_builder=None,
         )
 
         graph = StateGraph(AgentState)
