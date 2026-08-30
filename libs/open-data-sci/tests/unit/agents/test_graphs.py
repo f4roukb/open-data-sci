@@ -54,3 +54,25 @@ class TestAgentGraphFactory:
 
         graph = _make_builder(build_system_context=build_system_context).build()
         assert graph is not None
+
+    def test_no_sync_task_updates_node_when_not_supplied(self) -> None:
+        graph = _make_builder().build()
+        assert "sync_task_updates" not in graph.nodes
+
+    def test_sync_task_updates_node_added_when_supplied(self) -> None:
+        async def sync_task_updates(state, config=None) -> dict:
+            return {}
+
+        graph = _make_builder(sync_task_updates=sync_task_updates).build()
+        assert "sync_task_updates" in graph.nodes
+
+    def test_sync_task_updates_sits_between_tools_and_agent(self) -> None:
+        async def sync_task_updates(state, config=None) -> dict:
+            return {}
+
+        graph = _make_builder(sync_task_updates=sync_task_updates).build()
+        graph_repr = graph.get_graph()
+        edges = {(e.source, e.target) for e in graph_repr.edges}
+        assert ("tools", "sync_task_updates") in edges
+        assert ("sync_task_updates", "agent") in edges
+        assert ("tools", "agent") not in edges

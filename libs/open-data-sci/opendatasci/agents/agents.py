@@ -57,7 +57,7 @@ from opendatasci.streaming import (
     MessageEvent,
     ResponseEvent,
 )
-from opendatasci.tasks.base import AgentTaskManagerBase
+from opendatasci.tasks.base import AgentTaskManagerBase, AgentTaskRecord, AgentTaskStatus
 from opendatasci.tasks.local import LocalAgentTaskManager
 from opendatasci.tools.factory import (
     create_execution_mode_tools,
@@ -304,7 +304,17 @@ class Agent(BaseOpenDataSciAgent):
             build_system_context=self._build_system_context,
             chat_history_builder=self._chat_history_builder,
             checkpointer=checkpointer,
+            sync_task_updates=self._sync_task_updates_node,
         ).build()
+
+    async def _sync_task_updates_node(
+        self, state: AgentState, config: RunnableConfig | None = None
+    ) -> dict[str, Any]:
+        """Graph node sitting on ``tools -> agent``: fold any finished background tasks in mid-turn."""
+        records = await self._agent_task_manager.gather_task_updates()  # type: ignore[union-attr]
+        if not records:
+            return {}
+        return {"messages": [self._task_message_from_record(record) for record in records]}
 
     @classmethod
     def _prepare_user_message(cls, query: str) -> UserMessage:
@@ -312,17 +322,30 @@ class Agent(BaseOpenDataSciAgent):
             content=to_text_content_blocks(query), created_at=datetime.now(timezone.utc)
         )
 
+    @staticmethod
+    def _task_message_from_record(record: AgentTaskRecord) -> TaskMessage:
+        """Render a finished background task as the content fed to the model."""
+        if record.status == AgentTaskStatus.COMPLETED:
+            text = f"Background task '{record.summary}' finished:\n\n{record.result}"
+        elif record.status == AgentTaskStatus.FAILED:
+            text = f"Background task '{record.summary}' failed: {record.error}"
+        else:
+            text = f"Background task '{record.summary}' was cancelled."
+        return TaskMessage(
+            content=to_text_content_blocks(text), created_at=datetime.now(timezone.utc)
+        )
+
     @classmethod
-    def _prepare_batch_messages(cls, items: list[Invocation]) -> list[BaseMessage]:
+    def _prepare_batch_messages(
+        cls, task_records: list[AgentTaskRecord], user_items: list[Invocation]
+    ) -> list[BaseMessage]:
         """Build one message per item, worker results first, then user text."""
-        worker_items = [item for item in items if item.origin == MessageOrigin.TASK]
-        user_items = [item for item in items if item.origin == MessageOrigin.USER]
         return [
+            *(cls._task_message_from_record(record) for record in task_records),
             *(
-                TaskMessage(content=item.content, created_at=item.created_at)
-                for item in worker_items
+                UserMessage(content=item.content, created_at=item.created_at)
+                for item in user_items
             ),
-            *(UserMessage(content=item.content, created_at=item.created_at) for item in user_items),
         ]
 
     def _thread_config(self, thread_id: Any) -> RunnableConfig:
@@ -381,10 +404,11 @@ class Agent(BaseOpenDataSciAgent):
         thread_id = self._session_manager.get_or_create_thread()  # type: ignore[union-attr]
         config = self._thread_config(thread_id)
         items = invocation if isinstance(invocation, list) else [invocation]
+        task_records = await self._agent_task_manager.gather_task_updates()  # type: ignore[union-attr]
 
         self._context_store.prune()  # type: ignore[union-attr]
         graph_input: Any = {
-            "messages": type(self)._prepare_batch_messages(items),
+            "messages": type(self)._prepare_batch_messages(task_records, items),
             "active_skills": [],
             "active_skill_domains": [],
             "is_plan_mode": False,

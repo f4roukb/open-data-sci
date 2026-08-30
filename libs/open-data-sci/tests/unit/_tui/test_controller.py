@@ -907,37 +907,36 @@ async def _aiter(*events: AgentStreamEvent):
         yield e
 
 
-class TestFormatCompletionMessage:
+class TestFormatCompletionDisplay:
     def test_completed_task_includes_result(self) -> None:
-        from opendatasci._tui.controller import _format_completion_message
+        from opendatasci._tui.controller import _format_completion_display
         from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
 
         record = AgentTaskRecord(
             task_id=uuid4(), summary="my task", status=AgentTaskStatus.COMPLETED, result="the answer"
         )
-        query, display = _format_completion_message(record)
-        assert "my task" in query
-        assert "the answer" in query
-        assert query == display
+        display = _format_completion_display(record)
+        assert "my task" in display
+        assert "the answer" in display
 
     def test_failed_task_includes_error(self) -> None:
-        from opendatasci._tui.controller import _format_completion_message
+        from opendatasci._tui.controller import _format_completion_display
         from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
 
         record = AgentTaskRecord(
             task_id=uuid4(), summary="my task", status=AgentTaskStatus.FAILED, error="boom"
         )
-        query, _ = _format_completion_message(record)
-        assert "failed" in query.lower()
-        assert "boom" in query
+        display = _format_completion_display(record)
+        assert "failed" in display.lower()
+        assert "boom" in display
 
     def test_cancelled_task_reported(self) -> None:
-        from opendatasci._tui.controller import _format_completion_message
+        from opendatasci._tui.controller import _format_completion_display
         from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
 
         record = AgentTaskRecord(task_id=uuid4(), summary="my task", status=AgentTaskStatus.CANCELLED)
-        query, _ = _format_completion_message(record)
-        assert "cancelled" in query.lower()
+        display = _format_completion_display(record)
+        assert "cancelled" in display.lower()
 
 
 class TestBackgroundTaskWatcher:
@@ -957,7 +956,6 @@ class TestBackgroundTaskWatcher:
         record = AgentTaskRecord(
             task_id=uuid4(), summary="s", status=AgentTaskStatus.COMPLETED, result="done"
         )
-        mock_service.task_manager = MagicMock()
         mock_service.task_manager.listen_task_updates = MagicMock(
             return_value=self._completions(record)
         )
@@ -967,8 +965,11 @@ class TestBackgroundTaskWatcher:
         await loaded_controller._watch_background_tasks()
 
         assert mock_service.astream.called
+        # The record is never fed to the agent from here — astream() is called
+        # with an empty batch; the agent drains its own task manager.
+        assert mock_service.astream.call_args[0][0] == []
 
-    async def test_enqueues_pending_when_turn_in_progress(
+    async def test_shows_completion_message_when_idle(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
         from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
@@ -976,7 +977,24 @@ class TestBackgroundTaskWatcher:
         record = AgentTaskRecord(
             task_id=uuid4(), summary="s", status=AgentTaskStatus.COMPLETED, result="done"
         )
-        mock_service.task_manager = MagicMock()
+        mock_service.task_manager.listen_task_updates = MagicMock(
+            return_value=self._completions(record)
+        )
+        mock_service.astream.return_value = _aiter()
+        loaded_controller._agent_running = False
+
+        await loaded_controller._watch_background_tasks()
+
+        mock_ui.add_message.assert_any_call("agent", "Background task 's' finished:\n\ndone")
+
+    async def test_no_new_turn_when_turn_in_progress(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
+
+        record = AgentTaskRecord(
+            task_id=uuid4(), summary="s", status=AgentTaskStatus.COMPLETED, result="done"
+        )
         mock_service.task_manager.listen_task_updates = MagicMock(
             return_value=self._completions(record)
         )
@@ -984,7 +1002,29 @@ class TestBackgroundTaskWatcher:
 
         await loaded_controller._watch_background_tasks()
 
-        assert not loaded_controller._pending_queue.is_empty()
+        # Nothing is queued anymore — the running turn's own mid-turn node
+        # (or the next turn's start) will pick the result up on its own.
+        assert loaded_controller._pending_queue.is_empty()
+        assert not mock_service.astream.called
+        mock_ui.add_message.assert_any_call("agent", "Background task 's' finished:\n\ndone")
+
+    async def test_no_new_turn_while_interrupted(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
+
+        record = AgentTaskRecord(
+            task_id=uuid4(), summary="s", status=AgentTaskStatus.COMPLETED, result="done"
+        )
+        mock_service.task_manager.listen_task_updates = MagicMock(
+            return_value=self._completions(record)
+        )
+        mock_service.is_user_input_required = MagicMock(return_value=True)
+        loaded_controller._agent_running = False
+
+        await loaded_controller._watch_background_tasks()
+
+        assert loaded_controller._pending_queue.is_empty()
         assert not mock_service.astream.called
 
 
@@ -1240,6 +1280,29 @@ class TestResumeMethods:
         loaded_controller._awaiting_approval = True
         await loaded_controller.resume_with_approval(False)
         assert loaded_controller.awaiting_approval is False
+
+    async def test_drain_loop_triggers_empty_turn_for_undrained_task_updates(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        """A task result missed by the mid-turn node still gets surfaced right after the turn."""
+        mock_service.astream.return_value = _aiter()
+        mock_service.task_manager.has_task_updates = MagicMock(side_effect=[True, False])
+
+        await loaded_controller.run_agent("query")
+
+        assert mock_service.astream.call_count == 2
+        assert mock_service.astream.call_args_list[-1][0][0] == []
+
+    async def test_drain_loop_stops_while_interrupted_even_with_task_updates(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        mock_service.astream.return_value = _aiter()
+        mock_service.is_user_input_required = MagicMock(return_value=True)
+        mock_service.task_manager.has_task_updates = MagicMock(return_value=True)
+
+        await loaded_controller.run_agent("query")
+
+        mock_service.astream.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

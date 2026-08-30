@@ -20,6 +20,8 @@ The bundled **`LocalAgentTaskManager`** runs submitted work as in-process `async
 
 The agent constructs its own `LocalAgentTaskManager` internally and exposes it as `agent.task_manager`, so a caller driving the agent (the TUI, or a hosted-service equivalent) can consume `listen_task_updates()` itself to learn about background completions without polling. It is not currently an injectable constructor argument of `Agent` the way `sandbox_factory` or `session_manager` are — a future storage backend (DB/cloud-backed) would implement the same `AgentTaskManagerBase` interface, though task *execution* stays in-process for now.
 
+The agent also consumes its own task manager internally: it calls `gather_task_updates()` at the start of every turn, and again mid-turn immediately after any tool call, so a background task's result is folded into the conversation automatically — once at the next turn boundary, or as soon as possible if it finishes while the agent is already running. A caller does not need to do anything to make this happen; `listen_task_updates()` remains purely for the caller's own notification/UI purposes and is unaffected by this internal draining.
+
 ## Reference
 
 ::: opendatasci.tasks.base.AgentTaskStatus

@@ -11,7 +11,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from opendatasci._utils.message_utils import to_text_content_blocks
-from opendatasci.memory.messages import AgentMessage, UserMessage
+from opendatasci.memory.messages import AgentMessage, TaskMessage, UserMessage
 from langchain_core.tools import BaseTool, StructuredTool
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel, ConfigDict
@@ -538,9 +538,11 @@ class TestAgentAstream:
 
         # Capture kwargs so the session_id test can inspect them
         captured: list[dict] = []
+        captured_inputs: list = []
 
         async def fake_astream_events(state, **kwargs):
             captured.append(kwargs)
+            captured_inputs.append(state)
             # Persist the turn's messages so the final AIMessage (read from the
             # checkpointed state at finalization) can be recovered.
             agent.graph.update_state(
@@ -552,6 +554,7 @@ class TestAgentAstream:
 
         agent.graph.astream_events = fake_astream_events  # type: ignore[attr-defined]
         agent._astream_captured = captured  # expose for tests
+        agent._astream_inputs_captured = captured_inputs  # expose graph_input for tests
 
         mock_processor = MagicMock()
         mock_processor.process_event.side_effect = (
@@ -734,6 +737,131 @@ class TestAgentResumeMethods:
             with pytest.raises(RuntimeError):
                 async for _ in agent.resume_with_approval(True):
                     pass
+
+
+# ---------------------------------------------------------------------------
+# Task-manager-owned context injection (turn-start + mid-turn)
+# ---------------------------------------------------------------------------
+
+
+def _make_task_record(summary: str = "s", result: object = "r", status: object = None):
+    from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
+
+    return AgentTaskRecord(
+        task_id=uuid.uuid4(),
+        summary=summary,
+        status=status or AgentTaskStatus.COMPLETED,
+        result=result,
+    )
+
+
+class TestTaskMessageFromRecord:
+    def test_completed_task_includes_summary_and_result(self) -> None:
+        from opendatasci.tasks.base import AgentTaskStatus
+
+        record = _make_task_record(summary="my task", result="the answer", status=AgentTaskStatus.COMPLETED)
+        msg = Agent._task_message_from_record(record)
+        assert isinstance(msg, TaskMessage)
+        text = msg.content[0]["text"]
+        assert "my task" in text
+        assert "the answer" in text
+
+    def test_failed_task_includes_error(self) -> None:
+        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
+
+        record = AgentTaskRecord(
+            task_id=uuid.uuid4(), summary="my task", status=AgentTaskStatus.FAILED, error="boom"
+        )
+        msg = Agent._task_message_from_record(record)
+        text = msg.content[0]["text"]
+        assert "failed" in text.lower()
+        assert "boom" in text
+
+    def test_cancelled_task_reported(self) -> None:
+        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
+
+        record = AgentTaskRecord(task_id=uuid.uuid4(), summary="my task", status=AgentTaskStatus.CANCELLED)
+        msg = Agent._task_message_from_record(record)
+        assert "cancelled" in msg.content[0]["text"].lower()
+
+
+class TestPrepareBatchMessages:
+    def test_task_records_precede_user_items(self) -> None:
+        record = _make_task_record()
+        item = Invocation.from_text("hi")
+        messages = Agent._prepare_batch_messages([record], [item])
+        assert isinstance(messages[0], TaskMessage)
+        assert isinstance(messages[1], UserMessage)
+
+    def test_no_task_records_yields_only_user_messages(self) -> None:
+        item = Invocation.from_text("hi")
+        messages = Agent._prepare_batch_messages([], [item])
+        assert len(messages) == 1
+        assert isinstance(messages[0], UserMessage)
+
+    def test_multiple_task_records_all_precede_user_items(self) -> None:
+        records = [_make_task_record(summary="a"), _make_task_record(summary="b")]
+        item = Invocation.from_text("hi")
+        messages = Agent._prepare_batch_messages(records, [item])
+        assert [type(m) for m in messages] == [TaskMessage, TaskMessage, UserMessage]
+
+
+class TestAstreamDrainsTaskManagerAtTurnStart:
+    async def test_finished_task_injected_ahead_of_user_text(self) -> None:
+        from opendatasci.streaming.events import TokenEvent
+        from opendatasci.tasks.local import LocalAgentTaskManager
+
+        manager = LocalAgentTaskManager()
+        record = _make_task_record(summary="background work", result="42")
+        manager._context_updates.append(record)
+
+        upstream = [TokenEvent(content="x")]
+        async with _agent_with_overrides_ctx(agent_task_manager=manager) as agent:
+            with TestAgentAstream()._wire_astream_mocks(agent, upstream):
+                async for _ in agent.astream(Invocation.from_text("hello")):
+                    pass
+
+            graph_input = agent._astream_inputs_captured[0]
+            messages = graph_input["messages"]
+            assert isinstance(messages[0], TaskMessage)
+            assert "background work" in messages[0].content[0]["text"]
+            assert isinstance(messages[1], UserMessage)
+
+    async def test_no_finished_tasks_yields_only_user_message(self) -> None:
+        from opendatasci.streaming.events import TokenEvent
+
+        upstream = [TokenEvent(content="x")]
+        async with _make_agent_ctx() as agent:
+            with TestAgentAstream()._wire_astream_mocks(agent, upstream):
+                async for _ in agent.astream(Invocation.from_text("hello")):
+                    pass
+
+            graph_input = agent._astream_inputs_captured[0]
+            messages = graph_input["messages"]
+            assert len(messages) == 1
+            assert isinstance(messages[0], UserMessage)
+
+
+class TestSyncTaskUpdatesNode:
+    async def test_returns_empty_dict_when_nothing_to_drain(self) -> None:
+        async with _make_agent_ctx() as agent:
+            result = await agent._sync_task_updates_node(MagicMock())
+            assert result == {}
+
+    async def test_drains_and_wraps_records_as_task_messages(self) -> None:
+        from opendatasci.tasks.local import LocalAgentTaskManager
+
+        manager = LocalAgentTaskManager()
+        record = _make_task_record(summary="mid-turn work", result="done")
+        manager._context_updates.append(record)
+
+        async with _agent_with_overrides_ctx(agent_task_manager=manager) as agent:
+            result = await agent._sync_task_updates_node(MagicMock())
+            assert len(result["messages"]) == 1
+            assert isinstance(result["messages"][0], TaskMessage)
+            assert "mid-turn work" in result["messages"][0].content[0]["text"]
+            # The buffer is drained — a second call finds nothing left.
+            assert await agent._sync_task_updates_node(MagicMock()) == {}
 
 
 # ===========================================================================

@@ -83,15 +83,18 @@ _CHOICE_CANCELLED_QUERY = "cancel"
 _BACKGROUND_STATUS_POLL_SECONDS = 2
 
 
-def _format_completion_message(record: AgentTaskRecord) -> tuple[str, str]:
-    """Render a finished background task as a synthetic turn's (query, display) text."""
+def _format_completion_display(record: AgentTaskRecord) -> str:
+    """Render a finished background task as the UI notification text.
+
+    Cosmetic only — this is shown in the chat log, not fed to the model.
+    The agent forms its own view of a finished task from its task manager
+    directly (see ``Agent._task_message_from_record``).
+    """
     if record.status == AgentTaskStatus.COMPLETED:
-        text = f"Background task '{record.summary}' finished:\n\n{record.result}"
+        return f"Background task '{record.summary}' finished:\n\n{record.result}"
     elif record.status == AgentTaskStatus.FAILED:
-        text = f"Background task '{record.summary}' failed: {record.error}"
-    else:
-        text = f"Background task '{record.summary}' was cancelled."
-    return text, text
+        return f"Background task '{record.summary}' failed: {record.error}"
+    return f"Background task '{record.summary}' was cancelled."
 
 
 class CLIController:
@@ -422,31 +425,52 @@ class CLIController:
         await self._drain_loop()
 
     async def _drain_loop(self) -> None:
-        """Keep sending queued messages as new turns until the queue is empty or a prompt opens."""
+        """Keep starting new turns until nothing is left to send or a prompt opens.
+
+        Two independent sources can still have content after a turn ends:
+        user messages queued while the agent was busy, and background-task
+        results the agent hasn't drained yet (a task that finished mid-turn
+        but missed every ``tools -> agent`` boundary). Both are drained here
+        so neither waits for an unrelated future event to surface.
+        """
         assert self._service is not None
         while not (
-            self._awaiting_choice or self._awaiting_approval or self._pending_queue.is_empty()
+            self._awaiting_choice
+            or self._awaiting_approval
+            or self._service.is_user_input_required()
         ):
-            batch = self._drain_pending_batch()
-            await self._run_turn(self._service.astream(batch))
+            if not self._pending_queue.is_empty():
+                batch = self._drain_pending_batch()
+                await self._run_turn(self._service.astream(batch))
+                continue
+            if self._service.task_manager.has_task_updates():
+                self._active_turn_status = self._ui.add_turn_status_bar()
+                await self._run_turn(self._service.astream([]))
+                continue
+            return
 
     async def _watch_background_tasks(self) -> None:
-        """Consume background-task completions and feed them to the agent, unprompted.
+        """Show a "task finished" message for every background-task completion.
 
         Runs for the lifetime of the session (started in ``boot``, cancelled
         in ``close``). ``listen_task_updates`` blocks until the next terminal
         task, so this stays idle between completions rather than polling.
-        The raw completion is never shown as a chat message — only the
-        agent's eventual response to it appears in the UI.
+
+        This method never feeds task content to the agent directly — the
+        agent drains its own task manager (turn-start and mid-turn). It only
+        decides whether to proactively kick off a turn so an idle agent
+        doesn't sit on a finished result until the next unrelated user
+        message: no new turn while one is already running or the agent is
+        paused on an interrupt, since the running/next turn will pick the
+        result up on its own.
         """
         assert self._service is not None
         async for record in self._service.task_manager.listen_task_updates():
-            query, display = _format_completion_message(record)
-            if self._agent_running or self._awaiting_choice or self._awaiting_approval:
-                self._enqueue_pending(query, display, origin=PendingMessageOrigin.TASK)
-            else:
-                self._active_turn_status = self._ui.add_turn_status_bar()
-                await self.run_agent([Invocation.from_text(query, origin=MessageOrigin.TASK)])
+            await self._ui.add_message("agent", _format_completion_display(record)).finish()
+            if self._agent_running or self._service.is_user_input_required():
+                continue
+            self._active_turn_status = self._ui.add_turn_status_bar()
+            await self.run_agent([])
 
     async def _poll_background_task_status(self) -> None:
         """Refresh the header's "running background tasks" line every few seconds.

@@ -19,19 +19,6 @@ The result: one test per pathway covers a long slice of controller code.
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
-from opendatasci.streaming.events import (
-    ErrorEvent,
-    InputRequiredEvent,
-    ReasoningEvent,
-    ResponseEvent,
-    SubagentEvent,
-    TokenEvent,
-    ToolCallEvent,
-    ToolCommunicationEvent,
-    ToolResultEvent,
-    UsageEvent,
-    TaskDoneEvent,
-)
 from opendatasci._tui.adapter import (
     EphemeralHandle,
     MessageHandle,
@@ -42,6 +29,20 @@ from opendatasci._tui.adapter import (
 )
 from opendatasci._tui.controller import CLIController
 from opendatasci._tui.service import OpenDataSciTuiService
+from opendatasci.streaming.events import (
+    ApprovalRequiredEvent,
+    ErrorEvent,
+    InputRequiredEvent,
+    ReasoningEvent,
+    ResponseEvent,
+    SubagentEvent,
+    TaskDoneEvent,
+    TokenEvent,
+    ToolCallEvent,
+    ToolCommunicationEvent,
+    ToolResultEvent,
+    UsageEvent,
+)
 
 # ---------------------------------------------------------------------------
 # Stub UIAdapter
@@ -258,11 +259,26 @@ def _make_service_stub(
         svc.compact_chat_history = AsyncMock(return_value=compact_summary)
     svc.rewind_turn = AsyncMock()
 
-    async def _astream(_query: str):
+    # Mirrors the real agent: paused (is_user_input_required() == True) once a
+    # choice/approval event is yielded, until a resume method clears it.
+    state = {"input_required": False}
+
+    async def _astream(_query):
         for ev in astream_events or []:
+            state["input_required"] = isinstance(ev, (InputRequiredEvent, ApprovalRequiredEvent))
             yield ev
 
+    async def _resume(_answer):
+        state["input_required"] = False
+        return
+        yield  # make it a generator
+
     svc.astream = _astream
+    svc.resume_with_input = _resume
+    svc.resume_with_approval = _resume
+    svc.is_user_input_required = MagicMock(side_effect=lambda: state["input_required"])
+    svc.task_manager = MagicMock()
+    svc.task_manager.has_task_updates = MagicMock(return_value=False)
     return svc
 
 
