@@ -36,7 +36,7 @@ from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.base import BaseContextStore
 from opendatasci.context.local import LocalContextStore
 from opendatasci.memory.chat_memory import ChatHistoryCompactor
-from opendatasci.memory.messages import MessageOrigin, UserMessage
+from opendatasci.memory.messages import MessageOrigin, TaskMessage, UserMessage
 from opendatasci.memory.turn_memory import TurnRewinder
 from opendatasci.models.factory import (
     _RetryRunnable,
@@ -58,7 +58,7 @@ from opendatasci.streaming import (
     MessageEvent,
     ResponseEvent,
 )
-from opendatasci.tasks.base import BackgroundTaskManagerBase, BackgroundTaskRecord
+from opendatasci.tasks.base import BackgroundTaskManagerBase
 from opendatasci.tasks.local import BackgroundTaskManager
 from opendatasci.tools.factory import (
     create_execution_mode_tools,
@@ -312,20 +312,26 @@ class Agent(BaseOpenDataSciAgent):
         ).build()
 
     @classmethod
-    def _prepare_user_message(cls, query: str) -> UserMessage:
-        return UserMessage(
-            content=to_text_content_blocks(query), created_at=datetime.now(timezone.utc)
-        )
+    def _message_from_invocation(cls, item: Invocation) -> BaseMessage:
+        match item.origin:
+            case MessageOrigin.USER:
+                return UserMessage(content=item.content, created_at=item.created_at)
+            case MessageOrigin.TASK:
+                return TaskMessage(content=item.content, created_at=item.created_at)
+            case _:
+                raise ValueError(f"Invocation.origin={item.origin!r} is not valid for astream()")
 
     @classmethod
-    def _prepare_batch_messages(
-        cls, task_records: list[BackgroundTaskRecord], user_items: list[Invocation]
-    ) -> list[BaseMessage]:
-        """Build one message per item, worker results first, then user text."""
-        return [
-            *(record.to_update_message() for record in task_records),
-            *(UserMessage(content=item.content, created_at=item.created_at) for item in user_items),
-        ]
+    def _prepare_batch_messages(cls, items: list[Invocation]) -> list[BaseMessage]:
+        """Build one message per item, in the order given.
+
+        Each item's :attr:`Invocation.origin` decides whether it renders as a
+        :class:`TaskMessage` or a :class:`UserMessage` — see
+        :meth:`_message_from_invocation`. Ordering (e.g. task results ahead of
+        user text) is the caller's responsibility, since it's the caller's
+        list.
+        """
+        return [cls._message_from_invocation(item) for item in items]
 
     def _thread_config(self, thread_id: Any) -> RunnableConfig:
         return {
@@ -333,14 +339,14 @@ class Agent(BaseOpenDataSciAgent):
             "configurable": {"thread_id": str(thread_id)},
         }
 
-    @staticmethod
-    def _pending_interrupt_value(graph_state: Any) -> dict[str, Any] | None:
+    @classmethod
+    def _pending_interrupt_value(cls, graph_state: Any) -> dict[str, Any] | None:
         if not is_interrupt_state_snapshot(graph_state):
             return None
         return graph_state.tasks[0].interrupts[0].value  # type: ignore[no-any-return]
 
-    @staticmethod
-    def _is_approval_interrupt(intr_value: dict[str, Any]) -> bool:
+    @classmethod
+    def _is_approval_interrupt(cls, intr_value: dict[str, Any]) -> bool:
         return (
             isinstance(intr_value, dict)
             and intr_value.get("kind") == InterruptKind.APPROVAL_REQUIRED
@@ -370,6 +376,18 @@ class Agent(BaseOpenDataSciAgent):
         several separate requests — it is one request whose items are all folded
         into a single turn, producing exactly one response.
 
+        Each item's :attr:`~Invocation.origin` decides how it's rendered:
+        :attr:`MessageOrigin.TASK` becomes a :class:`TaskMessage`,
+        :attr:`MessageOrigin.USER` (the default) becomes a :class:`UserMessage`.
+        A caller that already drained its own task manager (e.g. one backed by
+        an external queue/broker) can build ``Invocation``s with
+        ``origin=MessageOrigin.TASK`` itself and pass them in here directly,
+        ahead of any user text — the same channel user input travels through,
+        just tagged differently. This method does not drain :attr:`task_manager`
+        on its own at turn start — a background task's result reaches the
+        model either through a caller-supplied item like this, or through the
+        agent's own mid-turn draining once a tool call returns, never both.
+
         Raises :class:`RuntimeError` if the agent is currently paused awaiting a
         response to an :class:`~opendatasci.streaming.InputRequiredEvent` or
         :class:`~opendatasci.streaming.ApprovalRequiredEvent` — resume it with
@@ -383,11 +401,10 @@ class Agent(BaseOpenDataSciAgent):
         thread_id = self._session_manager.get_or_create_thread()  # type: ignore[union-attr]
         config = self._thread_config(thread_id)
         items = invocation if isinstance(invocation, list) else [invocation]
-        task_records = await self._background_task_manager.gather_task_updates()  # type: ignore[union-attr]
 
         self._context_store.prune()  # type: ignore[union-attr]
         graph_input: Any = {
-            "messages": type(self)._prepare_batch_messages(task_records, items),
+            "messages": type(self)._prepare_batch_messages(items),
             "active_skills": [],
             "active_skill_domains": [],
             "is_plan_mode": False,

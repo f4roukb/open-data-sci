@@ -1,6 +1,6 @@
 # Background Tasks
 
-The agent can delegate work to concurrent sub-agents via its internal `task` tool. By default (`run_mode="foreground"`) this blocks until every subtask finishes and returns the combined result — visible in the stream as [`ToolCallEvent`/`SubagentEvent`/`TaskDoneEvent`](types.md). For long-running subtasks (heavy training runs, large-scale processing) the agent can instead schedule work in the background (`run_mode="background"`): each subtask becomes its own tracked task and the tool call returns immediately with a task ID, so the agent can keep the conversation moving and check back on it later.
+The agent can delegate work to concurrent sub-agents via its internal `task` tool. Each spawned worker runs in its own sandbox, so code and CLI-command executions across workers are genuinely parallelized, not just interleaved. By default (`run_mode="foreground"`) this blocks until every subtask finishes and returns the combined result — visible in the stream as [`ToolCallEvent`/`SubagentEvent`/`TaskDoneEvent`](types.md). For long-running subtasks (heavy training runs, large-scale processing) the agent can instead schedule work in the background (`run_mode="background"`): each subtask becomes its own tracked task and the tool call returns immediately with a task ID, so the agent can keep the conversation moving and check back on it later.
 
 This background-scheduling layer is backed by `opendatasci.tasks`.
 
@@ -12,15 +12,18 @@ This background-scheduling layer is backed by `opendatasci.tasks`.
 
 ## Task manager
 
-**`BackgroundTaskManagerBase`** is the abstract interface a task-tracking backend implements: create a record and schedule work against it (`submit_task`), read one record (`get_task`) or all of them (`list_tasks`), request cancellation (`cancel_task`), write to a record (`upsert_record`, the primitive every mutation goes through — including `push_task_progress`, which appends an `BackgroundTaskProgressReport`), and await completions (`listen_task_updates`, an async iterator — not a poll — that yields each task exactly once as it reaches a terminal status).
+`agent.task_manager` is a **`BackgroundTaskManagerBase`** — the interface for querying and observing background work from outside the agent:
 
-Alongside `listen_task_updates()`, the manager also exposes a second, independent way to retrieve completions: `gather_task_updates()` returns and clears every completed record collected since the last call, and `has_task_updates()` is a cheap, non-blocking peek at whether gathering would return anything. Where `listen_task_updates()` is a notification stream (for a caller that wants to know *that* something finished, e.g. to show a UI message), the gather methods are a content buffer (for a caller that wants the record itself, on its own schedule). The two are independent — gathering does not consume the listener's stream, so each can have its own consumer without racing.
+| Method | Use it to |
+|---|---|
+| `get_task(task_id)` | Look up one task's current record. |
+| `list_tasks()` | List every tracked task. |
+| `cancel_task(task_id)` | Request cancellation (best-effort). |
+| `listen_task_updates()` | `async for record in agent.task_manager.listen_task_updates():` — yields each task's record as soon as it finishes. Use this to show a notification or trigger your own follow-up logic without polling. |
 
-The bundled **`BackgroundTaskManager`** runs submitted work as in-process `asyncio` tasks, keeping records for the lifetime of the manager instance (i.e. the agent session). When constructed with an `output_root`, it also publishes each completed task's result to disk at `<output_root>/<task_id>.md` — by default `.opendatasci/workers/outputs/<task_id>.md` — so the result survives past the manager's in-memory, session-scoped lifetime. Publishing is skipped when no `output_root` is configured.
+While a turn is already in progress, the agent drains its own task manager automatically as work completes, so a result can change what it does next within the same turn rather than sitting unused until the turn ends. Starting a *new* turn to deliver a result — when the agent is otherwise idle, or once the current turn wraps up — is the driving caller's job: the bundled TUI does this for you by watching `listen_task_updates()` and kicking off a turn as soon as one is warranted, so if you're using the TUI you never need to think about this at all.
 
-The agent constructs its own `BackgroundTaskManager` internally and exposes it as `agent.task_manager`, so a caller driving the agent (the TUI, or a hosted-service equivalent) can consume `listen_task_updates()` itself to learn about background completions without polling. It is not currently an injectable constructor argument of `Agent` the way `sandbox_factory` or `session_manager` are — a future storage backend (DB/cloud-backed) would implement the same `BackgroundTaskManagerBase` interface, though task *execution* stays in-process for now.
-
-The agent also consumes its own task manager internally: it calls `gather_task_updates()` at the start of every turn, and again mid-turn immediately after any tool call, so a background task's result is folded into the conversation automatically — once at the next turn boundary, or as soon as possible if it finishes while the agent is already running. A caller does not need to do anything to make this happen; `listen_task_updates()` remains purely for the caller's own notification/UI purposes and is unaffected by this internal draining.
+**Bringing your own task tracking.** `BackgroundTaskManagerBase` is an abstract interface, not a hardwired implementation. The bundled **`BackgroundTaskManager`** runs tasks in-process via `asyncio` (pass `output_root` to its constructor to also persist each result to `<output_root>/<task_id>.md`), but a deployment that already tracks work elsewhere — a database, a job queue, a message broker — can back `agent.task_manager` with its own implementation instead, as long as it satisfies the same interface. Driving a turn's start is always the caller's job regardless of implementation: build an `Invocation` tagged `origin=MessageOrigin.TASK` for a finished task's result and pass it to `astream()` alongside (or instead of) user text — see [Agent](agent.md).
 
 ## Reference
 

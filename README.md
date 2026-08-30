@@ -109,6 +109,7 @@ No setup friction. OpenDataSci ships with the complete stack a practitioner woul
 | File formats | Excel/Parquet/Feather (via Pandas), XML (lxml) |
 | Numerics | NumPy, SciPy |
 | Classical ML | scikit-learn, LightGBM, CatBoost, XGBoost, statsmodels |
+| Deep learning *(optional)* | PyTorch, JAX, Flax, Optax, Transformers, Sentence-Transformers |
 | AutoML / tuning | Optuna |
 | Forecasting | Prophet |
 | Interpretability | SHAP |
