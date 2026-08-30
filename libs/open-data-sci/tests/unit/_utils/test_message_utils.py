@@ -1,6 +1,5 @@
 """Unit tests for opendatasci._utils.message_utils."""
 
-
 from langchain_core.messages import SystemMessage, ToolMessage
 
 from opendatasci._utils.message_utils import (
@@ -113,7 +112,11 @@ class TestRenderTurnUserMessage:
 
     def test_multiple_text_blocks_joined(self) -> None:
         result = render_turn(
-            [UserMessage(content=[{"type": "text", "text": "part1"}, {"type": "text", "text": "part2"}])]
+            [
+                UserMessage(
+                    content=[{"type": "text", "text": "part1"}, {"type": "text", "text": "part2"}]
+                )
+            ]
         )
         assert "User:" in result
 
@@ -128,19 +131,23 @@ class TestRenderTurnAgentMessageNoToolCalls:
         assert result == "Agent: answer"
 
     def test_thinking_block_skipped(self) -> None:
-        msg = AgentMessage(content=[
-            {"type": "thinking", "thinking": "internal monologue"},
-            {"type": "text", "text": "final answer"},
-        ])
+        msg = AgentMessage(
+            content=[
+                {"type": "thinking", "thinking": "internal monologue"},
+                {"type": "text", "text": "final answer"},
+            ]
+        )
         result = render_turn([msg])
         assert "internal monologue" not in result
         assert result == "Agent: final answer"
 
     def test_multiple_text_blocks_joined(self) -> None:
-        msg = AgentMessage(content=[
-            {"type": "text", "text": "part one"},
-            {"type": "text", "text": "part two"},
-        ])
+        msg = AgentMessage(
+            content=[
+                {"type": "text", "text": "part one"},
+                {"type": "text", "text": "part two"},
+            ]
+        )
         result = render_turn([msg])
         assert "part one" in result
         assert "part two" in result
@@ -262,17 +269,21 @@ class TestExtractThinking:
         assert get_thoughts(msg) == ""
 
     def test_multiple_thinking_blocks_joined(self) -> None:
-        msg = AgentMessage(content=[
-            {"type": "thinking", "thinking": "part one"},
-            {"type": "thinking", "thinking": "part two"},
-        ])
+        msg = AgentMessage(
+            content=[
+                {"type": "thinking", "thinking": "part one"},
+                {"type": "thinking", "thinking": "part two"},
+            ]
+        )
         assert get_thoughts(msg) == "part one\npart two"
 
     def test_thinking_blocks_isolated_from_text_blocks(self) -> None:
-        msg = AgentMessage(content=[
-            {"type": "thinking", "thinking": "reasoning"},
-            {"type": "text", "text": "conclusion"},
-        ])
+        msg = AgentMessage(
+            content=[
+                {"type": "thinking", "thinking": "reasoning"},
+                {"type": "text", "text": "conclusion"},
+            ]
+        )
         assert get_thoughts(msg) == "reasoning"
         assert get_message_text_content(msg) == "conclusion"
 

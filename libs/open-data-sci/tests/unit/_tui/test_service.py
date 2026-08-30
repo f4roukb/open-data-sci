@@ -1,5 +1,4 @@
-﻿"""Unit tests for opendatasci._tui.service.OpenDataSci."""
-
+"""Unit tests for opendatasci._tui.service.OpenDataSci."""
 
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -53,6 +52,7 @@ class TestOpenDataSciServiceInit:
     def test_sandbox_is_stored(self) -> None:
         svc, _, sandbox = _make_service()
         assert svc._sandbox is sandbox
+
 
 # ---------------------------------------------------------------------------
 # Async context manager

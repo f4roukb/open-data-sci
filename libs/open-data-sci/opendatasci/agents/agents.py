@@ -324,10 +324,7 @@ class Agent(BaseOpenDataSciAgent):
         """Build one message per item, worker results first, then user text."""
         return [
             *(record.to_update_message() for record in task_records),
-            *(
-                UserMessage(content=item.content, created_at=item.created_at)
-                for item in user_items
-            ),
+            *(UserMessage(content=item.content, created_at=item.created_at) for item in user_items),
         ]
 
     def _thread_config(self, thread_id: Any) -> RunnableConfig:

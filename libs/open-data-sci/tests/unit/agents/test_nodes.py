@@ -1,6 +1,5 @@
 """Unit tests for opendatasci.agents.nodes."""
 
-
 import uuid
 from unittest.mock import AsyncMock, MagicMock
 
@@ -14,7 +13,9 @@ from opendatasci.tasks.local import BackgroundTaskManager
 
 
 def _make_state(messages: list | None = None) -> AgentState:
-    return AgentState(messages=messages or [UserMessage(content=to_text_content_blocks("question"))])
+    return AgentState(
+        messages=messages or [UserMessage(content=to_text_content_blocks("question"))]
+    )
 
 
 def _no_system(state):
@@ -26,9 +27,7 @@ def _one_system(state):
 
 
 class TestAgentNode:
-    def _make_node(
-        self, response: AIMessage | None = None
-    ) -> tuple[AgentNode, AsyncMock]:
+    def _make_node(self, response: AIMessage | None = None) -> tuple[AgentNode, AsyncMock]:
         if response is None:
             response = AIMessage(content="hello")
         llm = AsyncMock()
@@ -84,14 +83,18 @@ class TestAgentNode:
         from opendatasci.agents.chat_history import ChatHistoryBuilder
         from opendatasci.memory.chat_memory import ChatTurnContext
 
-        recap_message = UserMessage(content=to_text_content_blocks("[Earlier session summary]\nold stuff"))
+        recap_message = UserMessage(
+            content=to_text_content_blocks("[Earlier session summary]\nold stuff")
+        )
         inline_turn_message = UserMessage(content=to_text_content_blocks("q"))
         mock_builder = MagicMock(spec=ChatHistoryBuilder)
-        mock_builder.build = AsyncMock(return_value=ChatTurnContext(
-            messages=[recap_message, inline_turn_message],
-            turn_summaries=[],
-            chat_history_compaction=None,
-        ))
+        mock_builder.build = AsyncMock(
+            return_value=ChatTurnContext(
+                messages=[recap_message, inline_turn_message],
+                turn_summaries=[],
+                chat_history_compaction=None,
+            )
+        )
 
         llm = AsyncMock()
         llm.ainvoke = AsyncMock(return_value=AIMessage(content="ok"))
@@ -119,11 +122,13 @@ class TestAgentNode:
             return []
 
         mock_builder = MagicMock(spec=ChatHistoryBuilder)
-        mock_builder.build = AsyncMock(return_value=ChatTurnContext(
-            messages=[UserMessage(content=to_text_content_blocks("q"))],
-            turn_summaries=[],
-            chat_history_compaction=None,
-        ))
+        mock_builder.build = AsyncMock(
+            return_value=ChatTurnContext(
+                messages=[UserMessage(content=to_text_content_blocks("q"))],
+                turn_summaries=[],
+                chat_history_compaction=None,
+            )
+        )
 
         llm = AsyncMock()
         llm.ainvoke = AsyncMock(return_value=AIMessage(content="ok"))
@@ -198,7 +203,9 @@ class TestAgentNode:
             build_system_context=_no_system,
             chat_history_builder=None,
         )
-        state = AgentState(messages=[UserMessage(content=to_text_content_blocks("hi"))], is_plan_mode=True)
+        state = AgentState(
+            messages=[UserMessage(content=to_text_content_blocks("hi"))], is_plan_mode=True
+        )
         await node.ainvoke(state)
 
         assert len(received_states) == 1
@@ -220,11 +227,13 @@ class TestAgentNodeWithCompaction:
 
         compacted = [UserMessage(content=to_text_content_blocks("compacted summary"))]
         mock_builder = MagicMock(spec=ChatHistoryBuilder)
-        mock_builder.build = AsyncMock(return_value=ChatTurnContext(
-            messages=compacted,
-            turn_summaries=[],
-            chat_history_compaction=None,
-        ))
+        mock_builder.build = AsyncMock(
+            return_value=ChatTurnContext(
+                messages=compacted,
+                turn_summaries=[],
+                chat_history_compaction=None,
+            )
+        )
 
         llm = AsyncMock()
         llm.ainvoke = AsyncMock(return_value=AIMessage(content="done"))
@@ -259,7 +268,9 @@ class TestTaskMessageFromRecord:
     def test_completed_task_includes_summary_and_result(self) -> None:
         from opendatasci.tasks.base import BackgroundTaskStatus
 
-        record = _make_task_record(summary="my task", result="the answer", status=BackgroundTaskStatus.COMPLETED)
+        record = _make_task_record(
+            summary="my task", result="the answer", status=BackgroundTaskStatus.COMPLETED
+        )
         msg = record.to_update_message()
         assert isinstance(msg, TaskMessage)
         text = msg.content[0]["text"]
@@ -270,7 +281,10 @@ class TestTaskMessageFromRecord:
         from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
 
         record = BackgroundTaskRecord(
-            task_id=uuid.uuid4(), summary="my task", status=BackgroundTaskStatus.FAILED, error="boom"
+            task_id=uuid.uuid4(),
+            summary="my task",
+            status=BackgroundTaskStatus.FAILED,
+            error="boom",
         )
         msg = record.to_update_message()
         text = msg.content[0]["text"]
@@ -280,7 +294,9 @@ class TestTaskMessageFromRecord:
     def test_cancelled_task_reported(self) -> None:
         from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
 
-        record = BackgroundTaskRecord(task_id=uuid.uuid4(), summary="my task", status=BackgroundTaskStatus.CANCELLED)
+        record = BackgroundTaskRecord(
+            task_id=uuid.uuid4(), summary="my task", status=BackgroundTaskStatus.CANCELLED
+        )
         msg = record.to_update_message()
         assert "cancelled" in msg.content[0]["text"].lower()
 

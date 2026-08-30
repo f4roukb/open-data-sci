@@ -1,6 +1,5 @@
 """Unit tests for opendatasci.agents.agents_factory."""
 
-
 from contextlib import asynccontextmanager
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -30,8 +29,13 @@ class TestCreateAgent:
         with (
             patch("opendatasci.agents.agents_factory.LocalWorkspace", return_value=workspace_stub),
             patch("opendatasci.agents.agents_factory.SRTSandboxFactory", return_value=factory_stub),
-            patch("opendatasci.agents.agents_factory.LocalContextStore", return_value=context_store_stub),
-            patch("opendatasci.agents.agents_factory.LocalSkillStore", return_value=skill_store_stub),
+            patch(
+                "opendatasci.agents.agents_factory.LocalContextStore",
+                return_value=context_store_stub,
+            ),
+            patch(
+                "opendatasci.agents.agents_factory.LocalSkillStore", return_value=skill_store_stub
+            ),
             patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x),
             patch("opendatasci.agents.agents.create_execution_mode_tools", return_value=[]),
             patch("opendatasci.agents.agents.AgentGraphFactory"),

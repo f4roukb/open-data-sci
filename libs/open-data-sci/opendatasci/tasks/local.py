@@ -38,7 +38,9 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
 
     async def submit_task(self, work: Callable[[UUID], Awaitable[Any]], summary: str) -> UUID:
         task_id = uuid4()
-        record = BackgroundTaskRecord(task_id=task_id, summary=summary, status=BackgroundTaskStatus.RUNNING)
+        record = BackgroundTaskRecord(
+            task_id=task_id, summary=summary, status=BackgroundTaskStatus.RUNNING
+        )
         await self.upsert_record(record)
 
         async def _run() -> None:

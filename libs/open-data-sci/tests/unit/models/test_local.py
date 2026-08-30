@@ -1,6 +1,5 @@
 """Unit tests for opendatasci.models.local factory functions (Ollama and OpenAI-compatible servers)."""
 
-
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -158,7 +157,9 @@ class TestCreateOpenAICompatiblePrimaryModel:
 
     def test_api_key_from_config_preferred(self, fake_chat_openai_compatible, monkeypatch) -> None:
         monkeypatch.setenv("OPENAI_API_KEY", "env-key")
-        config = OpenDataSciConfig(provider="openai_compatible_server", openai_api_key="my-server-token")  # type: ignore[arg-type]
+        config = OpenDataSciConfig(
+            provider="openai_compatible_server", openai_api_key="my-server-token"
+        )  # type: ignore[arg-type]
         create_openai_compatible_model(config)
         assert fake_chat_openai_compatible["api_key"] == "my-server-token"
 
@@ -166,33 +167,45 @@ class TestCreateOpenAICompatiblePrimaryModel:
         monkeypatch.delitem(sys.modules, "langchain_openai", raising=False)
         with patch.dict(sys.modules, {"langchain_openai": None}):
             with pytest.raises(ValueError, match="langchain-openai"):
-                create_openai_compatible_model(OpenDataSciConfig(provider="openai_compatible_server"))  # type: ignore[arg-type]
+                create_openai_compatible_model(
+                    OpenDataSciConfig(provider="openai_compatible_server")
+                )  # type: ignore[arg-type]
 
 
 class TestCreateOpenAICompatibleSecondaryModel:
     def test_uses_resolved_secondary_model(self, fake_chat_openai_compatible) -> None:
-        config = OpenDataSciConfig(provider="openai_compatible_server", secondary_model="llama-mini-test")  # type: ignore[arg-type]
+        config = OpenDataSciConfig(
+            provider="openai_compatible_server", secondary_model="llama-mini-test"
+        )  # type: ignore[arg-type]
         create_openai_compatible_secondary_model(config)
         assert fake_chat_openai_compatible["model"] == "llama-mini-test"
 
     def test_temperature_is_zero(self, fake_chat_openai_compatible) -> None:
-        create_openai_compatible_secondary_model(OpenDataSciConfig(provider="openai_compatible_server"))  # type: ignore[arg-type]
+        create_openai_compatible_secondary_model(
+            OpenDataSciConfig(provider="openai_compatible_server")
+        )  # type: ignore[arg-type]
         assert fake_chat_openai_compatible["temperature"] == 0
 
     def test_max_tokens_capped(self, fake_chat_openai_compatible) -> None:
-        create_openai_compatible_secondary_model(OpenDataSciConfig(provider="openai_compatible_server"))  # type: ignore[arg-type]
+        create_openai_compatible_secondary_model(
+            OpenDataSciConfig(provider="openai_compatible_server")
+        )  # type: ignore[arg-type]
         assert fake_chat_openai_compatible["max_tokens"] == 1000
 
     def test_base_url_defaults_to_localhost(self, fake_chat_openai_compatible, monkeypatch) -> None:
         monkeypatch.delenv("LLM_SERVER_BASE_URL", raising=False)
-        create_openai_compatible_secondary_model(OpenDataSciConfig(provider="openai_compatible_server"))  # type: ignore[arg-type]
+        create_openai_compatible_secondary_model(
+            OpenDataSciConfig(provider="openai_compatible_server")
+        )  # type: ignore[arg-type]
         assert fake_chat_openai_compatible["base_url"] == "http://localhost:8000/v1"
 
     def test_missing_package_raises_llm_provider_error(self, monkeypatch) -> None:
         monkeypatch.delitem(sys.modules, "langchain_openai", raising=False)
         with patch.dict(sys.modules, {"langchain_openai": None}):
             with pytest.raises(ValueError, match="langchain-openai"):
-                create_openai_compatible_secondary_model(OpenDataSciConfig(provider="openai_compatible_server"))  # type: ignore[arg-type]
+                create_openai_compatible_secondary_model(
+                    OpenDataSciConfig(provider="openai_compatible_server")
+                )  # type: ignore[arg-type]
 
 
 class TestCachedSystemPrompt:

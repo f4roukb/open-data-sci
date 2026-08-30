@@ -1,7 +1,6 @@
 """Unit tests for opendatasci.sandbox.srt — the native sandbox dependency check
 and its wiring into SRTSandboxFactory.create()."""
 
-
 import asyncio
 import shutil
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -17,16 +16,12 @@ from opendatasci.sandbox.srt import SRTSandbox, SRTSandboxFactory, check_sandbox
 
 class TestCheckSandboxDependencies:
     def test_passes_when_dependencies_available(self) -> None:
-        with patch(
-            "opendatasci.sandbox.srt.SandboxManager.check_dependencies", return_value=True
-        ):
+        with patch("opendatasci.sandbox.srt.SandboxManager.check_dependencies", return_value=True):
             check_sandbox_dependencies()  # must not raise
 
     def test_raises_on_unsupported_platform(self) -> None:
         with (
-            patch(
-                "opendatasci.sandbox.srt.SandboxManager.check_dependencies", return_value=False
-            ),
+            patch("opendatasci.sandbox.srt.SandboxManager.check_dependencies", return_value=False),
             patch(
                 "opendatasci.sandbox.srt.SandboxManager.is_supported_platform", return_value=False
             ),
@@ -37,9 +32,7 @@ class TestCheckSandboxDependencies:
 
     def test_raises_with_macos_install_hint(self) -> None:
         with (
-            patch(
-                "opendatasci.sandbox.srt.SandboxManager.check_dependencies", return_value=False
-            ),
+            patch("opendatasci.sandbox.srt.SandboxManager.check_dependencies", return_value=False),
             patch(
                 "opendatasci.sandbox.srt.SandboxManager.is_supported_platform", return_value=True
             ),
@@ -53,9 +46,7 @@ class TestCheckSandboxDependencies:
 
     def test_raises_with_linux_install_hint(self) -> None:
         with (
-            patch(
-                "opendatasci.sandbox.srt.SandboxManager.check_dependencies", return_value=False
-            ),
+            patch("opendatasci.sandbox.srt.SandboxManager.check_dependencies", return_value=False),
             patch(
                 "opendatasci.sandbox.srt.SandboxManager.is_supported_platform", return_value=True
             ),
@@ -116,9 +107,7 @@ class TestRunSubprocessCancellation:
                     "opendatasci.sandbox.srt.asyncio.create_subprocess_shell",
                     AsyncMock(return_value=proc),
                 ),
-                patch.object(
-                    sandbox, "_terminate_process_tree", AsyncMock()
-                ) as terminate_mock,
+                patch.object(sandbox, "_terminate_process_tree", AsyncMock()) as terminate_mock,
             ):
                 with pytest.raises(asyncio.CancelledError):
                     await sandbox._run_subprocess("echo hi", env={}, cwd=".")
@@ -145,9 +134,7 @@ class TestRunSubprocessCancellation:
                     "opendatasci.sandbox.srt.asyncio.create_subprocess_shell",
                     AsyncMock(return_value=proc),
                 ),
-                patch.object(
-                    sandbox, "_terminate_process_tree", AsyncMock()
-                ) as terminate_mock,
+                patch.object(sandbox, "_terminate_process_tree", AsyncMock()) as terminate_mock,
             ):
                 with pytest.raises(TimeoutError):
                     await sandbox._run_subprocess("echo hi", env={}, cwd=".")

@@ -1,4 +1,4 @@
-﻿"""Component tests: CLIController with a stub UIAdapter and stub service.
+"""Component tests: CLIController with a stub UIAdapter and stub service.
 
 CLIController is a 442-line orchestrator that mediates between the Textual UI
 (``UIAdapter``) and ``OpenDataSciTuiService``. These tests mock at the
@@ -14,7 +14,6 @@ controller through every public entry point:
 
 The result: one test per pathway covers a long slice of controller code.
 """
-
 
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock

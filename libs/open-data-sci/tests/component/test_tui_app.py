@@ -371,9 +371,7 @@ class TestMainArgParsing:
         assert config.secondary_provider == Provider.ANTHROPIC
         app_cls_stub.return_value.run.assert_called_once()
 
-    def test_explicit_provider_model_and_api_key(
-        self, monkeypatch, app_cls_stub, tmp_path
-    ) -> None:
+    def test_explicit_provider_model_and_api_key(self, monkeypatch, app_cls_stub, tmp_path) -> None:
         data = tmp_path / "d.csv"
         data.write_text("a\n1\n")
         _run_main(
@@ -419,9 +417,7 @@ class TestMainArgParsing:
             _run_main(monkeypatch)
         app_cls_stub.assert_not_called()
 
-    def test_list_providers_prints_table_and_exits(
-        self, monkeypatch, app_cls_stub, capsys
-    ) -> None:
+    def test_list_providers_prints_table_and_exits(self, monkeypatch, app_cls_stub, capsys) -> None:
         _run_main(monkeypatch, "--list-providers")
         out = capsys.readouterr().out
         assert "anthropic" in out

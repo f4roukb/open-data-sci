@@ -6,7 +6,6 @@ lightweight stubs.  The agent is wrapped in the production
 ``OpenDataSciTuiService`` exactly as the controller wires it at boot.
 """
 
-
 # ---------------------------------------------------------------------------
 # Stub unavailable native modules BEFORE any opendatasci imports
 # ---------------------------------------------------------------------------
@@ -247,7 +246,10 @@ async def _build_entered_service(
 
     with (
         patch("opendatasci.tools.coding.create_model", return_value=coding_llm),
-        patch("opendatasci.human_inputs.human_approval.create_secondary_model", return_value=coding_llm),
+        patch(
+            "opendatasci.human_inputs.human_approval.create_secondary_model",
+            return_value=coding_llm,
+        ),
     ):
         tools = create_execution_mode_tools(
             workspace,
@@ -306,9 +308,7 @@ async def make_scripted_service(mock_sandbox, datasci_config):
 
     async def _build(scripted_messages: Iterable[AIMessage], path: str) -> OpenDataSciTuiService:
         llm = _ScriptedChatModel(messages=iter(list(scripted_messages)))
-        service, agent = await _build_entered_service(
-            llm, mock_sandbox, path, datasci_config
-        )
+        service, agent = await _build_entered_service(llm, mock_sandbox, path, datasci_config)
         agents.append(agent)
         return service
 

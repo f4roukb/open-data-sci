@@ -1,6 +1,5 @@
 """Unit tests for opendatasci.tools.modes."""
 
-
 from unittest.mock import MagicMock
 
 import pytest
@@ -35,7 +34,9 @@ def _make_context_store() -> MagicMock:
 def _switch_tool(
     *, context_store: MagicMock | None = None, session_id: str | None = _SESSION_ID
 ) -> SwitchAgentModeTool:
-    return SwitchAgentModeTool(skill_store=_STORE, context_store=context_store, session_id=session_id)
+    return SwitchAgentModeTool(
+        skill_store=_STORE, context_store=context_store, session_id=session_id
+    )
 
 
 async def _invoke_switch(
@@ -50,7 +51,9 @@ async def _invoke_switch(
     args: dict = {"mode": mode.value, "summary": "s", "communication": "c", "state": state}
     if skill is not None:
         args["skill"] = skill
-    return await tool.ainvoke({"name": tool.name, "id": _CALL_ID, "args": args, "type": "tool_call"})
+    return await tool.ainvoke(
+        {"name": tool.name, "id": _CALL_ID, "args": args, "type": "tool_call"}
+    )
 
 
 async def _invoke_exit_plan(tool: ExitPlanModeTool, *, final_plan: str = "plan") -> Command:
@@ -328,7 +331,9 @@ class TestExitSelfReviewMode:
 
     @pytest.mark.asyncio
     async def test_response_contains_review_text(self) -> None:
-        result = await _invoke_exit_self_review(ExitSelfReviewModeTool(), review="Analysis is on track.")
+        result = await _invoke_exit_self_review(
+            ExitSelfReviewModeTool(), review="Analysis is on track."
+        )
         assert "Analysis is on track." in _message_content(result)
 
     @pytest.mark.asyncio

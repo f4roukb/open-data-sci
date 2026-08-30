@@ -1,5 +1,4 @@
-﻿"""Unit tests for opendatasci._tui.controller."""
-
+"""Unit tests for opendatasci._tui.controller."""
 
 import asyncio
 from pathlib import Path
@@ -647,9 +646,7 @@ class TestApprovalFlow:
         action, _ = await controller.on_submit("/exit")
         assert action == "quit"
 
-    async def test_reset_clears_awaiting_approval(
-        self, loaded_controller: CLIController
-    ) -> None:
+    async def test_reset_clears_awaiting_approval(self, loaded_controller: CLIController) -> None:
         loaded_controller._awaiting_approval = True
         await loaded_controller.reset()
         assert loaded_controller.awaiting_approval is False
@@ -889,9 +886,7 @@ class TestChoiceHandling:
         assert controller._awaiting_choice is False
         assert result == "cancel"
 
-    async def test_cancel_choice_no_op_when_not_awaiting(
-        self, controller: CLIController
-    ) -> None:
+    async def test_cancel_choice_no_op_when_not_awaiting(self, controller: CLIController) -> None:
         controller._awaiting_choice = False
         result = await controller.cancel_choice()
         assert result is None
@@ -1003,7 +998,9 @@ class TestBackgroundTaskStatusPoll:
     ) -> None:
         from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
 
-        running = BackgroundTaskRecord(task_id=uuid4(), summary="crunching numbers", status=BackgroundTaskStatus.RUNNING)
+        running = BackgroundTaskRecord(
+            task_id=uuid4(), summary="crunching numbers", status=BackgroundTaskStatus.RUNNING
+        )
         mock_service.task_manager = MagicMock()
         mock_service.task_manager.list_tasks = AsyncMock(return_value=[running])
 
@@ -1380,7 +1377,9 @@ class TestSessionId:
         )
         assert ctrl._session_id == "deadbeef"
 
-    async def test_boot_wires_agent_from_create_agent_into_service(self, mock_ui: MagicMock) -> None:
+    async def test_boot_wires_agent_from_create_agent_into_service(
+        self, mock_ui: MagicMock
+    ) -> None:
         # boot() now delegates agent construction (including the session context
         # store) to create_agent(), enters it as an async context manager, and
         # wraps the agent + its sandbox in the TUI service.
@@ -1530,7 +1529,7 @@ class TestBootFailures:
         assert "/fake/data.csv" in content
 
     async def test_llm_provider_error_shows_api_key_guidance(self, mock_ui: MagicMock) -> None:
-        
+
         ctrl = _make_boot_ctrl(mock_ui)
         with (
             patch("pathlib.Path.is_file", return_value=True),
@@ -1821,9 +1820,7 @@ class TestControllerStateProperties:
     def test_has_paste_attachment_false_initially(self, controller: CLIController) -> None:
         assert controller.has_paste_attachment is False
 
-    def test_has_paste_attachment_tracks_paste_lifecycle(
-        self, controller: CLIController
-    ) -> None:
+    def test_has_paste_attachment_tracks_paste_lifecycle(self, controller: CLIController) -> None:
         controller.on_paste("line1\nline2")
         assert controller.has_paste_attachment is True
         controller.clear_paste_attachment()

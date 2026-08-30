@@ -1,6 +1,5 @@
 """Unit tests for opendatasci.tools.mcp."""
 
-
 import json
 from io import StringIO
 from pathlib import Path

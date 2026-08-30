@@ -6,7 +6,11 @@ from uuid import uuid4
 
 import pytest
 
-from opendatasci.tasks.base import BackgroundTaskProgressUpdate, BackgroundTaskRecord, BackgroundTaskStatus
+from opendatasci.tasks.base import (
+    BackgroundTaskProgressUpdate,
+    BackgroundTaskRecord,
+    BackgroundTaskStatus,
+)
 from opendatasci.tasks.local import _MAX_RECORDS, BackgroundTaskManager
 
 
@@ -199,7 +203,9 @@ class TestUpsertRecord:
     async def test_upsert_inserts_new_record(self) -> None:
         manager = BackgroundTaskManager()
         task_id = uuid4()
-        record = BackgroundTaskRecord(task_id=task_id, summary="s", status=BackgroundTaskStatus.RUNNING)
+        record = BackgroundTaskRecord(
+            task_id=task_id, summary="s", status=BackgroundTaskStatus.RUNNING
+        )
 
         await manager.upsert_record(record)
 
@@ -212,7 +218,9 @@ class TestUpsertRecord:
         await manager.upsert_record(
             BackgroundTaskRecord(task_id=task_id, summary="s", status=BackgroundTaskStatus.RUNNING)
         )
-        replacement = BackgroundTaskRecord(task_id=task_id, summary="s", status=BackgroundTaskStatus.COMPLETED)
+        replacement = BackgroundTaskRecord(
+            task_id=task_id, summary="s", status=BackgroundTaskStatus.COMPLETED
+        )
 
         await manager.upsert_record(replacement)
 
@@ -224,12 +232,16 @@ class TestUpsertRecord:
         task_ids = [uuid4() for _ in range(_MAX_RECORDS)]
         for task_id in task_ids:
             await manager.upsert_record(
-                BackgroundTaskRecord(task_id=task_id, summary="s", status=BackgroundTaskStatus.RUNNING)
+                BackgroundTaskRecord(
+                    task_id=task_id, summary="s", status=BackgroundTaskStatus.RUNNING
+                )
             )
 
         new_task_id = uuid4()
         await manager.upsert_record(
-            BackgroundTaskRecord(task_id=new_task_id, summary="s", status=BackgroundTaskStatus.RUNNING)
+            BackgroundTaskRecord(
+                task_id=new_task_id, summary="s", status=BackgroundTaskStatus.RUNNING
+            )
         )
 
         assert len(await manager.list_tasks()) == _MAX_RECORDS
@@ -243,11 +255,15 @@ class TestUpsertRecord:
         task_ids = [uuid4() for _ in range(_MAX_RECORDS)]
         for task_id in task_ids:
             await manager.upsert_record(
-                BackgroundTaskRecord(task_id=task_id, summary="s", status=BackgroundTaskStatus.RUNNING)
+                BackgroundTaskRecord(
+                    task_id=task_id, summary="s", status=BackgroundTaskStatus.RUNNING
+                )
             )
 
         await manager.upsert_record(
-            BackgroundTaskRecord(task_id=task_ids[0], summary="s", status=BackgroundTaskStatus.COMPLETED)
+            BackgroundTaskRecord(
+                task_id=task_ids[0], summary="s", status=BackgroundTaskStatus.COMPLETED
+            )
         )
 
         assert len(await manager.list_tasks()) == _MAX_RECORDS
@@ -269,7 +285,9 @@ class TestPushTaskProgress:
         await asyncio.wait_for(started.wait(), timeout=1)
 
         await manager.push_task_progress(
-            task_id, BackgroundTaskProgressUpdate(done="a", ongoing="b", blockers=""), eta_seconds=5.0
+            task_id,
+            BackgroundTaskProgressUpdate(done="a", ongoing="b", blockers=""),
+            eta_seconds=5.0,
         )
         record = await manager.get_task(task_id)
         assert record is not None
@@ -405,7 +423,10 @@ class TestTaskUpdates:
         await asyncio.sleep(0)
 
         records = await manager.gather_task_updates()
-        assert {r.status for r in records} == {BackgroundTaskStatus.FAILED, BackgroundTaskStatus.CANCELLED}
+        assert {r.status for r in records} == {
+            BackgroundTaskStatus.FAILED,
+            BackgroundTaskStatus.CANCELLED,
+        }
 
     @pytest.mark.asyncio
     async def test_independent_of_listen_task_updates(self) -> None:

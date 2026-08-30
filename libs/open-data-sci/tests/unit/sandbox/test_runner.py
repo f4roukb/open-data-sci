@@ -38,7 +38,9 @@ def _run(code: str, state_path: str, workspace: str) -> dict:
         line = line.strip()
         if line:
             return json.loads(line)
-    pytest.fail(f"Runner produced no JSON payload.\nstdout: {result.stdout}\nstderr: {result.stderr}")
+    pytest.fail(
+        f"Runner produced no JSON payload.\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    )
 
 
 @pytest.fixture()

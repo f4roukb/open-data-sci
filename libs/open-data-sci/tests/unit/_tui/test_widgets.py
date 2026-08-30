@@ -1,4 +1,4 @@
-﻿"""Unit tests for opendatasci._tui.widgets — pure logic only (no Textual app context)."""
+"""Unit tests for opendatasci._tui.widgets — pure logic only (no Textual app context)."""
 
 import asyncio
 import time
@@ -1699,9 +1699,7 @@ class TestPendingMessagePanelAddPending:
         panel = PendingMessagePanel.__new__(PendingMessagePanel)
         panel.mount = MagicMock()
 
-        with patch(
-            "opendatasci._tui.widgets.PendingMessageBubble"
-        ) as mock_cls:
+        with patch("opendatasci._tui.widgets.PendingMessageBubble") as mock_cls:
             mock_cls.return_value = MagicMock()
             panel.add_pending("text to queue")
 

@@ -1,6 +1,5 @@
 """Unit tests for opendatasci.skills (LocalSkillStore)."""
 
-
 from pathlib import Path
 
 from opendatasci.skills import Skill, SkillDomain

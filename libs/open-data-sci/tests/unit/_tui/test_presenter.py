@@ -1,6 +1,5 @@
 """Unit tests for _TurnPresenter (opendatasci._tui.presenter)."""
 
-
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -319,7 +318,9 @@ class TestDisplayFalse:
 # ---------------------------------------------------------------------------
 
 
-def _tool_comm(tool_call_id: str = "tc1", content: str = "Fetching results…") -> ToolCommunicationEvent:
+def _tool_comm(
+    tool_call_id: str = "tc1", content: str = "Fetching results…"
+) -> ToolCommunicationEvent:
     return ToolCommunicationEvent(
         content=content,
         tool_call_id=tool_call_id,
@@ -363,7 +364,9 @@ class TestCommunicationSuppressedByNarration:
         eph = ui.add_ephemeral_block.return_value
         eph.set_communication.assert_called_once_with(None)
 
-    async def test_communication_suppressed_for_direct_new_block_when_narration_present(self) -> None:
+    async def test_communication_suppressed_for_direct_new_block_when_narration_present(
+        self,
+    ) -> None:
         """No pre-mounted ephemeral but comm buffered: block gets empty comm when narration present."""
         p, ui = self._setup()
         await p.handle_token(_token("Here we go."))

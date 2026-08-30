@@ -1,6 +1,5 @@
 """Component tests: OpenDataSci.astream() happy path."""
 
-
 import asyncio
 
 from opendatasci.agents.agents import Invocation

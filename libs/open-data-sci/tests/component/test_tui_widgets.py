@@ -149,9 +149,7 @@ class TestMessageBubble:
         assert _plain(bubble._inner) == "hello world"
         assert bubble.has_class("user")
 
-    async def test_question_message_with_invalid_markup_falls_back_to_plain(
-        self, harness
-    ) -> None:
+    async def test_question_message_with_invalid_markup_falls_back_to_plain(self, harness) -> None:
         app, pilot, pane = harness
         bubble = pane.add_message("question", "closing tag [/] without open")
         await pilot.pause()

@@ -95,7 +95,9 @@ class TestChatHistoryCompaction:
         assert isinstance(c, LLMDigestibleMixin)
 
     def test_to_content_includes_content(self) -> None:
-        c = ChatHistoryCompaction(compacted_at=_TS1, timespan=(_TS1, _TS2), content="folded history")
+        c = ChatHistoryCompaction(
+            compacted_at=_TS1, timespan=(_TS1, _TS2), content="folded history"
+        )
         assert "folded history" in c.to_content()
 
     def test_to_content_handles_none_timespan(self) -> None:
@@ -236,8 +238,12 @@ class TestChatHistoryBuilder:
 
     async def test_compaction_message_included_when_below_window(self) -> None:
         builder = self._builder(window_size=5)
-        compaction = ChatHistoryCompaction(compacted_at=_TS1, timespan=(_TS1, _TS2), content="folded")
-        ctx = await builder.build([UserMessage(content=to_text_content_blocks("x"))], [], compaction)
+        compaction = ChatHistoryCompaction(
+            compacted_at=_TS1, timespan=(_TS1, _TS2), content="folded"
+        )
+        ctx = await builder.build(
+            [UserMessage(content=to_text_content_blocks("x"))], [], compaction
+        )
         assert len(ctx.messages) == 2
         assert "folded" in get_message_text_content(ctx.messages[0])
 
@@ -245,13 +251,17 @@ class TestChatHistoryBuilder:
         builder = self._builder(window_size=2)
         summaries = [_summary(), _summary()]
         compaction = ChatHistoryCompaction(compacted_at=_TS1, timespan=None, content="folded")
-        ctx = await builder.build([UserMessage(content=to_text_content_blocks("x"))], summaries, compaction)
+        ctx = await builder.build(
+            [UserMessage(content=to_text_content_blocks("x"))], summaries, compaction
+        )
         assert ctx.chat_history_compaction is None
 
     async def test_summary_window_trims_oldest(self) -> None:
         builder = self._builder(window_size=2)
         summaries = [_summary(user=f"q{i}") for i in range(5)]
-        ctx = await builder.build([UserMessage(content=to_text_content_blocks("x"))], summaries, None)
+        ctx = await builder.build(
+            [UserMessage(content=to_text_content_blocks("x"))], summaries, None
+        )
         assert len(ctx.turn_summaries) == 2
         rendered = " ".join(get_message_text_content(m) for m in ctx.messages)
         assert "q3" in rendered or "q4" in rendered
@@ -302,7 +312,9 @@ class TestBuildSummaryMessages:
         assert isinstance(result[0], SummaryMessage)
 
     def test_content_contains_summary_text(self) -> None:
-        result = self._builder._build_summary_messages([_summary(user="What is X?", agent="X is Y.")])
+        result = self._builder._build_summary_messages(
+            [_summary(user="What is X?", agent="X is Y.")]
+        )
         assert "What is X?" in get_message_text_content(result[0])
         assert "X is Y." in get_message_text_content(result[0])
 
@@ -311,7 +323,9 @@ class TestBuildSummaryMessages:
         assert isinstance(result[0], SummaryMessage)
 
     def test_summaries_kept_in_order(self) -> None:
-        result = self._builder._build_summary_messages([_summary(user="first"), _summary(user="second")])
+        result = self._builder._build_summary_messages(
+            [_summary(user="first"), _summary(user="second")]
+        )
         assert "first" in get_message_text_content(result[0])
         assert "second" in get_message_text_content(result[1])
 

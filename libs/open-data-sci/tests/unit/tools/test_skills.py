@@ -1,6 +1,5 @@
 """Unit tests for opendatasci.tools.skills."""
 
-
 import json
 from pathlib import Path
 
@@ -30,7 +29,9 @@ def _make_store(skills_dir: Path | None = None) -> BaseSkillStore:
 async def _invoke(tool, args: dict, *, state: AgentState | None = None) -> Command:
     """Invoke a tool in ToolCall format, injecting state manually."""
     call_args = {**args, "state": state if state is not None else AgentState()}
-    return await tool.ainvoke({"name": tool.name, "id": _CALL_ID, "args": call_args, "type": "tool_call"})
+    return await tool.ainvoke(
+        {"name": tool.name, "id": _CALL_ID, "args": call_args, "type": "tool_call"}
+    )
 
 
 def _message_content(result: Command) -> str:
@@ -137,7 +138,11 @@ class TestLoadSkillTool:
         skill = Skill(name="data_science::exploratory_analysis", content="x")
         result = await _invoke(
             _load_skill_tool(),
-            {"skill_name": "data_science::exploratory_analysis", "summary": "s", "communication": "c"},
+            {
+                "skill_name": "data_science::exploratory_analysis",
+                "summary": "s",
+                "communication": "c",
+            },
             state=AgentState(active_skills=[skill]),
         )
         assert "already loaded" in _message_content(result)
@@ -155,7 +160,11 @@ class TestLoadSkillTool:
     async def test_loading_known_skill_returns_confirmation(self) -> None:
         result = await _invoke(
             _load_skill_tool(),
-            {"skill_name": "data_science::exploratory_analysis", "summary": "s", "communication": "c"},
+            {
+                "skill_name": "data_science::exploratory_analysis",
+                "summary": "s",
+                "communication": "c",
+            },
         )
         assert "loaded" in _message_content(result).lower()
 
@@ -163,7 +172,11 @@ class TestLoadSkillTool:
     async def test_loading_skill_sets_active_skills_in_state(self) -> None:
         result = await _invoke(
             _load_skill_tool(),
-            {"skill_name": "machine_learning::problem_framing", "summary": "s", "communication": "c"},
+            {
+                "skill_name": "machine_learning::problem_framing",
+                "summary": "s",
+                "communication": "c",
+            },
         )
         assert isinstance(result, Command)
         skills = result.update.get("active_skills", [])
@@ -175,7 +188,11 @@ class TestLoadSkillTool:
         existing = Skill(name="data_science::exploratory_analysis", content="x")
         result = await _invoke(
             _load_skill_tool(),
-            {"skill_name": "machine_learning::problem_framing", "summary": "s", "communication": "c"},
+            {
+                "skill_name": "machine_learning::problem_framing",
+                "summary": "s",
+                "communication": "c",
+            },
             state=AgentState(active_skills=[existing]),
         )
         skills = result.update.get("active_skills", [])
@@ -185,7 +202,11 @@ class TestLoadSkillTool:
     async def test_command_includes_tool_message_with_correct_id(self) -> None:
         result = await _invoke(
             _load_skill_tool(),
-            {"skill_name": "data_science::exploratory_analysis", "summary": "s", "communication": "c"},
+            {
+                "skill_name": "data_science::exploratory_analysis",
+                "summary": "s",
+                "communication": "c",
+            },
         )
         msgs = result.update.get("messages", [])
         assert len(msgs) == 1

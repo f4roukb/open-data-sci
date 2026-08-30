@@ -57,7 +57,9 @@ class BackgroundTaskRecord(MutableStrictBaseModel):
             text = f"Background task '{self.summary}' failed: {self.error}"
         else:
             text = f"Background task '{self.summary}' was cancelled."
-        return TaskMessage(content=to_text_content_blocks(text), created_at=datetime.now(timezone.utc))
+        return TaskMessage(
+            content=to_text_content_blocks(text), created_at=datetime.now(timezone.utc)
+        )
 
 
 class BackgroundTaskManagerBase(ABC):

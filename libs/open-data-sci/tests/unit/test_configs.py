@@ -1,6 +1,5 @@
 """Unit tests for opendatasci.config.OpenDataSciConfig."""
 
-
 from pathlib import Path
 
 import pytest

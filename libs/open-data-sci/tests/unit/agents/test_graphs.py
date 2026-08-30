@@ -1,6 +1,5 @@
 """Unit tests for opendatasci.agents.graph."""
 
-
 from typing import Any, Optional
 from unittest.mock import MagicMock
 

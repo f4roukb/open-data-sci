@@ -1,6 +1,5 @@
 """Unit tests for opendatasci._utils.data_formats — detect_format()."""
 
-
 from pathlib import Path
 
 import pytest

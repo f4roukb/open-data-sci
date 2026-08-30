@@ -214,7 +214,9 @@ Args:
             ]
             if task_id is not None:
                 tools.append(
-                    ReportProgressTool(task_id=task_id, background_task_manager=self.background_task_manager)
+                    ReportProgressTool(
+                        task_id=task_id, background_task_manager=self.background_task_manager
+                    )
                 )
 
             agent = WorkerAgent(tools=tools, config=self.datasci_config)
@@ -407,7 +409,9 @@ class ListTasksTool(OpenDataSciBaseTool):
     """List previously scheduled background tasks, filtered by status."""
 
     class CallArgs(BaseModel):
-        status_in: set[BackgroundTaskStatus] = Field(default_factory=lambda: {BackgroundTaskStatus.RUNNING})
+        status_in: set[BackgroundTaskStatus] = Field(
+            default_factory=lambda: {BackgroundTaskStatus.RUNNING}
+        )
 
     name: str = "list_tasks"
     description: str = """
@@ -426,7 +430,9 @@ Args:
     @override
     async def _arun(self, status_in: set[BackgroundTaskStatus] | None = None, **kwargs: Any) -> str:
         status_in = status_in or {BackgroundTaskStatus.RUNNING}
-        records = [r for r in await self.background_task_manager.list_tasks() if r.status in status_in]
+        records = [
+            r for r in await self.background_task_manager.list_tasks() if r.status in status_in
+        ]
         if not records:
             return "No background tasks match the given status filter."
 
@@ -468,7 +474,9 @@ Args:
         return f"Stop requested for task_id={task_id}."
 
 
-def create_task_management_tools(background_task_manager: BackgroundTaskManagerBase) -> list[BaseTool]:
+def create_task_management_tools(
+    background_task_manager: BackgroundTaskManagerBase,
+) -> list[BaseTool]:
     """Return the ``check_task``, ``list_tasks``, and ``stop_task`` tools.
 
     *background_task_manager* must be the same instance passed to :func:`create_task_tools`

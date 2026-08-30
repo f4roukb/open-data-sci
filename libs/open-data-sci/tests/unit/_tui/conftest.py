@@ -1,5 +1,4 @@
-﻿"""Shared fixtures for TUI unit tests."""
-
+"""Shared fixtures for TUI unit tests."""
 
 from unittest.mock import AsyncMock, MagicMock
 

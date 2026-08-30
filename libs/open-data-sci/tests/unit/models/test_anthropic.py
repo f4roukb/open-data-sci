@@ -1,5 +1,4 @@
-﻿"""Unit tests for opendatasci.models.anthropic factory functions."""
-
+"""Unit tests for opendatasci.models.anthropic factory functions."""
 
 import sys
 from unittest.mock import MagicMock, patch
@@ -43,9 +42,7 @@ class TestCreateAnthropicPrimaryModel:
     def test_non_adaptive_models_run_without_thinking(self, fake_chat_anthropic) -> None:
         # Models without adaptive thinking (e.g. haiku-4-5) run without a
         # thinking config and receive the configured temperature.
-        config = OpenDataSciConfig(
-            provider="anthropic", model="claude-haiku-4-5", temperature=0.3
-        )  # type: ignore[arg-type]
+        config = OpenDataSciConfig(provider="anthropic", model="claude-haiku-4-5", temperature=0.3)  # type: ignore[arg-type]
         create_anthropic_model(config)
         assert "thinking" not in fake_chat_anthropic
         assert fake_chat_anthropic["temperature"] == 0.3

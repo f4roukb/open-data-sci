@@ -1,11 +1,10 @@
-﻿"""Unit tests for opendatasci.models.aws factory functions.
+"""Unit tests for opendatasci.models.aws factory functions.
 
 Covers create_bedrock_model / create_bedrock_secondary_model, the error paths that
 fire when langchain-aws is unavailable, and the streaming-fix regressions
 (disable_streaming override and _strip_list_usage_fields for Bedrock's
 list-valued cacheDetails usage field).
 """
-
 
 from unittest.mock import patch
 
@@ -15,7 +14,11 @@ pytest.importorskip("langchain_aws")
 
 import opendatasci.models.aws as aws_module
 from opendatasci.configs import OpenDataSciConfig
-from opendatasci.models.aws import _strip_list_usage_fields, cached_system_prompt, create_bedrock_model
+from opendatasci.models.aws import (
+    _strip_list_usage_fields,
+    cached_system_prompt,
+    create_bedrock_model,
+)
 
 
 def _create_model(model_id: str):

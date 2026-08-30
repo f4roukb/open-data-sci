@@ -1,4 +1,4 @@
-﻿"""Unit tests for opendatasci.tools.tasks."""
+"""Unit tests for opendatasci.tools.tasks."""
 
 import asyncio
 import json
@@ -321,7 +321,9 @@ class TestRunOne:
         store.load.assert_called_once_with("data_science")
 
     @pytest.mark.asyncio
-    async def test_unknown_skill_logs_warning_without_raising(self, caplog: pytest.LogCaptureFixture) -> None:
+    async def test_unknown_skill_logs_warning_without_raising(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         store = _make_store()
         store.load = MagicMock(return_value=None)
         tool = _make_tool(skill_store=store)
