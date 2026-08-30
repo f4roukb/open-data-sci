@@ -410,6 +410,24 @@ class CLIController:
         await self._run_turn(self._service.resume_with_approval(approved))
         await self._drain_loop()
 
+    async def _drain_task_updates_batch(self) -> list[Invocation]:
+        """Drain the task manager's own buffer and tag each record for the model.
+
+        Non-blocking, and may return ``[]`` — e.g. if the agent's own mid-turn
+        draining already picked up everything since the last
+        ``has_task_updates()``/``listen_task_updates()`` check.
+        """
+        assert self._service is not None
+        records = await self._service.task_manager.gather_task_updates()
+        return [
+            Invocation(
+                content=(msg := record.to_update_message()).content,
+                created_at=msg.created_at,
+                origin=MessageOrigin.TASK,
+            )
+            for record in records
+        ]
+
     async def _drain_loop(self) -> None:
         """Keep starting new turns until nothing is left to send or a prompt opens.
 
@@ -428,8 +446,11 @@ class CLIController:
                 await self._run_turn(self._service.astream(batch))
                 continue
             if self._service.task_manager.has_task_updates():
+                batch = await self._drain_task_updates_batch()
+                if not batch:
+                    return
                 self._active_turn_status = self._ui.add_turn_status_bar()
-                await self._run_turn(self._service.astream([]))
+                await self._run_turn(self._service.astream(batch))
                 continue
             return
 
@@ -440,17 +461,21 @@ class CLIController:
         in ``close``). ``listen_task_updates`` blocks until the next terminal
         task, so this stays idle between completions rather than polling.
 
-        The raw completion is never shown as a chat message, and this method
-        never feeds it to the agent directly — the agent picks up finished
-        tasks on its own. This only decides whether to kick off a turn now,
-        so an idle agent doesn't wait on the next unrelated user message.
+        The raw completion is never shown as a chat message. This drains the
+        task manager's own content buffer and feeds it to the agent as a new
+        turn — the agent no longer drains this on its own at turn start, so
+        an idle agent relies on this watcher to surface a finished task
+        instead of waiting on the next unrelated user message.
         """
         assert self._service is not None
         async for _record in self._service.task_manager.listen_task_updates():
             if self._agent_running or self._service.is_user_input_required():
                 continue
+            batch = await self._drain_task_updates_batch()
+            if not batch:
+                continue
             self._active_turn_status = self._ui.add_turn_status_bar()
-            await self.run_agent([])
+            await self.run_agent(batch)
 
     async def _poll_background_task_status(self) -> None:
         """Refresh the header's "running background tasks" line every few seconds.

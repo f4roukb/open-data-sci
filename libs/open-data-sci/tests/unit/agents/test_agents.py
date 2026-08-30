@@ -10,7 +10,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from opendatasci._utils.message_utils import to_text_content_blocks
-from opendatasci.memory.messages import AgentMessage, TaskMessage, UserMessage
+from opendatasci.memory.messages import AgentMessage, MessageOrigin, TaskMessage, UserMessage
 from langchain_core.tools import BaseTool, StructuredTool
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel, ConfigDict
@@ -834,34 +834,46 @@ def _make_task_record(summary: str = "s", result: object = "r", status: object =
 
 
 class TestPrepareBatchMessages:
-    def test_task_records_precede_user_items(self) -> None:
-        record = _make_task_record()
-        item = Invocation.from_text("hi")
-        messages = Agent._prepare_batch_messages([record], [item])
+    def test_task_origin_item_renders_as_task_message(self) -> None:
+        item = Invocation.from_text("externally drained", origin=MessageOrigin.TASK)
+        messages = Agent._prepare_batch_messages([item])
+        assert len(messages) == 1
         assert isinstance(messages[0], TaskMessage)
-        assert isinstance(messages[1], UserMessage)
 
-    def test_no_task_records_yields_only_user_messages(self) -> None:
-        item = Invocation.from_text("hi")
-        messages = Agent._prepare_batch_messages([], [item])
+    def test_user_origin_item_renders_as_user_message(self) -> None:
+        item = Invocation.from_text("hi", origin=MessageOrigin.USER)
+        messages = Agent._prepare_batch_messages([item])
         assert len(messages) == 1
         assert isinstance(messages[0], UserMessage)
 
-    def test_multiple_task_records_all_precede_user_items(self) -> None:
-        records = [_make_task_record(summary="a"), _make_task_record(summary="b")]
-        item = Invocation.from_text("hi")
-        messages = Agent._prepare_batch_messages(records, [item])
-        assert [type(m) for m in messages] == [TaskMessage, TaskMessage, UserMessage]
+    def test_items_render_in_the_order_given(self) -> None:
+        items = [
+            Invocation.from_text("task result", origin=MessageOrigin.TASK),
+            Invocation.from_text("user text", origin=MessageOrigin.USER),
+        ]
+        messages = Agent._prepare_batch_messages(items)
+        assert [type(m) for m in messages] == [TaskMessage, UserMessage]
+
+    def test_empty_list_yields_no_messages(self) -> None:
+        assert Agent._prepare_batch_messages([]) == []
+
+    def test_unrecognized_origin_raises(self) -> None:
+        item = Invocation.from_text("x", origin=MessageOrigin.AGENT)
+        with pytest.raises(ValueError):
+            Agent._prepare_batch_messages([item])
 
 
-class TestAstreamDrainsTaskManagerAtTurnStart:
-    async def test_finished_task_injected_ahead_of_user_text(self) -> None:
+class TestAstreamDoesNotAutoDrainTaskManagerAtTurnStart:
+    """Turn-start delivery is now entirely the caller's responsibility (via a
+    TASK-origin Invocation) — astream() itself never touches task_manager, so
+    the only internal draining left is the mid-turn SynchronizationNode."""
+
+    async def test_pending_task_updates_are_left_untouched(self) -> None:
         from opendatasci.streaming.events import TokenEvent
         from opendatasci.tasks.local import BackgroundTaskManager
 
         manager = BackgroundTaskManager()
-        record = _make_task_record(summary="background work", result="42")
-        manager._task_updates.append(record)
+        manager._task_updates.append(_make_task_record(summary="background work"))
 
         upstream = [TokenEvent(content="x")]
         async with _agent_with_overrides_ctx(background_task_manager=manager) as agent:
@@ -871,9 +883,10 @@ class TestAstreamDrainsTaskManagerAtTurnStart:
 
             graph_input = agent._astream_inputs_captured[0]
             messages = graph_input["messages"]
-            assert isinstance(messages[0], TaskMessage)
-            assert "background work" in messages[0].content[0]["text"]
-            assert isinstance(messages[1], UserMessage)
+            assert len(messages) == 1
+            assert isinstance(messages[0], UserMessage)
+            # Nothing was drained — still sitting in the manager's own buffer.
+            assert manager.has_task_updates() is True
 
     async def test_no_finished_tasks_yields_only_user_message(self) -> None:
         from opendatasci.streaming.events import TokenEvent
@@ -888,6 +901,51 @@ class TestAstreamDrainsTaskManagerAtTurnStart:
             messages = graph_input["messages"]
             assert len(messages) == 1
             assert isinstance(messages[0], UserMessage)
+
+
+class TestAstreamOriginTaggedInvocations:
+    """A caller that already drained its own task manager (e.g. one backed by
+    an external queue/broker, where draining is a real network round trip)
+    can build ``Invocation``s tagged ``origin=MessageOrigin.TASK`` itself and
+    pass them straight into astream() through the normal *invocation*
+    parameter, instead of the agent having to expose a second channel."""
+
+    async def test_task_origin_invocation_renders_as_task_message(self) -> None:
+        from opendatasci.streaming.events import TokenEvent
+
+        upstream = [TokenEvent(content="x")]
+        async with _make_agent_ctx() as agent:
+            with TestAgentAstream()._wire_astream_mocks(agent, upstream):
+                task_item = Invocation.from_text(
+                    "externally drained work", origin=MessageOrigin.TASK
+                )
+                async for _ in agent.astream(task_item):
+                    pass
+
+            graph_input = agent._astream_inputs_captured[0]
+            messages = graph_input["messages"]
+            assert len(messages) == 1
+            assert isinstance(messages[0], TaskMessage)
+            assert "externally drained work" in messages[0].content[0]["text"]
+
+    async def test_task_origin_and_user_origin_items_both_render_correctly(self) -> None:
+        from opendatasci.streaming.events import TokenEvent
+
+        upstream = [TokenEvent(content="x")]
+        async with _make_agent_ctx() as agent:
+            with TestAgentAstream()._wire_astream_mocks(agent, upstream):
+                items = [
+                    Invocation.from_text("externally drained work", origin=MessageOrigin.TASK),
+                    Invocation.from_text("hello", origin=MessageOrigin.USER),
+                ]
+                async for _ in agent.astream(items):
+                    pass
+
+            graph_input = agent._astream_inputs_captured[0]
+            messages = graph_input["messages"]
+            assert len(messages) == 2
+            assert isinstance(messages[0], TaskMessage)
+            assert isinstance(messages[1], UserMessage)
 
 
 # ===========================================================================

@@ -127,11 +127,13 @@ async with Agent(
 
 ## WorkerAgent
 
-`WorkerAgent` is the sub-agent spawned internally when the orchestrator delegates subtasks to concurrent workers. You do not normally construct this directly.
+`WorkerAgent` is the sub-agent spawned internally when OpenDataSci delegates subtasks to concurrent workers. You do not normally construct this directly.
 
-Subtasks normally run to completion and return their result immediately. For long-running work, the orchestrator can instead schedule a subtask in the background and check on it later. `agent.task_manager` exposes the underlying `BackgroundTaskManagerBase` so a caller driving the agent can await `listen_task_updates()` and learn about finished background tasks without polling — see [Background Tasks](tasks.md) for the full task-tracking data model.
+Workers run concurrently by design, each in its own sandbox, so their code and CLI-command executions each spawn a dedicated subprocess — the compute-bound work itself is genuinely parallelized across simultaneous executions, not just interleaved.
 
-The agent also consumes its own task manager internally, so a background task's result reaches the model without any caller action: once at the start of the next turn, and again mid-turn immediately after a tool call returns, so a task that finishes while the agent is still working can change what it does next within the same turn rather than waiting for the turn to end.
+A subtask can run in one of two modes. In the foreground, it runs to completion and returns its result immediately, blocking the conversation until it's done — the right choice when OpenDataSci needs the result before it can proceed. In the background, it's scheduled instead: the tool call returns right away with a task ID, and OpenDataSci keeps the conversation moving while the work continues — the right choice for long-running work like heavy training runs or large-scale processing. `agent.task_manager` exposes the full task-tracking API for background subtasks, including `listen_task_updates()` for learning about completions without polling — see [Background Tasks](tasks.md).
+
+A background task's result reaches the model automatically if it finishes while the agent is already working on something else. If it finishes while the agent is idle, delivering it is up to whoever is driving the agent — the bundled TUI does this for you — see [Background Tasks](tasks.md) for how.
 
 ::: opendatasci.agents.workers.WorkerAgent
     options:

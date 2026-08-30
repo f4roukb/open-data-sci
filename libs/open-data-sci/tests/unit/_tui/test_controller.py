@@ -32,6 +32,7 @@ from opendatasci._tui.file_refs import (
     _split_existing_file_refs,
 )
 from opendatasci.configs import OpenDataSciConfig
+from opendatasci.memory.messages import MessageOrigin
 
 # ---------------------------------------------------------------------------
 # Pure parsing helpers
@@ -922,15 +923,20 @@ class TestBackgroundTaskWatcher:
         mock_service.task_manager.listen_task_updates = MagicMock(
             return_value=self._completions(record)
         )
+        mock_service.task_manager.gather_task_updates = AsyncMock(return_value=[record])
         mock_service.astream.return_value = _aiter()
         loaded_controller._agent_running = False
 
         await loaded_controller._watch_background_tasks()
 
         assert mock_service.astream.called
-        # The record is never fed to the agent from here — astream() is called
-        # with an empty batch; the agent drains its own task manager.
-        assert mock_service.astream.call_args[0][0] == []
+        # The watcher drains the task manager itself and hands the agent a
+        # real TASK-origin batch — astream() is never called with nothing to
+        # inject, since the agent no longer auto-drains at turn start.
+        batch = mock_service.astream.call_args[0][0]
+        assert len(batch) == 1
+        assert batch[0].origin is MessageOrigin.TASK
+        assert "done" in batch[0].content[0]["text"]
 
     async def test_no_chat_message_shown_for_raw_completion(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
@@ -944,12 +950,34 @@ class TestBackgroundTaskWatcher:
         mock_service.task_manager.listen_task_updates = MagicMock(
             return_value=self._completions(record)
         )
+        mock_service.task_manager.gather_task_updates = AsyncMock(return_value=[record])
         mock_service.astream.return_value = _aiter()
         loaded_controller._agent_running = False
 
         await loaded_controller._watch_background_tasks()
 
         mock_ui.add_message.assert_not_called()
+
+    async def test_no_new_turn_when_drain_finds_nothing(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        """A race with another consumer (e.g. the mid-turn node) can leave the
+        drain empty even after a completion notification — no turn should
+        start over nothing to inject."""
+        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
+
+        record = BackgroundTaskRecord(
+            task_id=uuid4(), summary="s", status=BackgroundTaskStatus.COMPLETED, result="done"
+        )
+        mock_service.task_manager.listen_task_updates = MagicMock(
+            return_value=self._completions(record)
+        )
+        mock_service.task_manager.gather_task_updates = AsyncMock(return_value=[])
+        loaded_controller._agent_running = False
+
+        await loaded_controller._watch_background_tasks()
+
+        assert not mock_service.astream.called
 
     async def test_no_new_turn_when_turn_in_progress(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
@@ -1251,13 +1279,21 @@ class TestResumeMethods:
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
         """A task result missed by the mid-turn node still gets surfaced right after the turn."""
+        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
+
+        record = BackgroundTaskRecord(
+            task_id=uuid4(), summary="s", status=BackgroundTaskStatus.COMPLETED, result="done"
+        )
         mock_service.astream.return_value = _aiter()
         mock_service.task_manager.has_task_updates = MagicMock(side_effect=[True, False])
+        mock_service.task_manager.gather_task_updates = AsyncMock(return_value=[record])
 
         await loaded_controller.run_agent("query")
 
         assert mock_service.astream.call_count == 2
-        assert mock_service.astream.call_args_list[-1][0][0] == []
+        batch = mock_service.astream.call_args_list[-1][0][0]
+        assert len(batch) == 1
+        assert batch[0].origin is MessageOrigin.TASK
 
     async def test_drain_loop_stops_while_interrupted_even_with_task_updates(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
