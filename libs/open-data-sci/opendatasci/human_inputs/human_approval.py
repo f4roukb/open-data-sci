@@ -141,7 +141,7 @@ class HumanApprovalManager(HumanApprovalBaseManager):
             )
         consent: bool = interrupt(
             {
-                "kind": InterruptKind.APPROVAL,
+                "kind": InterruptKind.APPROVAL_REQUIRED,
                 "command": command,
                 "description": assessment.description,
                 "heads_up": assessment.heads_up or "",

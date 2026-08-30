@@ -75,7 +75,7 @@ Args:
 
         answer: str = interrupt(
             {
-                "kind": InterruptKind.INPUT,
+                "kind": InterruptKind.INPUT_REQUIRED,
                 "question": question,
                 "choices": [choice_a, choice_b, choice_c],
             }
