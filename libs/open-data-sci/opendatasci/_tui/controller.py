@@ -69,7 +69,7 @@ from .file_refs import (
     _parse_file_refs,
     _split_existing_file_refs,
 )
-from .message_queue import PendingMessageOrigin, PendingMessageQueue
+from .message_queue import PendingMessageQueue
 from .presenter import _TurnPresenter, apply_usage_event
 from .theme import active as theme
 
@@ -340,22 +340,10 @@ class CLIController:
         self._active_turn_status = self._ui.add_turn_status_bar()
         return SubmitAction.RUN, agent_query
 
-    def _enqueue_pending(
-        self,
-        agent_query: str,
-        display: str,
-        *,
-        origin: PendingMessageOrigin = PendingMessageOrigin.USER,
-    ) -> None:
-        """Queue *agent_query* for when the agent is free.
-
-        Only user-typed text is pinned in the UI as a pending indicator —
-        the user never typed a worker result, so it shouldn't appear to be
-        waiting on them either.
-        """
-        message = self._pending_queue.enqueue(agent_query, display, origin=origin)
-        if origin is PendingMessageOrigin.USER:
-            self._pending_handles[message.id] = self._ui.add_pending_message(display)
+    def _enqueue_pending(self, agent_query: str, display: str) -> None:
+        """Queue *agent_query* for when the agent is free, pinned in the UI as pending."""
+        message = self._pending_queue.enqueue(agent_query, display)
+        self._pending_handles[message.id] = self._ui.add_pending_message(display)
 
     # ── Agent run ─────────────────────────────────────────────────────────────
 
@@ -498,11 +486,9 @@ class CLIController:
             self._ui.set_background_tasks("; ".join(parts))
 
     def _drain_pending_batch(self) -> list[Invocation]:
-        """Drain every queued message, surface user-typed ones in the UI, and return the batch.
+        """Drain every queued user message, surface each in the UI, and return the batch.
 
-        Messages are shown in the order they arrived. Background-task
-        completions are never shown as chat messages — they're queued only
-        so the agent gets fed the result once it's free.
+        Messages are shown in the order they arrived.
         """
         messages = self._pending_queue.drain_all()
         assert messages  # caller already checked the queue is non-empty
@@ -511,13 +497,11 @@ class CLIController:
             handle = self._pending_handles.pop(message.id, None)
             if handle is not None:
                 handle.remove()
-            is_task = message.origin is PendingMessageOrigin.TASK
-            if not is_task:
-                self._ui.add_message("user", message.display)
+            self._ui.add_message("user", message.display)
             batch.append(
                 Invocation.from_text(
                     message.content,
-                    origin=MessageOrigin.TASK if is_task else MessageOrigin.USER,
+                    origin=MessageOrigin.USER,
                     created_at=message.created_at,
                 )
             )
@@ -824,12 +808,8 @@ class CLIController:
         await self._ui.add_message("agent", "⏹ Agent stopped. You can continue from here.").finish()
 
     async def cancel_pending_messages(self) -> None:
-        """Discard every user-typed message currently queued behind a running agent turn.
-
-        Worker (background task) results are left queued — the user never
-        typed them, so they aren't the user's to cancel.
-        """
-        removed = self._pending_queue.cancel_all_user_messages()
+        """Discard every message currently queued behind a running agent turn."""
+        removed = self._pending_queue.cancel_all()
         for message in removed:
             self._discard_pending_handle(message.id)
         if removed:
@@ -841,8 +821,8 @@ class CLIController:
             await self._ui.add_message("agent", "No pending messages to cancel.").finish()
 
     async def cancel_last_pending_message(self) -> None:
-        """Discard only the most recently queued user-typed message."""
-        message = self._pending_queue.cancel_last_user_message()
+        """Discard only the most recently queued message."""
+        message = self._pending_queue.cancel_last()
         if message is None:
             await self._ui.add_message("agent", "No pending messages to cancel.").finish()
             return
