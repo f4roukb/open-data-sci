@@ -33,10 +33,10 @@ class AgentGraphFactory:
         *,
         get_llm_with_tools: Callable[[AgentState], _RetryRunnable],
         tools: list[BaseTool],
+        synchronization_node: BaseNode,
         build_system_context: BuildSystemContext,
-        chat_history_builder: "ChatHistoryBuilder | None",
-        checkpointer: "BaseCheckpointSaver[Any] | None",
-        synchronization_node: "BaseNode | None",
+        chat_history_builder: ChatHistoryBuilder | None,
+        checkpointer: BaseCheckpointSaver[Any] | None,
     ) -> None:
         self._get_llm_with_tools = get_llm_with_tools
         self._tools = tools
@@ -46,11 +46,7 @@ class AgentGraphFactory:
         self._synchronization_node = synchronization_node
 
     def build(self) -> AgentCompiledGraph:
-        """Compile and return the graph, ready to run.
-
-        When *synchronization_node* is supplied, it's inserted between
-        ``tools`` and ``agent`` so it runs right after every tool call.
-        """
+        """Compile and return the graph, ready to run."""
         agent_node = AgentNode(
             get_llm_with_tools=self._get_llm_with_tools,
             build_system_context=self._build_system_context,
@@ -62,12 +58,9 @@ class AgentGraphFactory:
         graph.add_node("tools", ToolNode(self._tools, handle_tool_errors=True))
         graph.add_edge(START, "agent")
         graph.add_conditional_edges("agent", _route_after_llm_call, {"tools": "tools", "end": END})
-        if self._synchronization_node is not None:
-            graph.add_node("sync_task_updates", self._synchronization_node.to_async_callable())
-            graph.add_edge("tools", "sync_task_updates")
-            graph.add_edge("sync_task_updates", "agent")
-        else:
-            graph.add_edge("tools", "agent")
+        graph.add_node("synchronization", self._synchronization_node.to_async_callable())
+        graph.add_edge("tools", "synchronization")
+        graph.add_edge("synchronization", "agent")
         return graph.compile(checkpointer=self._checkpointer)
 
 
