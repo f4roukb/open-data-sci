@@ -14,8 +14,8 @@ from opendatasci.human_inputs.human_approval import (
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory
 from opendatasci.skills import BaseSkillStore
 from opendatasci.skills.local import LocalSkillStore
-from opendatasci.tasks.base import AgentTaskManagerBase
-from opendatasci.tasks.local import LocalAgentTaskManager
+from opendatasci.tasks.base import BackgroundTaskManagerBase
+from opendatasci.tasks.local import BackgroundTaskManager
 from opendatasci.tools.coding import (
     create_cli_tools,
     create_code_verification_tools,
@@ -113,7 +113,7 @@ def create_execution_mode_tools(
     session_id: str | None = None,
     skill_store: BaseSkillStore | None = None,
     datasci_config: OpenDataSciConfig | None = None,
-    agent_task_manager: AgentTaskManagerBase | None = None,
+    background_task_manager: BackgroundTaskManagerBase | None = None,
 ) -> list[BaseTool]:
     """Return the main agent's full tool set — the default, execution-mode list.
 
@@ -126,7 +126,7 @@ def create_execution_mode_tools(
     run whichever tool the model actually called (e.g. ``exit_plan_mode``,
     which never appears in the execution-mode list itself).
 
-    *skill_store*, *datasci_config*, and *agent_task_manager* are provided by
+    *skill_store*, *datasci_config*, and *background_task_manager* are provided by
     the caller when it already has an instance to share (e.g. across agent
     turns); otherwise a default is created here. Every tool downstream of this
     factory receives its instance as a required argument — this is the only
@@ -142,11 +142,11 @@ def create_execution_mode_tools(
             [user_skills_dir] if user_skills_dir is not None else None,
             [user_domains_dir] if user_domains_dir is not None else None,
         )
-    if agent_task_manager is None:
+    if background_task_manager is None:
         output_root = (
             Path(context_store.root) / "workers" / "outputs" if context_store is not None else None
         )
-        agent_task_manager = LocalAgentTaskManager(output_root=output_root)
+        background_task_manager = BackgroundTaskManager(output_root=output_root)
     # A single manager instance is shared by every tool that supports human approval.
     approval_manager: HumanApprovalBaseManager = HumanApprovalManager(datasci_config)
     tools = _base_tools(
@@ -160,10 +160,10 @@ def create_execution_mode_tools(
             datasci_config,
             skill_store=skill_store,
             sandbox_factory=sandbox_factory,
-            agent_task_manager=agent_task_manager,
+            background_task_manager=background_task_manager,
         )
     )
-    tools.extend(create_task_management_tools(agent_task_manager))
+    tools.extend(create_task_management_tools(background_task_manager))
     tools.extend(create_web_tools())
     tools.extend(create_user_interaction_tools())
     if datasci_config.mcp_servers:

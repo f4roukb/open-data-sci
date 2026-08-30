@@ -1,6 +1,5 @@
 """Unit tests for opendatasci.tools.workspace."""
 
-
 from pathlib import Path
 
 import pytest
@@ -75,7 +74,9 @@ class TestListWorkspaceFiles:
         assert tmp_path.name in result
 
     @pytest.mark.asyncio
-    async def test_shows_directory_with_absolute_path_and_trailing_slash(self, tmp_path: Path) -> None:
+    async def test_shows_directory_with_absolute_path_and_trailing_slash(
+        self, tmp_path: Path
+    ) -> None:
         subdir = tmp_path / "subdir"
         subdir.mkdir()
         (subdir / "nested.txt").write_text("x")

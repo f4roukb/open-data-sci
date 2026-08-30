@@ -30,12 +30,13 @@ from opendatasci._utils.streaming_utils import format_stream_error
 from opendatasci.agents.chat_history import ChatHistoryBuilder
 from opendatasci.agents.graphs import AgentCompiledGraph, AgentGraphFactory
 from opendatasci.agents.interrupts import InterruptKind
+from opendatasci.agents.nodes import SynchronizationNode
 from opendatasci.agents.states import AgentState
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.base import BaseContextStore
 from opendatasci.context.local import LocalContextStore
 from opendatasci.memory.chat_memory import ChatHistoryCompactor
-from opendatasci.memory.messages import MessageOrigin, TaskMessage, UserMessage
+from opendatasci.memory.messages import MessageOrigin, UserMessage
 from opendatasci.memory.turn_memory import TurnRewinder
 from opendatasci.models.factory import (
     _RetryRunnable,
@@ -57,8 +58,8 @@ from opendatasci.streaming import (
     MessageEvent,
     ResponseEvent,
 )
-from opendatasci.tasks.base import AgentTaskManagerBase
-from opendatasci.tasks.local import LocalAgentTaskManager
+from opendatasci.tasks.base import BackgroundTaskManagerBase, BackgroundTaskRecord
+from opendatasci.tasks.local import BackgroundTaskManager
 from opendatasci.tools.factory import (
     create_execution_mode_tools,
     create_plan_mode_tools,
@@ -128,7 +129,7 @@ class BaseOpenDataSciAgent(ABC):
 
     @property
     @abstractmethod
-    def task_manager(self) -> AgentTaskManagerBase: ...
+    def task_manager(self) -> BackgroundTaskManagerBase: ...
 
 
 class Agent(BaseOpenDataSciAgent):
@@ -153,8 +154,8 @@ class Agent(BaseOpenDataSciAgent):
             local file-based store is created when omitted.
         skill_store: Registry that the agent queries to resolve named skills
             at runtime.  Defaults to the built-in :class:`LocalSkillStore`.
-        agent_task_manager: Tracks background tasks spawned via the ``task``
-            tool.  Defaults to a file-backed :class:`LocalAgentTaskManager`.
+        background_task_manager: Tracks background tasks spawned via the ``task``
+            tool.  Defaults to a file-backed :class:`BackgroundTaskManager`.
         session_manager: Tracks the session's conversation threads in the
             graph checkpointer; clearing the conversation creates a new
             thread.  Defaults to a file-backed :class:`LocalSessionManager`.
@@ -175,7 +176,7 @@ class Agent(BaseOpenDataSciAgent):
         workspace: BaseWorkspace,
         context_store: BaseContextStore | None = None,
         skill_store: BaseSkillStore | None = None,
-        agent_task_manager: AgentTaskManagerBase | None = None,
+        background_task_manager: BackgroundTaskManagerBase | None = None,
         sandbox_factory: BaseSandboxFactory | None = None,
         checkpointer: BaseCheckpointSaver[Any] | None = None,
         tools: list[BaseTool] | None = None,
@@ -189,7 +190,7 @@ class Agent(BaseOpenDataSciAgent):
         self._tools = tools
         self._sandbox_factory = sandbox_factory
         self._skill_store = skill_store
-        self._agent_task_manager = agent_task_manager
+        self._background_task_manager = background_task_manager
         self._context_store = context_store
         self._session_manager = session_manager
         self._checkpointer = checkpointer
@@ -206,9 +207,9 @@ class Agent(BaseOpenDataSciAgent):
         if self._context_store is None:
             workspace_path = Path(self._workspace.get_reference())
             self._context_store = LocalContextStore(workspace_path=workspace_path)
-        if self._agent_task_manager is None:
+        if self._background_task_manager is None:
             output_root = Path(self._context_store.root) / "workers" / "outputs"
-            self._agent_task_manager = LocalAgentTaskManager(output_root=output_root)
+            self._background_task_manager = BackgroundTaskManager(output_root=output_root)
         if self._session_manager is None:
             self._session_manager = LocalSessionManager(
                 workspace_path=Path(self._workspace.get_reference()),
@@ -232,7 +233,7 @@ class Agent(BaseOpenDataSciAgent):
                 session_id=self._session_id,
                 skill_store=self._skill_store,
                 datasci_config=self._config,
-                agent_task_manager=self._agent_task_manager,
+                background_task_manager=self._background_task_manager,
             )
 
         self._tools_in_plan_mode: list[BaseTool] = create_plan_mode_tools(self._tools)
@@ -254,6 +255,9 @@ class Agent(BaseOpenDataSciAgent):
             context_store=self._context_store,
             session_id=self._session_id,
         )
+        self._synchronization_node = SynchronizationNode(
+            background_task_manager=self._background_task_manager,
+        )
 
         self._graph: AgentCompiledGraph = self._build_graph(checkpointer)
         return self
@@ -262,14 +266,14 @@ class Agent(BaseOpenDataSciAgent):
         await self._exit_stack.aclose()
 
     @property
-    def task_manager(self) -> AgentTaskManagerBase:
+    def task_manager(self) -> BackgroundTaskManagerBase:
         """The task manager tracking this agent's background (``task``, ``run_mode="background"``) work.
 
         Exposed so a caller driving this agent (the TUI, or a hosted-service
         equivalent) can watch for background-task completions via
-        :meth:`AgentTaskManagerBase.listen_task_updates`.
+        :meth:`BackgroundTaskManagerBase.listen_task_updates`.
         """
-        return self._agent_task_manager  # type: ignore[return-value]
+        return self._background_task_manager  # type: ignore[return-value]
 
     @property
     def _graph_config(self) -> RunnableConfig:
@@ -304,6 +308,7 @@ class Agent(BaseOpenDataSciAgent):
             build_system_context=self._build_system_context,
             chat_history_builder=self._chat_history_builder,
             checkpointer=checkpointer,
+            synchronization_node=self._synchronization_node,
         ).build()
 
     @classmethod
@@ -313,15 +318,12 @@ class Agent(BaseOpenDataSciAgent):
         )
 
     @classmethod
-    def _prepare_batch_messages(cls, items: list[Invocation]) -> list[BaseMessage]:
+    def _prepare_batch_messages(
+        cls, task_records: list[BackgroundTaskRecord], user_items: list[Invocation]
+    ) -> list[BaseMessage]:
         """Build one message per item, worker results first, then user text."""
-        worker_items = [item for item in items if item.origin == MessageOrigin.TASK]
-        user_items = [item for item in items if item.origin == MessageOrigin.USER]
         return [
-            *(
-                TaskMessage(content=item.content, created_at=item.created_at)
-                for item in worker_items
-            ),
+            *(record.to_update_message() for record in task_records),
             *(UserMessage(content=item.content, created_at=item.created_at) for item in user_items),
         ]
 
@@ -381,10 +383,11 @@ class Agent(BaseOpenDataSciAgent):
         thread_id = self._session_manager.get_or_create_thread()  # type: ignore[union-attr]
         config = self._thread_config(thread_id)
         items = invocation if isinstance(invocation, list) else [invocation]
+        task_records = await self._background_task_manager.gather_task_updates()  # type: ignore[union-attr]
 
         self._context_store.prune()  # type: ignore[union-attr]
         graph_input: Any = {
-            "messages": type(self)._prepare_batch_messages(items),
+            "messages": type(self)._prepare_batch_messages(task_records, items),
             "active_skills": [],
             "active_skill_domains": [],
             "is_plan_mode": False,

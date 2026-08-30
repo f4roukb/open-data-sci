@@ -9,7 +9,6 @@ that involves several real subsystems wired together:
 * Turn summarization (``TurnSummarizer`` writing to ``ChatMemory``)
 """
 
-
 import asyncio
 from unittest.mock import AsyncMock, patch
 
@@ -122,7 +121,11 @@ class TestPlanModeFlow:
             [
                 _ai_with_tool_call(
                     "switch_agentic_mode",
-                    {"mode": "plan", "summary": "Planning task", "communication": "Need to plan first."},
+                    {
+                        "mode": "plan",
+                        "summary": "Planning task",
+                        "communication": "Need to plan first.",
+                    },
                     call_id="ep1",
                 ),
                 _ai_with_tool_call(
@@ -161,8 +164,14 @@ class TestPlanModeFlow:
         agent = svc._agent
 
         assert agent._get_active_llm_with_tools(AgentState()) is agent._llm_with_tools
-        assert agent._get_active_llm_with_tools(AgentState(is_plan_mode=True)) is agent._llm_with_tools_plan
-        assert agent._get_active_llm_with_tools(AgentState(is_self_review_mode=True)) is agent._llm_with_tools_self_review
+        assert (
+            agent._get_active_llm_with_tools(AgentState(is_plan_mode=True))
+            is agent._llm_with_tools_plan
+        )
+        assert (
+            agent._get_active_llm_with_tools(AgentState(is_self_review_mode=True))
+            is agent._llm_with_tools_self_review
+        )
 
     def test_context_store_plan_persists_to_disk(self, tmp_path):
         from opendatasci.context.local import LocalContextStore
@@ -321,4 +330,3 @@ class TestTurnSummarizerIntegration:
         assert record is not None
         recap = agent._chat_history_builder._build_summary_messages([record])
         assert "Greet me!" in recap[0].content[0]["text"]
-

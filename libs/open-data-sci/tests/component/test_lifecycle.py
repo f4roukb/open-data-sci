@@ -1,10 +1,9 @@
-﻿"""Component tests: session lifecycle management.
+"""Component tests: session lifecycle management.
 
 Covers get_workspace_files(), reset_session(), clear_context(),
 RuntimeError guards, and context-manager cleanup — each exercising
 the real integration between OpenDataSci, Session, and Agent state.
 """
-
 
 import pytest
 
@@ -17,7 +16,6 @@ def _seed_messages(agent, messages):
 def _get_messages(agent):
     """Read current messages from the agent's graph state."""
     return agent.graph.get_state(agent._graph_config).values.get("messages", [])
-
 
 
 class TestWorkspaceInspection:

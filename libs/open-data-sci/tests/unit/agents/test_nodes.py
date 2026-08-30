@@ -1,18 +1,21 @@
 """Unit tests for opendatasci.agents.nodes."""
 
-
+import uuid
 from unittest.mock import AsyncMock, MagicMock
 
 from langchain_core.messages import AIMessage, SystemMessage
 
 from opendatasci._utils.message_utils import get_message_text_content, to_text_content_blocks
-from opendatasci.agents.nodes import AgentNode
+from opendatasci.agents.nodes import AgentNode, SynchronizationNode
 from opendatasci.agents.states import AgentState
-from opendatasci.memory.messages import AgentMessage, UserMessage
+from opendatasci.memory.messages import AgentMessage, TaskMessage, UserMessage
+from opendatasci.tasks.local import BackgroundTaskManager
 
 
 def _make_state(messages: list | None = None) -> AgentState:
-    return AgentState(messages=messages or [UserMessage(content=to_text_content_blocks("question"))])
+    return AgentState(
+        messages=messages or [UserMessage(content=to_text_content_blocks("question"))]
+    )
 
 
 def _no_system(state):
@@ -24,9 +27,7 @@ def _one_system(state):
 
 
 class TestAgentNode:
-    def _make_node(
-        self, response: AIMessage | None = None
-    ) -> tuple[AgentNode, AsyncMock]:
+    def _make_node(self, response: AIMessage | None = None) -> tuple[AgentNode, AsyncMock]:
         if response is None:
             response = AIMessage(content="hello")
         llm = AsyncMock()
@@ -34,6 +35,7 @@ class TestAgentNode:
         node = AgentNode(
             get_llm_with_tools=lambda state: llm,
             build_system_context=_no_system,
+            chat_history_builder=None,
         )
         return node, llm
 
@@ -56,6 +58,7 @@ class TestAgentNode:
         node = AgentNode(
             get_llm_with_tools=lambda state: llm,
             build_system_context=_one_system,
+            chat_history_builder=None,
         )
         await node.ainvoke(_make_state())
         call_args = llm.ainvoke.call_args[0][0]
@@ -69,6 +72,7 @@ class TestAgentNode:
         node = AgentNode(
             get_llm_with_tools=lambda state: llm,
             build_system_context=_one_system,
+            chat_history_builder=None,
         )
         await node.ainvoke(_make_state([human]))
         call_args = llm.ainvoke.call_args[0][0]
@@ -79,14 +83,18 @@ class TestAgentNode:
         from opendatasci.agents.chat_history import ChatHistoryBuilder
         from opendatasci.memory.chat_memory import ChatTurnContext
 
-        recap_message = UserMessage(content=to_text_content_blocks("[Earlier session summary]\nold stuff"))
+        recap_message = UserMessage(
+            content=to_text_content_blocks("[Earlier session summary]\nold stuff")
+        )
         inline_turn_message = UserMessage(content=to_text_content_blocks("q"))
         mock_builder = MagicMock(spec=ChatHistoryBuilder)
-        mock_builder.build = AsyncMock(return_value=ChatTurnContext(
-            messages=[recap_message, inline_turn_message],
-            turn_summaries=[],
-            chat_history_compaction=None,
-        ))
+        mock_builder.build = AsyncMock(
+            return_value=ChatTurnContext(
+                messages=[recap_message, inline_turn_message],
+                turn_summaries=[],
+                chat_history_compaction=None,
+            )
+        )
 
         llm = AsyncMock()
         llm.ainvoke = AsyncMock(return_value=AIMessage(content="ok"))
@@ -114,11 +122,13 @@ class TestAgentNode:
             return []
 
         mock_builder = MagicMock(spec=ChatHistoryBuilder)
-        mock_builder.build = AsyncMock(return_value=ChatTurnContext(
-            messages=[UserMessage(content=to_text_content_blocks("q"))],
-            turn_summaries=[],
-            chat_history_compaction=None,
-        ))
+        mock_builder.build = AsyncMock(
+            return_value=ChatTurnContext(
+                messages=[UserMessage(content=to_text_content_blocks("q"))],
+                turn_summaries=[],
+                chat_history_compaction=None,
+            )
+        )
 
         llm = AsyncMock()
         llm.ainvoke = AsyncMock(return_value=AIMessage(content="ok"))
@@ -191,8 +201,11 @@ class TestAgentNode:
         node = AgentNode(
             get_llm_with_tools=get_llm,
             build_system_context=_no_system,
+            chat_history_builder=None,
         )
-        state = AgentState(messages=[UserMessage(content=to_text_content_blocks("hi"))], is_plan_mode=True)
+        state = AgentState(
+            messages=[UserMessage(content=to_text_content_blocks("hi"))], is_plan_mode=True
+        )
         await node.ainvoke(state)
 
         assert len(received_states) == 1
@@ -214,11 +227,13 @@ class TestAgentNodeWithCompaction:
 
         compacted = [UserMessage(content=to_text_content_blocks("compacted summary"))]
         mock_builder = MagicMock(spec=ChatHistoryBuilder)
-        mock_builder.build = AsyncMock(return_value=ChatTurnContext(
-            messages=compacted,
-            turn_summaries=[],
-            chat_history_compaction=None,
-        ))
+        mock_builder.build = AsyncMock(
+            return_value=ChatTurnContext(
+                messages=compacted,
+                turn_summaries=[],
+                chat_history_compaction=None,
+            )
+        )
 
         llm = AsyncMock()
         llm.ainvoke = AsyncMock(return_value=AIMessage(content="done"))
@@ -231,3 +246,87 @@ class TestAgentNodeWithCompaction:
         await node.ainvoke(_make_state([UserMessage(content=to_text_content_blocks("original"))]))
         called_messages = llm.ainvoke.call_args[0][0]
         assert called_messages == compacted
+
+
+# ---------------------------------------------------------------------------
+# SynchronizationNode — folds finished background tasks into context mid-turn
+# ---------------------------------------------------------------------------
+
+
+def _make_task_record(summary: str = "s", result: object = "r", status: object = None):
+    from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
+
+    return BackgroundTaskRecord(
+        task_id=uuid.uuid4(),
+        summary=summary,
+        status=status or BackgroundTaskStatus.COMPLETED,
+        result=result,
+    )
+
+
+class TestTaskMessageFromRecord:
+    def test_completed_task_includes_summary_and_result(self) -> None:
+        from opendatasci.tasks.base import BackgroundTaskStatus
+
+        record = _make_task_record(
+            summary="my task", result="the answer", status=BackgroundTaskStatus.COMPLETED
+        )
+        msg = record.to_update_message()
+        assert isinstance(msg, TaskMessage)
+        text = msg.content[0]["text"]
+        assert "my task" in text
+        assert "the answer" in text
+
+    def test_failed_task_includes_error(self) -> None:
+        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
+
+        record = BackgroundTaskRecord(
+            task_id=uuid.uuid4(),
+            summary="my task",
+            status=BackgroundTaskStatus.FAILED,
+            error="boom",
+        )
+        msg = record.to_update_message()
+        text = msg.content[0]["text"]
+        assert "failed" in text.lower()
+        assert "boom" in text
+
+    def test_cancelled_task_reported(self) -> None:
+        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
+
+        record = BackgroundTaskRecord(
+            task_id=uuid.uuid4(), summary="my task", status=BackgroundTaskStatus.CANCELLED
+        )
+        msg = record.to_update_message()
+        assert "cancelled" in msg.content[0]["text"].lower()
+
+
+class TestSynchronizationNode:
+    async def test_returns_empty_dict_when_nothing_to_drain(self) -> None:
+        node = SynchronizationNode(background_task_manager=BackgroundTaskManager())
+        assert await node.ainvoke(_make_state()) == {}
+
+    async def test_drains_and_wraps_records_as_task_messages(self) -> None:
+        manager = BackgroundTaskManager()
+        record = _make_task_record(summary="mid-turn work", result="done")
+        manager._task_updates.append(record)
+        node = SynchronizationNode(background_task_manager=manager)
+
+        result = await node.ainvoke(_make_state())
+
+        assert len(result["messages"]) == 1
+        assert isinstance(result["messages"][0], TaskMessage)
+        assert "mid-turn work" in result["messages"][0].content[0]["text"]
+        # The buffer is drained — a second call finds nothing left.
+        assert await node.ainvoke(_make_state()) == {}
+
+    async def test_multiple_records_all_wrapped(self) -> None:
+        manager = BackgroundTaskManager()
+        manager._task_updates.append(_make_task_record(summary="a"))
+        manager._task_updates.append(_make_task_record(summary="b"))
+        node = SynchronizationNode(background_task_manager=manager)
+
+        result = await node.ainvoke(_make_state())
+
+        assert len(result["messages"]) == 2
+        assert all(isinstance(m, TaskMessage) for m in result["messages"])

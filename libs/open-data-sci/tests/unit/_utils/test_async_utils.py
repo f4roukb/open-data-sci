@@ -1,6 +1,5 @@
 """Unit tests for opendatasci._utils.async_utils."""
 
-
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 

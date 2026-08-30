@@ -1,6 +1,5 @@
 """Unit tests for SandboxExecResult (opendatasci.sandbox.base)."""
 
-
 from datetime import datetime
 
 from opendatasci.sandbox.base import SandboxExecResult
@@ -22,4 +21,3 @@ class TestSandboxExecResultDefaults:
 
     def test_code_defaults_to_empty_string(self) -> None:
         assert SandboxExecResult(success=True).code == ""
-

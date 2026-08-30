@@ -1,6 +1,5 @@
 """Unit tests for TurnRewinder in opendatasci.agents.turn_memory."""
 
-
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
 from opendatasci._utils.message_utils import to_text_content_blocks

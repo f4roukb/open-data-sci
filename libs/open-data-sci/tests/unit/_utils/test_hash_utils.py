@@ -1,6 +1,5 @@
 """Unit tests for opendatasci._utils.hash_utils."""
 
-
 from pathlib import Path
 
 import pytest

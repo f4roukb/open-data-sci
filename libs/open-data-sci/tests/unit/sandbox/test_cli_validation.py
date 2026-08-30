@@ -1,7 +1,6 @@
 """Unit tests for TUI command validation in opendatasci.sandbox — validate_cli_command
 and the ALLOWED_CLI_COMMANDS registry."""
 
-
 import pytest
 
 from opendatasci.sandbox.base import ALLOWED_CLI_COMMANDS, validate_cli_command

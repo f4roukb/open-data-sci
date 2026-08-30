@@ -79,9 +79,7 @@ class TestLocalSessionManager:
         assert second["last_updated_at"] >= first["last_updated_at"]
         assert len(second["threads"]) == 2
 
-    def test_get_or_create_thread_creates_first_thread(
-        self, manager: LocalSessionManager
-    ) -> None:
+    def test_get_or_create_thread_creates_first_thread(self, manager: LocalSessionManager) -> None:
         thread_id = manager.get_or_create_thread()
         assert manager.get_current_thread() == thread_id
 

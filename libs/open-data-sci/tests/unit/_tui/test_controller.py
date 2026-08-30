@@ -1,5 +1,4 @@
-﻿"""Unit tests for opendatasci._tui.controller."""
-
+"""Unit tests for opendatasci._tui.controller."""
 
 import asyncio
 from pathlib import Path
@@ -647,9 +646,7 @@ class TestApprovalFlow:
         action, _ = await controller.on_submit("/exit")
         assert action == "quit"
 
-    async def test_reset_clears_awaiting_approval(
-        self, loaded_controller: CLIController
-    ) -> None:
+    async def test_reset_clears_awaiting_approval(self, loaded_controller: CLIController) -> None:
         loaded_controller._awaiting_approval = True
         await loaded_controller.reset()
         assert loaded_controller.awaiting_approval is False
@@ -889,9 +886,7 @@ class TestChoiceHandling:
         assert controller._awaiting_choice is False
         assert result == "cancel"
 
-    async def test_cancel_choice_no_op_when_not_awaiting(
-        self, controller: CLIController
-    ) -> None:
+    async def test_cancel_choice_no_op_when_not_awaiting(self, controller: CLIController) -> None:
         controller._awaiting_choice = False
         result = await controller.cancel_choice()
         assert result is None
@@ -907,39 +902,6 @@ async def _aiter(*events: AgentStreamEvent):
         yield e
 
 
-class TestFormatCompletionMessage:
-    def test_completed_task_includes_result(self) -> None:
-        from opendatasci._tui.controller import _format_completion_message
-        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
-
-        record = AgentTaskRecord(
-            task_id=uuid4(), summary="my task", status=AgentTaskStatus.COMPLETED, result="the answer"
-        )
-        query, display = _format_completion_message(record)
-        assert "my task" in query
-        assert "the answer" in query
-        assert query == display
-
-    def test_failed_task_includes_error(self) -> None:
-        from opendatasci._tui.controller import _format_completion_message
-        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
-
-        record = AgentTaskRecord(
-            task_id=uuid4(), summary="my task", status=AgentTaskStatus.FAILED, error="boom"
-        )
-        query, _ = _format_completion_message(record)
-        assert "failed" in query.lower()
-        assert "boom" in query
-
-    def test_cancelled_task_reported(self) -> None:
-        from opendatasci._tui.controller import _format_completion_message
-        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
-
-        record = AgentTaskRecord(task_id=uuid4(), summary="my task", status=AgentTaskStatus.CANCELLED)
-        query, _ = _format_completion_message(record)
-        assert "cancelled" in query.lower()
-
-
 class TestBackgroundTaskWatcher:
     @staticmethod
     def _completions(*records):
@@ -952,12 +914,11 @@ class TestBackgroundTaskWatcher:
     async def test_kicks_new_turn_when_idle(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
-        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
+        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
 
-        record = AgentTaskRecord(
-            task_id=uuid4(), summary="s", status=AgentTaskStatus.COMPLETED, result="done"
+        record = BackgroundTaskRecord(
+            task_id=uuid4(), summary="s", status=BackgroundTaskStatus.COMPLETED, result="done"
         )
-        mock_service.task_manager = MagicMock()
         mock_service.task_manager.listen_task_updates = MagicMock(
             return_value=self._completions(record)
         )
@@ -967,16 +928,37 @@ class TestBackgroundTaskWatcher:
         await loaded_controller._watch_background_tasks()
 
         assert mock_service.astream.called
+        # The record is never fed to the agent from here — astream() is called
+        # with an empty batch; the agent drains its own task manager.
+        assert mock_service.astream.call_args[0][0] == []
 
-    async def test_enqueues_pending_when_turn_in_progress(
+    async def test_no_chat_message_shown_for_raw_completion(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
-        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
+        """The raw completion is never surfaced as a chat bubble — only the agent's own response is."""
+        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
 
-        record = AgentTaskRecord(
-            task_id=uuid4(), summary="s", status=AgentTaskStatus.COMPLETED, result="done"
+        record = BackgroundTaskRecord(
+            task_id=uuid4(), summary="s", status=BackgroundTaskStatus.COMPLETED, result="done"
         )
-        mock_service.task_manager = MagicMock()
+        mock_service.task_manager.listen_task_updates = MagicMock(
+            return_value=self._completions(record)
+        )
+        mock_service.astream.return_value = _aiter()
+        loaded_controller._agent_running = False
+
+        await loaded_controller._watch_background_tasks()
+
+        mock_ui.add_message.assert_not_called()
+
+    async def test_no_new_turn_when_turn_in_progress(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
+
+        record = BackgroundTaskRecord(
+            task_id=uuid4(), summary="s", status=BackgroundTaskStatus.COMPLETED, result="done"
+        )
         mock_service.task_manager.listen_task_updates = MagicMock(
             return_value=self._completions(record)
         )
@@ -984,7 +966,29 @@ class TestBackgroundTaskWatcher:
 
         await loaded_controller._watch_background_tasks()
 
-        assert not loaded_controller._pending_queue.is_empty()
+        # Nothing is queued anymore — the running turn's own mid-turn node
+        # (or the next turn's start) will pick the result up on its own.
+        assert loaded_controller._pending_queue.is_empty()
+        assert not mock_service.astream.called
+        mock_ui.add_message.assert_not_called()
+
+    async def test_no_new_turn_while_interrupted(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
+
+        record = BackgroundTaskRecord(
+            task_id=uuid4(), summary="s", status=BackgroundTaskStatus.COMPLETED, result="done"
+        )
+        mock_service.task_manager.listen_task_updates = MagicMock(
+            return_value=self._completions(record)
+        )
+        mock_service.is_user_input_required = MagicMock(return_value=True)
+        loaded_controller._agent_running = False
+
+        await loaded_controller._watch_background_tasks()
+
+        assert loaded_controller._pending_queue.is_empty()
         assert not mock_service.astream.called
 
 
@@ -992,9 +996,11 @@ class TestBackgroundTaskStatusPoll:
     async def test_running_tasks_shown_in_header(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
-        from opendatasci.tasks.base import AgentTaskRecord, AgentTaskStatus
+        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
 
-        running = AgentTaskRecord(task_id=uuid4(), summary="crunching numbers", status=AgentTaskStatus.RUNNING)
+        running = BackgroundTaskRecord(
+            task_id=uuid4(), summary="crunching numbers", status=BackgroundTaskStatus.RUNNING
+        )
         mock_service.task_manager = MagicMock()
         mock_service.task_manager.list_tasks = AsyncMock(return_value=[running])
 
@@ -1241,6 +1247,29 @@ class TestResumeMethods:
         await loaded_controller.resume_with_approval(False)
         assert loaded_controller.awaiting_approval is False
 
+    async def test_drain_loop_triggers_empty_turn_for_undrained_task_updates(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        """A task result missed by the mid-turn node still gets surfaced right after the turn."""
+        mock_service.astream.return_value = _aiter()
+        mock_service.task_manager.has_task_updates = MagicMock(side_effect=[True, False])
+
+        await loaded_controller.run_agent("query")
+
+        assert mock_service.astream.call_count == 2
+        assert mock_service.astream.call_args_list[-1][0][0] == []
+
+    async def test_drain_loop_stops_while_interrupted_even_with_task_updates(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        mock_service.astream.return_value = _aiter()
+        mock_service.is_user_input_required = MagicMock(return_value=True)
+        mock_service.task_manager.has_task_updates = MagicMock(return_value=True)
+
+        await loaded_controller.run_agent("query")
+
+        mock_service.astream.assert_called_once()
+
 
 # ---------------------------------------------------------------------------
 # CLIController — stop_agent
@@ -1348,7 +1377,9 @@ class TestSessionId:
         )
         assert ctrl._session_id == "deadbeef"
 
-    async def test_boot_wires_agent_from_create_agent_into_service(self, mock_ui: MagicMock) -> None:
+    async def test_boot_wires_agent_from_create_agent_into_service(
+        self, mock_ui: MagicMock
+    ) -> None:
         # boot() now delegates agent construction (including the session context
         # store) to create_agent(), enters it as an async context manager, and
         # wraps the agent + its sandbox in the TUI service.
@@ -1498,7 +1529,7 @@ class TestBootFailures:
         assert "/fake/data.csv" in content
 
     async def test_llm_provider_error_shows_api_key_guidance(self, mock_ui: MagicMock) -> None:
-        
+
         ctrl = _make_boot_ctrl(mock_ui)
         with (
             patch("pathlib.Path.is_file", return_value=True),
@@ -1789,9 +1820,7 @@ class TestControllerStateProperties:
     def test_has_paste_attachment_false_initially(self, controller: CLIController) -> None:
         assert controller.has_paste_attachment is False
 
-    def test_has_paste_attachment_tracks_paste_lifecycle(
-        self, controller: CLIController
-    ) -> None:
+    def test_has_paste_attachment_tracks_paste_lifecycle(self, controller: CLIController) -> None:
         controller.on_paste("line1\nline2")
         assert controller.has_paste_attachment is True
         controller.clear_paste_attachment()

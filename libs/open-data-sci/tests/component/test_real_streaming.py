@@ -12,7 +12,6 @@ Each test exercises a long code path:
 The LLM is the lowest-level boundary mock; everything above is real.
 """
 
-
 import asyncio
 
 from langchain_core.messages import AIMessage

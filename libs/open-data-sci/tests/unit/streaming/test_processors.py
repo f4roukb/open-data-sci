@@ -1,6 +1,5 @@
 """Unit tests for opendatasci.streaming.processors (and format_stream_error)."""
 
-
 import asyncio
 from unittest.mock import MagicMock
 
@@ -219,6 +218,7 @@ class TestStreamEventProcessor:
         assert tool_results[0].tool_call_id == "plan-tc"
         # The unwrapped ToolMessage must also be recorded as generated output.
         from opendatasci.streaming.events import MessageEvent
+
         assert any(isinstance(e, MessageEvent) and e.message is tool_msg for e in results)
 
     def test_process_tool_end_command_without_messages_passes_through(self) -> None:
@@ -613,6 +613,7 @@ class TestStreamEventProcessor:
         }
         results = p.process_event(event)
         from opendatasci.streaming.events import MessageEvent
+
         assert any(isinstance(e, MessageEvent) and e.message is ai_msg for e in results)
 
     def test_chain_end_with_non_ai_message_ignored(self) -> None:
@@ -1393,18 +1394,10 @@ class TestAccumulateToolCallChunks:
     def test_communication_emitted_independently_for_parallel_calls(self) -> None:
         p = self._proc()
         out: list = []
-        p._accumulate_tool_call_chunks(
-            [{"name": "a", "id": "t1", "args": "", "index": 0}], out
-        )
-        p._accumulate_tool_call_chunks(
-            [{"name": "b", "id": "t2", "args": "", "index": 1}], out
-        )
-        p._accumulate_tool_call_chunks(
-            [{"args": '{"communication": "Alpha"}', "index": 0}], out
-        )
-        p._accumulate_tool_call_chunks(
-            [{"args": '{"communication": "Beta"}', "index": 1}], out
-        )
+        p._accumulate_tool_call_chunks([{"name": "a", "id": "t1", "args": "", "index": 0}], out)
+        p._accumulate_tool_call_chunks([{"name": "b", "id": "t2", "args": "", "index": 1}], out)
+        p._accumulate_tool_call_chunks([{"args": '{"communication": "Alpha"}', "index": 0}], out)
+        p._accumulate_tool_call_chunks([{"args": '{"communication": "Beta"}', "index": 1}], out)
         comm = {e.tool_call_id: e.content for e in out if e.type == "tool_communication"}
         assert comm == {"t1": "Alpha", "t2": "Beta"}
 

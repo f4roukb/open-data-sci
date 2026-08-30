@@ -9,6 +9,7 @@ from opendatasci.agents.chat_history import ChatHistoryBuilder
 from opendatasci.agents.states import AgentState
 from opendatasci.memory.messages import AgentMessage
 from opendatasci.models.factory import _RetryRunnable
+from opendatasci.tasks.base import BackgroundTaskManagerBase
 
 BuildSystemContext = Callable[[AgentState], list[SystemMessage]]
 
@@ -47,7 +48,7 @@ class AgentNode(BaseNode):
         self,
         get_llm_with_tools: Callable[[AgentState], _RetryRunnable],
         build_system_context: BuildSystemContext,
-        chat_history_builder: ChatHistoryBuilder | None = None,
+        chat_history_builder: ChatHistoryBuilder | None,
     ) -> None:
         self._get_llm_with_tools = get_llm_with_tools
         self._build_system_context = build_system_context
@@ -76,3 +77,18 @@ class AgentNode(BaseNode):
         response = AgentMessage.from_langchain(_raw)
         updates["messages"] = [response]
         return updates
+
+
+class SynchronizationNode(BaseNode):
+    """Graph node that folds finished background tasks into context mid-turn."""
+
+    def __init__(self, background_task_manager: BackgroundTaskManagerBase) -> None:
+        self._background_task_manager = background_task_manager
+
+    async def ainvoke(
+        self, state: AgentState, config: Optional[RunnableConfig] = None
+    ) -> dict[str, Any]:
+        records = await self._background_task_manager.gather_task_updates()
+        if not records:
+            return {}
+        return {"messages": [record.to_update_message() for record in records]}

@@ -1,6 +1,5 @@
 """Unit tests for LocalContextStore — file-based storage internals."""
 
-
 import datetime
 import json
 from pathlib import Path
@@ -8,7 +7,12 @@ from unittest.mock import patch
 
 import pytest
 
-from opendatasci.context.local import LocalContextStore, OPENDATASCI_DIRNAME, _NOTES_DIR, _PROFILES_DIR
+from opendatasci.context.local import (
+    LocalContextStore,
+    OPENDATASCI_DIRNAME,
+    _NOTES_DIR,
+    _PROFILES_DIR,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -69,7 +73,9 @@ class TestSaveNotes:
     def test_file_is_placed_under_date_keyed_path(self, store: LocalContextStore) -> None:
         today = datetime.date.today()
         store._save_notes(HASH, "x")
-        expected_dir = store._notes_root / str(today.year) / f"{today.month:02d}" / f"{today.day:02d}"
+        expected_dir = (
+            store._notes_root / str(today.year) / f"{today.month:02d}" / f"{today.day:02d}"
+        )
         assert (expected_dir / f"{HASH}.md").exists()
 
     def test_overwrites_existing_content(self, store: LocalContextStore) -> None:
@@ -128,9 +134,7 @@ class TestSaveDatasetProfile:
         store.save_dataset_profile(HASH, "content")
         assert store._profiles_root.exists()
 
-    def test_file_is_flat_under_profiles_root(
-        self, store: LocalContextStore
-    ) -> None:
+    def test_file_is_flat_under_profiles_root(self, store: LocalContextStore) -> None:
         store.save_dataset_profile(HASH, "content")
         assert (store._profiles_root / f"{HASH}.md").exists()
 
@@ -177,7 +181,9 @@ class TestLocalContextStorePlans:
     def test_prune_no_op_when_plans_dir_missing(self, store: LocalContextStore) -> None:
         store.prune()  # Must not raise
 
-    def test_plans_live_under_opendatasci_dir(self, store: LocalContextStore, tmp_path: Path) -> None:
+    def test_plans_live_under_opendatasci_dir(
+        self, store: LocalContextStore, tmp_path: Path
+    ) -> None:
         store.save_plan("s1", "plan")
         assert store._plans_root == tmp_path / OPENDATASCI_DIRNAME / "plans"
         assert store._plans_root.exists()
@@ -201,8 +207,12 @@ class TestLocalContextStorePlans:
     def test_prune_keeps_only_latest_per_session(self, store: LocalContextStore) -> None:
         plans = store._plans_root
         plans.mkdir(parents=True)
-        (plans / "sess01_20240101T000000Z.json").write_text(json.dumps({"content": "plan v1", "metadata": {}}))
-        (plans / "sess01_20240101T000001Z.json").write_text(json.dumps({"content": "plan v2", "metadata": {}}))
+        (plans / "sess01_20240101T000000Z.json").write_text(
+            json.dumps({"content": "plan v1", "metadata": {}})
+        )
+        (plans / "sess01_20240101T000001Z.json").write_text(
+            json.dumps({"content": "plan v2", "metadata": {}})
+        )
         store.prune()
         files = list(plans.glob("sess01_*.json"))
         assert len(files) == 1
@@ -220,8 +230,12 @@ class TestLocalContextStorePlans:
     def test_explicit_prune_removes_stale_files(self, store: LocalContextStore) -> None:
         plans = store._plans_root
         plans.mkdir(parents=True)
-        (plans / "sess01_20240101T000000Z.json").write_text(json.dumps({"content": "old", "metadata": {}}))
-        (plans / "sess01_20240101T000001Z.json").write_text(json.dumps({"content": "new", "metadata": {}}))
+        (plans / "sess01_20240101T000000Z.json").write_text(
+            json.dumps({"content": "old", "metadata": {}})
+        )
+        (plans / "sess01_20240101T000001Z.json").write_text(
+            json.dumps({"content": "new", "metadata": {}})
+        )
         store.prune()
         files = list(plans.glob("sess01_*.json"))
         assert len(files) == 1
@@ -245,11 +259,17 @@ class TestLocalContextStorePlans:
         assert plan is not None
         assert plan.content == "persisted plan"
 
-    def test_get_current_plan_returns_latest_of_multiple_disk_files(self, store: LocalContextStore) -> None:
+    def test_get_current_plan_returns_latest_of_multiple_disk_files(
+        self, store: LocalContextStore
+    ) -> None:
         plans = store._plans_root
         plans.mkdir(parents=True)
-        (plans / "s1_20240101T000000Z.json").write_text(json.dumps({"content": "old plan", "metadata": {}}))
-        (plans / "s1_20240101T000001Z.json").write_text(json.dumps({"content": "new plan", "metadata": {}}))
+        (plans / "s1_20240101T000000Z.json").write_text(
+            json.dumps({"content": "old plan", "metadata": {}})
+        )
+        (plans / "s1_20240101T000001Z.json").write_text(
+            json.dumps({"content": "new plan", "metadata": {}})
+        )
 
         plan = store.get_current_plan("s1")
         assert plan is not None
@@ -264,10 +284,14 @@ class TestLocalContextStorePlans:
 
         assert store.get_current_plan("mysessid") is None
 
-    def test_get_current_plan_does_not_match_session_id_prefix(self, store: LocalContextStore) -> None:
+    def test_get_current_plan_does_not_match_session_id_prefix(
+        self, store: LocalContextStore
+    ) -> None:
         plans = store._plans_root
         plans.mkdir(parents=True)
-        (plans / "s10_20240101T000000Z.json").write_text(json.dumps({"content": "s10 plan", "metadata": {}}))
+        (plans / "s10_20240101T000000Z.json").write_text(
+            json.dumps({"content": "s10 plan", "metadata": {}})
+        )
 
         assert store.get_current_plan("s1") is None
 
@@ -286,8 +310,12 @@ class TestLocalContextStorePlans:
     def test_clear_plans_removes_all_session_plans(self, store: LocalContextStore) -> None:
         plans = store._plans_root
         plans.mkdir(parents=True)
-        (plans / "s1_20240101T000000Z.json").write_text(json.dumps({"content": "old", "metadata": {}}))
-        (plans / "s1_20240101T000001Z.json").write_text(json.dumps({"content": "new", "metadata": {}}))
+        (plans / "s1_20240101T000000Z.json").write_text(
+            json.dumps({"content": "old", "metadata": {}})
+        )
+        (plans / "s1_20240101T000001Z.json").write_text(
+            json.dumps({"content": "new", "metadata": {}})
+        )
         store.clear_plans("s1")
         assert store.get_current_plan("s1") is None
         assert list(plans.glob("s1_*.json")) == []

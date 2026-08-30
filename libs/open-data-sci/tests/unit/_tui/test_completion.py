@@ -162,9 +162,7 @@ class TestCompletionStateOnInputChangedAtMode:
     def test_at_fragment_with_matching_files_shows_popup(self) -> None:
         state = CompletionState()
         ui = _make_ui()
-        with patch(
-            "opendatasci._tui.completion._discover_files", return_value=["data.csv"]
-        ):
+        with patch("opendatasci._tui.completion._discover_files", return_value=["data.csv"]):
             state.on_input_changed("@data", ui)
         ui.show_completion.assert_called_once()
 
@@ -179,9 +177,7 @@ class TestCompletionStateOnInputChangedAtMode:
     def test_at_mode_is_set_when_file_matches_found(self) -> None:
         state = CompletionState()
         ui = _make_ui()
-        with patch(
-            "opendatasci._tui.completion._discover_files", return_value=["data.csv"]
-        ):
+        with patch("opendatasci._tui.completion._discover_files", return_value=["data.csv"]):
             state.on_input_changed("@d", ui)
         assert state._mode == "file"
 
@@ -208,9 +204,7 @@ class TestCompletionStateOnInputChangedAtMode:
     def test_at_position_stored_correctly(self) -> None:
         state = CompletionState()
         ui = _make_ui()
-        with patch(
-            "opendatasci._tui.completion._discover_files", return_value=["data.csv"]
-        ):
+        with patch("opendatasci._tui.completion._discover_files", return_value=["data.csv"]):
             state.on_input_changed("describe @d", ui)
         # "@" is at index 9 in "describe @d"
         assert state._at_pos == 9

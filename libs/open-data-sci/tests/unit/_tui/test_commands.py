@@ -126,15 +126,21 @@ class TestFormatModelsMessage:
     """format_models_message must show primary and secondary model information."""
 
     def test_contains_models_header(self) -> None:
-        msg = format_models_message("anthropic", "claude-sonnet-4-6", "anthropic", "claude-haiku-4-5")
+        msg = format_models_message(
+            "anthropic", "claude-sonnet-4-6", "anthropic", "claude-haiku-4-5"
+        )
         assert "Model" in msg
 
     def test_primary_model_present(self) -> None:
-        msg = format_models_message("anthropic", "claude-sonnet-4-6", "anthropic", "claude-haiku-4-5")
+        msg = format_models_message(
+            "anthropic", "claude-sonnet-4-6", "anthropic", "claude-haiku-4-5"
+        )
         assert "Sonnet" in msg
 
     def test_secondary_model_present(self) -> None:
-        msg = format_models_message("anthropic", "claude-sonnet-4-6", "anthropic", "claude-haiku-4-5")
+        msg = format_models_message(
+            "anthropic", "claude-sonnet-4-6", "anthropic", "claude-haiku-4-5"
+        )
         assert "Haiku" in msg
 
     def test_primary_and_secondary_are_distinguishable(self) -> None:
@@ -144,7 +150,9 @@ class TestFormatModelsMessage:
         assert "OpenAI" in msg
 
     def test_is_markdown_formatted(self) -> None:
-        msg = format_models_message("anthropic", "claude-sonnet-4-6", "anthropic", "claude-haiku-4-5")
+        msg = format_models_message(
+            "anthropic", "claude-sonnet-4-6", "anthropic", "claude-haiku-4-5"
+        )
         assert "##" in msg
 
     def test_unknown_provider_does_not_raise(self) -> None:
@@ -152,11 +160,15 @@ class TestFormatModelsMessage:
         assert isinstance(msg, str)
 
     def test_primary_label_present(self) -> None:
-        msg = format_models_message("anthropic", "claude-sonnet-4-6", "anthropic", "claude-haiku-4-5")
+        msg = format_models_message(
+            "anthropic", "claude-sonnet-4-6", "anthropic", "claude-haiku-4-5"
+        )
         assert "Primary" in msg
 
     def test_secondary_label_present(self) -> None:
-        msg = format_models_message("anthropic", "claude-sonnet-4-6", "anthropic", "claude-haiku-4-5")
+        msg = format_models_message(
+            "anthropic", "claude-sonnet-4-6", "anthropic", "claude-haiku-4-5"
+        )
         assert "Secondary" in msg
 
 

@@ -1,6 +1,5 @@
 """Unit tests for LocalContextStore — workspace orchestration behaviour."""
 
-
 from pathlib import Path
 
 import pytest
@@ -55,9 +54,7 @@ class TestRoot:
         async with ctx.session():
             assert (workspace / OPENDATASCI_DIRNAME).exists()
 
-    async def test_root_is_a_directory_after_session_entry(
-        self, ctx: LocalContextStore
-    ) -> None:
+    async def test_root_is_a_directory_after_session_entry(self, ctx: LocalContextStore) -> None:
         async with ctx.session():
             assert ctx.root.is_dir()
 
@@ -96,7 +93,9 @@ class TestStorageLayout:
 
 
 class TestReadDatasetInfo:
-    async def test_raises_for_missing_dataset(self, ctx: LocalContextStore, workspace: Path) -> None:
+    async def test_raises_for_missing_dataset(
+        self, ctx: LocalContextStore, workspace: Path
+    ) -> None:
         with pytest.raises(FileNotFoundError):
             await ctx.read_dataset_info(str(workspace / "nonexistent.csv"))
 
@@ -194,7 +193,9 @@ class TestReadDatasetInfo:
 
 
 class TestUpdateDatasetInfo:
-    async def test_raises_for_missing_dataset(self, ctx: LocalContextStore, workspace: Path) -> None:
+    async def test_raises_for_missing_dataset(
+        self, ctx: LocalContextStore, workspace: Path
+    ) -> None:
         with pytest.raises(FileNotFoundError):
             await ctx.update_dataset_info(str(workspace / "ghost.csv"), "text")
 
@@ -210,9 +211,7 @@ class TestUpdateDatasetInfo:
         result = await ctx.update_dataset_info(str(p), "some notes")
         assert _NOTES_DIR in result
 
-    async def test_notes_are_persisted(
-        self, ctx: LocalContextStore, workspace: Path
-    ) -> None:
+    async def test_notes_are_persisted(self, ctx: LocalContextStore, workspace: Path) -> None:
         p = _write_dataset(workspace)
         await ctx.update_dataset_info(str(p), "my note")
         result = await ctx.read_dataset_info(str(p))
@@ -254,17 +253,13 @@ class TestUpdateDatasetInfo:
         notes = ctx._load_notes(await hash_path(p))
         assert notes == "padded\n"
 
-    async def test_saves_with_correct_hash(
-        self, ctx: LocalContextStore, workspace: Path
-    ) -> None:
+    async def test_saves_with_correct_hash(self, ctx: LocalContextStore, workspace: Path) -> None:
         p = _write_dataset(workspace)
         await ctx.update_dataset_info(str(p), "note")
         hash_hex = await hash_path(p)
         assert ctx._load_notes(hash_hex) is not None
 
-    async def test_does_not_write_profile(
-        self, ctx: LocalContextStore, workspace: Path
-    ) -> None:
+    async def test_does_not_write_profile(self, ctx: LocalContextStore, workspace: Path) -> None:
         p = _write_dataset(workspace)
         await ctx.update_dataset_info(str(p), "note")
         hash_hex = await hash_path(p)
@@ -283,7 +278,9 @@ class TestUpdateDatasetInfo:
 
 
 class TestGetProfileInfo:
-    async def test_raises_for_missing_dataset(self, ctx: LocalContextStore, workspace: Path) -> None:
+    async def test_raises_for_missing_dataset(
+        self, ctx: LocalContextStore, workspace: Path
+    ) -> None:
         with pytest.raises(FileNotFoundError):
             await ctx.get_profile_info(str(workspace / "nope.csv"))
 

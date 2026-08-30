@@ -1,5 +1,4 @@
-﻿"""Shared fixtures for TUI unit tests."""
-
+"""Shared fixtures for TUI unit tests."""
 
 from unittest.mock import AsyncMock, MagicMock
 
@@ -74,6 +73,8 @@ def mock_service() -> MagicMock:
     svc.resume_with_input = MagicMock(return_value=_empty_aiter())
     svc.resume_with_approval = MagicMock(return_value=_empty_aiter())
     svc.is_user_input_required = MagicMock(return_value=False)
+    svc.task_manager = MagicMock()
+    svc.task_manager.has_task_updates = MagicMock(return_value=False)
     return svc
 
 

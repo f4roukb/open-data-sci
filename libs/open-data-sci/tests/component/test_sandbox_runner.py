@@ -76,9 +76,7 @@ class TestSuccessPayload:
         assert payload["result"] is None
 
     def test_workspace_scaffolding_created_and_exposed(self, runner_env) -> None:
-        payload = runner_env(
-            "in_ws = str(workspacedir)\nods = opendatasci_directory.name\n"
-        )
+        payload = runner_env("in_ws = str(workspacedir)\nods = opendatasci_directory.name\n")
         assert payload["success"] is True
         assert (runner_env.workspace / ".opendatasci").is_dir()
         assert payload["var_info"] == {"in_ws": "str", "ods": "str"}

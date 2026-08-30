@@ -54,7 +54,9 @@ class TestUserMessage:
 
 class TestCompactionMessage:
     def test_is_subtype_of_human_message(self) -> None:
-        assert isinstance(CompactionMessage(content=to_text_content_blocks("compact")), HumanMessage)
+        assert isinstance(
+            CompactionMessage(content=to_text_content_blocks("compact")), HumanMessage
+        )
 
     def test_is_not_user_message(self) -> None:
         assert not is_user_message(CompactionMessage(content=to_text_content_blocks("compact")))
@@ -104,7 +106,9 @@ class TestAgentToAgentMessage:
         assert "<origin>harness</origin>" in get_message_text_content(msg.render())
 
     def test_render_does_not_mutate_original(self) -> None:
-        msg = AgentToAgentMessage(content=to_text_content_blocks("task"), origin=MessageOrigin.AGENT)
+        msg = AgentToAgentMessage(
+            content=to_text_content_blocks("task"), origin=MessageOrigin.AGENT
+        )
         msg.render()
         assert msg.content == to_text_content_blocks("task")
 
@@ -142,7 +146,9 @@ class TestSummaryMessage:
         assert "2024-06-01" in get_message_text_content(_summary_msg().render())
 
     def test_render_preserves_content(self) -> None:
-        assert "my summary text" in get_message_text_content(_summary_msg("my summary text").render())
+        assert "my summary text" in get_message_text_content(
+            _summary_msg("my summary text").render()
+        )
 
     def test_render_does_not_mutate_original(self) -> None:
         msg = _summary_msg("original")

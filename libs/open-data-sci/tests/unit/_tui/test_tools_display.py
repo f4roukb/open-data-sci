@@ -279,7 +279,5 @@ class TestAllToolNamesRegistered:
 
         known = {name.value for name in ToolName}
         # Filter out test-only keys injected by other tests in this session.
-        orphans = {
-            k for k in REGISTRY if k not in known and not k.startswith("__")
-        }
+        orphans = {k for k in REGISTRY if k not in known and not k.startswith("__")}
         assert orphans == set(), f"Unexpected orphan keys in REGISTRY: {orphans}"
