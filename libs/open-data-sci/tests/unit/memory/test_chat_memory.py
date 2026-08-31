@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 
 from opendatasci._utils.message_utils import get_message_text_content, to_text_content_blocks
 from opendatasci._utils.mixins import LLMDigestibleMixin
@@ -25,6 +25,7 @@ from opendatasci.memory.chat_memory import (
     ChatTurnContext,
     ChatTurnSummary,
     ChatTurnSummarizer,
+    TurnStepBatchSummary,
 )
 from opendatasci.agents.chat_history import ChatHistoryBuilder
 from opendatasci.context.plans import Plan
@@ -40,19 +41,30 @@ def _completed_turn(query: str = "my query", answer: str = "my answer") -> list[
     ]
 
 
+def _step_batch(
+    goal: str = "did something",
+    actions: str = "tried a tool",
+    outcome: str = "it worked",
+    artifacts: list[str] | None = None,
+) -> TurnStepBatchSummary:
+    return TurnStepBatchSummary(
+        goal=goal, actions=actions, outcome=outcome, artifacts=artifacts or []
+    )
+
+
 def _summary(
     user: str = "q",
     agent: str = "a",
-    actions: str = "did something",
+    step_batches: list[TurnStepBatchSummary] | None = None,
     ts_start: datetime = _TS1,
     ts_end: datetime = _TS2,
 ) -> ChatTurnSummary:
     return ChatTurnSummary(
         turn_start_timestamp=ts_start,
         turn_end_timestamp=ts_end,
-        user_message_summary=user,
-        actions_summary=actions,
-        agent_response_summary=agent,
+        user_message=user,
+        step_batches=step_batches if step_batches is not None else [_step_batch()],
+        agent_response=agent,
     )
 
 
@@ -66,18 +78,43 @@ class TestChatTurnSummary:
         assert isinstance(_summary(), LLMDigestibleMixin)
 
     def test_to_content_includes_all_fields(self) -> None:
-        s = _summary(user="What is X?", agent="X is Y.", actions="called tool A")
+        s = _summary(
+            user="What is X?",
+            agent="X is Y.",
+            step_batches=[_step_batch(goal="find X", actions="grepped for X", outcome="found it")],
+        )
         content = s.to_content()
         assert "What is X?" in content
         assert "X is Y." in content
-        assert "called tool A" in content
+        assert "find X" in content
+        assert "grepped for X" in content
+        assert "found it" in content
 
     def test_to_content_has_expected_structure(self) -> None:
         content = _summary().to_content()
         assert "<summary_content>" in content
-        assert "<user_request>" in content
-        assert "<outcomes>" in content
+        assert "<user_message>" in content
+        assert "<step_batches>" in content
+        assert "<batch " in content
+        assert "<goal>" in content
+        assert "<actions>" in content
+        assert "<outcome>" in content
+        assert "<artifacts>" in content
         assert "<agent_response>" in content
+
+    def test_to_content_handles_no_step_batches(self) -> None:
+        content = _summary(step_batches=[]).to_content()
+        assert "(no steps)" in content
+
+    def test_to_content_renders_empty_artifacts_as_none(self) -> None:
+        content = _summary(step_batches=[_step_batch(artifacts=[])]).to_content()
+        assert "<artifacts>none</artifacts>" in content
+
+    def test_to_content_joins_multiple_artifacts(self) -> None:
+        content = _summary(
+            step_batches=[_step_batch(artifacts=["a.csv: raw data", "b.pkl: trained model"])]
+        ).to_content()
+        assert "a.csv: raw data; b.pkl: trained model" in content
 
     def test_to_content_does_not_include_timestamps(self) -> None:
         content = _summary().to_content()
@@ -115,13 +152,89 @@ class TestChatTurnSummarizer:
         s = ChatTurnSummarizer(summarizer_llm=None)
         record = await s.summarize_turn(_completed_turn("the query", "the answer"))
         assert record is not None
-        assert record.user_message_summary == "the query"
-        assert record.agent_response_summary == "the answer"
+        assert record.user_message == "the query"
+        assert record.agent_response == "the answer"
 
-    async def test_fallback_sets_actions_to_na(self) -> None:
+    async def test_fallback_has_no_step_batches_without_tool_calls(self) -> None:
         s = ChatTurnSummarizer(summarizer_llm=None)
         record = await s.summarize_turn(_completed_turn())
-        assert record.actions_summary == "N/A"
+        assert record.step_batches == []
+
+    async def test_fallback_builds_one_batch_per_tool_call(self) -> None:
+        s = ChatTurnSummarizer(summarizer_llm=None)
+        turn = [
+            UserMessage(content=to_text_content_blocks("q"), created_at=_TS1),
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {"name": "read_file", "args": {"path": "a.csv"}, "id": "1"},
+                    {"name": "read_file", "args": {"path": "b.csv"}, "id": "2"},
+                ],
+            ),
+            ToolMessage(content="contents of a.csv", tool_call_id="1"),
+            ToolMessage(content="contents of b.csv", tool_call_id="2"),
+            AgentMessage(content="done"),
+        ]
+        record = await s.summarize_turn(turn)
+        assert record is not None
+        assert len(record.step_batches) == 2
+        assert "read_file" in record.step_batches[0].actions
+        assert "a.csv" in record.step_batches[0].actions
+        assert record.step_batches[0].outcome == "contents of a.csv"
+        assert record.step_batches[1].outcome == "contents of b.csv"
+        assert record.step_batches[0].artifacts == []
+
+    async def test_fallback_batch_reports_missing_result(self) -> None:
+        s = ChatTurnSummarizer(summarizer_llm=None)
+        turn = [
+            UserMessage(content=to_text_content_blocks("q"), created_at=_TS1),
+            AIMessage(content="", tool_calls=[{"name": "t", "args": {}, "id": "1"}]),
+            AgentMessage(content="done"),
+        ]
+        record = await s.summarize_turn(turn)
+        assert record is not None
+        assert record.step_batches[0].outcome == "(no result captured)"
+
+    async def _summarizer_with_mock_structured_llm(self) -> tuple[ChatTurnSummarizer, AsyncMock]:
+        from opendatasci.memory.chat_memory import (
+            _ChatTurnSummaryOutput,
+            _TurnStepBatchSummaryOutput,
+        )
+
+        structured_llm = AsyncMock()
+        structured_llm.ainvoke = AsyncMock(
+            return_value=_ChatTurnSummaryOutput(
+                step_batches=[
+                    _TurnStepBatchSummaryOutput(
+                        goal="g", actions="a", outcome="o", artifacts=[]
+                    )
+                ]
+            )
+        )
+        raw_llm = MagicMock()
+        raw_llm.with_structured_output = MagicMock(return_value=structured_llm)
+        return ChatTurnSummarizer(summarizer_llm=raw_llm), structured_llm
+
+    async def test_skips_llm_when_turn_has_no_tool_calls(self) -> None:
+        s, structured_llm = await self._summarizer_with_mock_structured_llm()
+        record = await s.summarize_turn(_completed_turn("q", "a"))
+        assert record is not None
+        assert record.step_batches == []
+        structured_llm.ainvoke.assert_not_called()
+
+    async def test_calls_llm_when_turn_has_tool_calls(self) -> None:
+        s, structured_llm = await self._summarizer_with_mock_structured_llm()
+        turn = [
+            UserMessage(content=to_text_content_blocks("q"), created_at=_TS1),
+            AIMessage(content="", tool_calls=[{"name": "t", "args": {}, "id": "1"}]),
+            ToolMessage(content="result", tool_call_id="1"),
+            AgentMessage(content="done"),
+        ]
+        record = await s.summarize_turn(turn)
+        assert record is not None
+        structured_llm.ainvoke.assert_called_once()
+        assert len(record.step_batches) == 1
+        assert record.step_batches[0].goal == "g"
 
     async def test_raises_for_empty_turn(self) -> None:
         s = ChatTurnSummarizer(summarizer_llm=None)

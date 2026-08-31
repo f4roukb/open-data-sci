@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Any
 
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 
 from opendatasci._utils.message_utils import to_text_content_blocks
@@ -69,7 +70,7 @@ class ChatHistoryBuilder(BaseChatHistoryBuilder):
 
     def __init__(
         self,
-        summarizer_llm: Any,
+        summarizer_llm: BaseChatModel | None,
         loop_compactor_llm: Any | None = None,
         midturn_compaction_threshold: int | None = None,
         context_store: BaseContextStore | None = None,

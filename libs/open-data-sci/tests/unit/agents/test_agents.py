@@ -228,9 +228,9 @@ class TestAgentConversation:
                         ChatTurnSummary(
                             turn_start_timestamp=_dt,
                             turn_end_timestamp=_dt,
-                            user_message_summary="q",
-                            actions_summary="",
-                            agent_response_summary="a",
+                            user_message="q",
+                            step_batches=[],
+                            agent_response="a",
                         )
                     ]
                 },
@@ -329,16 +329,16 @@ class TestAgentConversation:
                         ChatTurnSummary(
                             turn_start_timestamp=_dt,
                             turn_end_timestamp=_dt,
-                            user_message_summary="question one",
-                            actions_summary="",
-                            agent_response_summary="answer one",
+                            user_message="question one",
+                            step_batches=[],
+                            agent_response="answer one",
                         ),
                         ChatTurnSummary(
                             turn_start_timestamp=_dt,
                             turn_end_timestamp=_dt,
-                            user_message_summary="question two",
-                            actions_summary="",
-                            agent_response_summary="answer two",
+                            user_message="question two",
+                            step_batches=[],
+                            agent_response="answer two",
                         ),
                     ]
                 },
@@ -366,9 +366,9 @@ class TestAgentConversation:
                         ChatTurnSummary(
                             turn_start_timestamp=_dt,
                             turn_end_timestamp=_dt,
-                            user_message_summary="old",
-                            actions_summary="",
-                            agent_response_summary="ans",
+                            user_message="old",
+                            step_batches=[],
+                            agent_response="ans",
                         )
                     ]
                 },
@@ -390,16 +390,16 @@ class TestAgentConversation:
                         ChatTurnSummary(
                             turn_start_timestamp=_dt,
                             turn_end_timestamp=_dt,
-                            user_message_summary="",
-                            actions_summary="",
-                            agent_response_summary="earlier summary",
+                            user_message="",
+                            step_batches=[],
+                            agent_response="earlier summary",
                         ),
                         ChatTurnSummary(
                             turn_start_timestamp=_dt,
                             turn_end_timestamp=_dt,
-                            user_message_summary="q2",
-                            actions_summary="",
-                            agent_response_summary="a2",
+                            user_message="q2",
+                            step_batches=[],
+                            agent_response="a2",
                         ),
                     ],
                 },

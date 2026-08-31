@@ -283,19 +283,41 @@ class TestTurnSummarizerIntegration:
     """A real summarizer LLM is invoked after a turn and writes into ChatMemory."""
 
     async def test_summarizer_adds_turn_to_memory(self, loaded_scripted_service):
-        svc = await loaded_scripted_service([AIMessage(content="Hello, world.")])
+        # The summarizer LLM is only invoked for turns that made tool calls (see
+        # ChatTurnSummarizer.summarize_turn) — a text-only turn has nothing a step-batch
+        # summary would add, so the scripted turn here must include one.
+        svc = await loaded_scripted_service(
+            [
+                _ai_with_tool_call(
+                    "list_workspace_files",
+                    {"summary": "Listing files", "communication": "Looking."},
+                    call_id="call_ls",
+                ),
+                AIMessage(content="Hello, world."),
+            ]
+        )
         agent = svc._agent
 
         # Inject a summarizer LLM whose with_structured_output returns an
-        # AsyncMock that yields a real ChatTurnSummaryOutput on ainvoke. We patch
+        # AsyncMock that yields a real _ChatTurnSummaryOutput on ainvoke. We patch
         # the private _structured_llm attribute on the existing
-        # ChatTurnSummarizer to avoid rewiring the whole turn finalizer.
-        from opendatasci.memory.chat_memory import ChatTurnSummaryOutput
+        # ChatTurnSummarizer to avoid rewiring the whole turn finalizer. Both
+        # structured-output types are module-private in chat_memory.py — their
+        # public counterparts are ChatTurnSummary/TurnStepBatchSummary.
+        from opendatasci.memory.chat_memory import (
+            _ChatTurnSummaryOutput,
+            _TurnStepBatchSummaryOutput,
+        )
 
-        structured_summary = ChatTurnSummaryOutput(
-            user_request="Asked to greet.",
-            outcomes="No tools used.",
-            agent_response="The agent said hello.",
+        structured_summary = _ChatTurnSummaryOutput(
+            step_batches=[
+                _TurnStepBatchSummaryOutput(
+                    goal="Greet the user.",
+                    actions="Replied directly, no tools used.",
+                    outcome="Said hello.",
+                    artifacts=[],
+                )
+            ]
         )
         structured_llm = AsyncMock()
         structured_llm.ainvoke = AsyncMock(return_value=structured_summary)
@@ -306,12 +328,16 @@ class TestTurnSummarizerIntegration:
         await asyncio.sleep(0)
         record = await agent._chat_history_builder.flush_pending_tasks()
 
-        # The flushed summary carries the turn details.
+        # The flushed summary carries the turn details: user message and agent
+        # response are preserved verbatim from the actual turn, and the step
+        # batches come from the structured summarizer output.
         assert record is not None
         recap = agent._chat_history_builder._build_summary_messages([record])
         formatted = recap[0].content[0]["text"]
-        assert "Asked to greet" in formatted
-        assert "The agent said hello" in formatted
+        assert "Greet me" in formatted
+        assert "Hello, world." in formatted
+        assert "Greet the user." in formatted
+        assert "Said hello." in formatted
 
     async def test_summarizer_falls_back_when_llm_disabled(self, loaded_scripted_service):
         """No summarizer LLM (the default in the test fixture) — fallback to raw query."""
