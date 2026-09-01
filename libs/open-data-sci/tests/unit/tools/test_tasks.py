@@ -10,7 +10,12 @@ import pytest
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory
 from opendatasci.skills.base import BaseSkillStore
-from opendatasci.tasks.base import BackgroundTaskProgressReport, BackgroundTaskProgressUpdate
+from opendatasci.tasks.base import (
+    BackgroundTaskProgressReport,
+    BackgroundTaskProgressUpdate,
+    BackgroundTaskRecord,
+    BackgroundTaskStatus,
+)
 from opendatasci.tasks.local import BackgroundTaskManager
 from opendatasci.tools.tasks import (
     CheckTaskTool,
@@ -105,6 +110,24 @@ class TestCheckTaskTool:
                 "reported_at": payload["progress"][0]["reported_at"],
             }
         ]
+
+        await manager.cancel_task(task_id)
+
+    @pytest.mark.asyncio
+    async def test_includes_activity_log(self) -> None:
+        manager = BackgroundTaskManager()
+
+        async def _work(task_id: object) -> str:
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await manager.push_activity(task_id, "tool: execute\nresult: 42")
+
+        tool = CheckTaskTool(background_task_manager=manager)
+        result = await tool.ainvoke({"task_id": str(task_id)})
+        payload = json.loads(result)
+        assert payload["activity"] == ["tool: execute\nresult: 42"]
 
         await manager.cancel_task(task_id)
 
@@ -390,6 +413,64 @@ class TestReportProgressTool:
         assert record.progress[-1].eta_seconds == 3.0
 
         await manager.cancel_task(task_id)
+
+
+class TestActivityLog:
+    @pytest.mark.asyncio
+    async def test_background_worker_tool_result_appends_activity(self) -> None:
+        manager = BackgroundTaskManager()
+        task_id = uuid4()
+        await manager.upsert_record(
+            BackgroundTaskRecord(
+                task_id=task_id, summary="s", status=BackgroundTaskStatus.RUNNING
+            )
+        )
+        tool = _make_tool(background_task_manager=manager)
+
+        async def _fake_ainvoke(task, system_prompt, on_event=None, **kwargs):
+            on_event("task_tool_result", "execute", {"success": True, "output": "42"})
+            return "done"
+
+        async def _noop_dispatch(*args, **kwargs) -> None:
+            return None
+
+        with (
+            patch(_AGENT_PATCH) as MockAgent,
+            patch("opendatasci.tools.tasks.adispatch_custom_event", _noop_dispatch),
+        ):
+            MockAgent.return_value.ainvoke = _fake_ainvoke
+            await tool._arun_one(
+                0, TaskTool.TaskDetails(subtask="x", summary="y"), task_id, MagicMock()
+            )
+            await _drain_emit_tasks()
+
+        record = await manager.get_task(task_id)
+        assert record is not None
+        assert record.activity == ["tool: execute\nresult: 42"]
+
+    @pytest.mark.asyncio
+    async def test_foreground_worker_tool_result_does_not_raise(self) -> None:
+        manager = BackgroundTaskManager()
+        tool = _make_tool(background_task_manager=manager)
+
+        async def _fake_ainvoke(task, system_prompt, on_event=None, **kwargs):
+            on_event("task_tool_result", "execute", {"success": True, "output": "42"})
+            return "done"
+
+        async def _noop_dispatch(*args, **kwargs) -> None:
+            return None
+
+        with (
+            patch(_AGENT_PATCH) as MockAgent,
+            patch("opendatasci.tools.tasks.adispatch_custom_event", _noop_dispatch),
+        ):
+            MockAgent.return_value.ainvoke = _fake_ainvoke
+            await tool._arun_one(
+                0, TaskTool.TaskDetails(subtask="x", summary="y"), None, MagicMock()
+            )
+            await _drain_emit_tasks()
+
+        assert await manager.list_tasks() == []
 
 
 class TestTaskTool:

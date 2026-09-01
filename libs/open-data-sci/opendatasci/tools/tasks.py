@@ -189,17 +189,24 @@ Args:
                 logger.warning("Subtask %d: skill %r not found", idx, subtask.skill)
 
         def emit(event_type: str, content: str, metadata: dict[str, Any] | None = None) -> None:
-            coro = adispatch_custom_event(
-                "task_event",
-                {
-                    "task_idx": idx,
-                    "event_type": event_type,
-                    "content": content,
-                    **(metadata or {}),
-                },
-                config=outer_config,
-            )
-            asyncio.get_running_loop().create_task(coro)
+            async def _emit() -> None:
+                await adispatch_custom_event(
+                    "task_event",
+                    {
+                        "task_idx": idx,
+                        "event_type": event_type,
+                        "content": content,
+                        **(metadata or {}),
+                    },
+                    config=outer_config,
+                )
+                if task_id is not None and event_type == "task_tool_result":
+                    output = (metadata or {}).get("output", "")
+                    await self.background_task_manager.push_activity(
+                        task_id, f"tool: {content}\nresult: {output}"
+                    )
+
+            asyncio.get_running_loop().create_task(_emit())
 
         cancelled = False
         exc_info: BaseException | None = None
@@ -369,6 +376,7 @@ def _record_to_dict(record: BackgroundTaskRecord) -> dict[str, Any]:
             }
             for report in record.progress
         ],
+        "activity": record.activity,
     }
     if record.status == BackgroundTaskStatus.COMPLETED:
         data["result"] = record.result

@@ -51,6 +51,7 @@ class BackgroundTaskRecord(MutableStrictBaseModel):
     result: Any = None
     error: str | None = None
     progress: list[BackgroundTaskProgressReport] = Field(default_factory=list)
+    activity: list[str] = Field(default_factory=list)
     created_at: float = Field(default_factory=time.time)
     finished_at: float | None = None
 
@@ -161,6 +162,15 @@ class BackgroundTaskManagerBase(ABC):
         """Append one progress checkpoint to *task_id*'s record.
 
         No-op (aside from logging) if *task_id* is unknown.
+        """
+        ...
+
+    @abstractmethod
+    async def push_activity(self, task_id: UUID, entry: str) -> None:
+        """Append one plain-text activity entry to *task_id*'s record.
+
+        No-op (aside from logging) if *task_id* is unknown, same contract as
+        :meth:`push_task_progress`.
         """
         ...
 

@@ -21,6 +21,7 @@ from opendatasci.tasks.base import (
 logger = logging.getLogger(__name__)
 
 _MAX_RECORDS = 128
+_MAX_ACTIVITY_ENTRIES = 200
 
 
 class BackgroundTaskManager(BackgroundTaskManagerBase):
@@ -141,6 +142,16 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
         record.progress.append(
             BackgroundTaskProgressReport(progress_update=update, eta_seconds=eta_seconds)
         )
+        await self.upsert_record(record)
+
+    async def push_activity(self, task_id: UUID, entry: str) -> None:
+        record = self._records.get(task_id)
+        if record is None:
+            logger.warning("push_activity called with unknown task_id=%s", task_id)
+            return
+        record.activity.append(entry)
+        if len(record.activity) > _MAX_ACTIVITY_ENTRIES:
+            del record.activity[: len(record.activity) - _MAX_ACTIVITY_ENTRIES]
         await self.upsert_record(record)
 
     async def record_task_update(

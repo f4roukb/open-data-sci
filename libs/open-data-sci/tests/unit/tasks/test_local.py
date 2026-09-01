@@ -12,7 +12,7 @@ from opendatasci.tasks.base import (
     BackgroundTaskStatus,
     BackgroundTaskUpdateKind,
 )
-from opendatasci.tasks.local import _MAX_RECORDS, BackgroundTaskManager
+from opendatasci.tasks.local import _MAX_ACTIVITY_ENTRIES, _MAX_RECORDS, BackgroundTaskManager
 
 
 class TestSubmitAndStatus:
@@ -307,6 +307,59 @@ class TestPushTaskProgress:
         )
         # No exception, and nothing to read back — the only observable
         # behavior is that this doesn't raise.
+
+
+class TestPushActivity:
+    @pytest.mark.asyncio
+    async def test_appends_activity_entry(self) -> None:
+        manager = BackgroundTaskManager()
+        started = asyncio.Event()
+
+        async def _work(task_id: object) -> str:
+            started.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        await manager.push_activity(task_id, "tool: execute\nresult: ok")
+        record = await manager.get_task(task_id)
+        assert record is not None
+        assert record.activity == ["tool: execute\nresult: ok"]
+
+        await manager.cancel_task(task_id)
+
+    @pytest.mark.asyncio
+    async def test_unknown_task_id_is_a_noop(self) -> None:
+        manager = BackgroundTaskManager()
+        await manager.push_activity("no-such-id", "entry")
+        # No exception, and nothing to read back — the only observable
+        # behavior is that this doesn't raise.
+
+    @pytest.mark.asyncio
+    async def test_caps_at_max_activity_entries(self) -> None:
+        manager = BackgroundTaskManager()
+        started = asyncio.Event()
+
+        async def _work(task_id: object) -> str:
+            started.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        for i in range(_MAX_ACTIVITY_ENTRIES + 5):
+            await manager.push_activity(task_id, f"entry {i}")
+
+        record = await manager.get_task(task_id)
+        assert record is not None
+        assert len(record.activity) == _MAX_ACTIVITY_ENTRIES
+        assert record.activity[0] == "entry 5"
+        assert record.activity[-1] == f"entry {_MAX_ACTIVITY_ENTRIES + 4}"
+
+        await manager.cancel_task(task_id)
 
 
 class TestListenTaskUpdates:
