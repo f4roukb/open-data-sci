@@ -321,6 +321,10 @@ class Agent(BaseOpenDataSciAgent):
             case _:
                 raise ValueError(f"Invocation.origin={item.origin!r} is not valid for astream()")
 
+    @classmethod
+    def _prepare_batch_messages(cls, items: list[Invocation]) -> list[BaseMessage]:
+        return [cls._message_from_invocation(item) for item in items]
+
     def _thread_config(self, thread_id: Any) -> RunnableConfig:
         return {
             "recursion_limit": AGENT_RECURSION_LIMIT,
@@ -393,7 +397,7 @@ class Agent(BaseOpenDataSciAgent):
 
         self._context_store.prune()  # type: ignore[union-attr]
         graph_input: Any = {
-            "messages": [type(self)._message_from_invocation(item) for item in items],
+            "messages": type(self)._prepare_batch_messages(items),
             "active_skills": [],
             "active_skill_domains": [],
             "is_plan_mode": False,
