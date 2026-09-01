@@ -21,8 +21,9 @@ class BackgroundTaskStatus(StrEnum):
     CANCELLED = auto()
 
 
-class TaskUpdateKind(StrEnum):
-    COMPLETION = auto()
+class BackgroundTaskUpdateKind(StrEnum):
+    PROGRESS = auto()
+    COMPLETED = auto()
 
 
 class BackgroundTaskProgressUpdate(MutableStrictBaseModel):
@@ -66,47 +67,46 @@ class BackgroundTaskRecord(MutableStrictBaseModel):
         )
 
 
-class TaskUpdate(MutableStrictBaseModel):
-    """One event pushed against a background task — a completion today, other kinds later."""
+class BackgroundTaskUpdate(MutableStrictBaseModel):
+    """One event pushed against a background task — a completion today, other kinds later.
+
+    Fields below the ``kind`` line are kind-specific: only ``summary``,
+    ``status``, ``result``, and ``error`` are populated for
+    :attr:`BackgroundTaskUpdateKind.COMPLETED` today. A future
+    :attr:`BackgroundTaskUpdateKind.PROGRESS` producer would populate its own
+    fields the same way, rather than reintroducing an untyped payload.
+    """
 
     update_id: UUID
     task_id: UUID
-    kind: TaskUpdateKind
-    payload: dict[str, Any]
+    kind: BackgroundTaskUpdateKind
+    summary: str
+    status: BackgroundTaskStatus | None = None
+    result: Any = None
+    error: str | None = None
     created_at: float = Field(default_factory=time.time)
 
     def to_message(self) -> TaskMessage:
         """Render this update as the content fed to the model, dispatching on kind."""
-        if self.kind == TaskUpdateKind.COMPLETION:
-            status = self.payload["status"]
-            summary = self.payload["summary"]
-            if status == BackgroundTaskStatus.COMPLETED:
-                text = f"Background task '{summary}' finished:\n\n{self.payload.get('result')}"
-            elif status == BackgroundTaskStatus.FAILED:
-                text = f"Background task '{summary}' failed: {self.payload.get('error')}"
-            else:
-                text = f"Background task '{summary}' was cancelled."
+        if self.kind != BackgroundTaskUpdateKind.COMPLETED:
+            raise ValueError(f"Unknown BackgroundTaskUpdateKind: {self.kind!r}")
+        if self.status == BackgroundTaskStatus.COMPLETED:
+            text = f"Background task '{self.summary}' finished:\n\n{self.result}"
+        elif self.status == BackgroundTaskStatus.FAILED:
+            text = f"Background task '{self.summary}' failed: {self.error}"
         else:
-            raise ValueError(f"Unknown TaskUpdateKind: {self.kind!r}")
+            text = f"Background task '{self.summary}' was cancelled."
         return TaskMessage(
             content=to_text_content_blocks(text),
             created_at=datetime.fromtimestamp(self.created_at, tz=timezone.utc),
         )
 
 
-def merge_task_updates(updates: list[TaskUpdate]) -> TaskMessage:
-    """Render a same-``task_id`` group of updates as a single :class:`TaskMessage`.
+class BackgroundTaskUpdateEvent(MutableStrictBaseModel):
+    """Doorbell notification: an update was recorded against a task."""
 
-    A singleton group renders identically to that update's own
-    :meth:`TaskUpdate.to_message`; a larger group concatenates each update's
-    content blocks in order, so multiple events for one task collapse into
-    one turn-context entry instead of one message per event.
-    """
-    messages = [update.to_message() for update in updates]
-    if len(messages) == 1:
-        return messages[0]
-    content = [block for message in messages for block in message.content]
-    return TaskMessage(content=content, created_at=messages[-1].created_at)
+    task_id: UUID
+    update_id: UUID
 
 
 class BackgroundTaskManagerBase(ABC):
@@ -166,9 +166,15 @@ class BackgroundTaskManagerBase(ABC):
 
     @abstractmethod
     async def record_task_update(
-        self, task_id: UUID, kind: TaskUpdateKind, payload: dict[str, Any]
+        self,
+        task_id: UUID,
+        kind: BackgroundTaskUpdateKind,
+        summary: str,
+        status: BackgroundTaskStatus | None = None,
+        result: Any = None,
+        error: str | None = None,
     ) -> UUID:
-        """Store a :class:`TaskUpdate` against *task_id* and notify both delivery paths.
+        """Store a :class:`BackgroundTaskUpdate` against *task_id* and notify both delivery paths.
 
         Returns the new update's ``update_id``. This is the single write
         path both :meth:`listen_task_updates` (the doorbell) and
@@ -178,8 +184,8 @@ class BackgroundTaskManagerBase(ABC):
         ...
 
     @abstractmethod
-    def listen_task_updates(self) -> AsyncIterator[tuple[UUID, UUID]]:
-        """Yield ``(task_id, update_id)`` exactly once per recorded update.
+    def listen_task_updates(self) -> AsyncIterator[BackgroundTaskUpdateEvent]:
+        """Yield a :class:`BackgroundTaskUpdateEvent` exactly once per recorded update.
 
         Blocks between updates — this is a push source, not a poll.
         Single-consumer by contract (one listener per manager instance/
@@ -189,7 +195,7 @@ class BackgroundTaskManagerBase(ABC):
         ...
 
     @abstractmethod
-    async def pull_task_updates(self) -> list[TaskUpdate]:
+    async def pull_task_updates(self) -> list[BackgroundTaskUpdate]:
         """Return and clear every update collected since the last call.
 
         Non-blocking: returns immediately, empty if nothing is pending.

@@ -6,12 +6,13 @@ from uuid import UUID
 from langchain_core.messages import SystemMessage
 from langchain_core.runnables import RunnableConfig
 
+from opendatasci._utils.background_tasks_utils import merge_task_updates
 from opendatasci._utils.mixins import RenderableMessageMixin
 from opendatasci.agents.chat_history import ChatHistoryBuilder
 from opendatasci.agents.states import AgentState
 from opendatasci.memory.messages import AgentMessage
 from opendatasci.models.factory import _RetryRunnable
-from opendatasci.tasks.base import BackgroundTaskManagerBase, TaskUpdate, merge_task_updates
+from opendatasci.tasks.base import BackgroundTaskManagerBase, BackgroundTaskUpdate
 
 BuildSystemContext = Callable[[AgentState], list[SystemMessage]]
 
@@ -93,7 +94,7 @@ class SynchronizationNode(BaseNode):
         updates = await self._background_task_manager.pull_task_updates()
         if not updates:
             return {}
-        grouped: dict[UUID, list[TaskUpdate]] = defaultdict(list)
+        grouped: dict[UUID, list[BackgroundTaskUpdate]] = defaultdict(list)
         for update in updates:
             grouped[update.task_id].append(update)
         return {"messages": [merge_task_updates(group) for group in grouped.values()]}

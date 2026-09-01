@@ -10,7 +10,7 @@ from opendatasci.tasks.base import (
     BackgroundTaskProgressUpdate,
     BackgroundTaskRecord,
     BackgroundTaskStatus,
-    TaskUpdateKind,
+    BackgroundTaskUpdateKind,
 )
 from opendatasci.tasks.local import _MAX_RECORDS, BackgroundTaskManager
 
@@ -320,9 +320,9 @@ class TestListenTaskUpdates:
         task_id = await manager.submit_task(_work, summary="s")
 
         watcher = manager.listen_task_updates()
-        yielded_task_id, update_id = await asyncio.wait_for(watcher.__anext__(), timeout=1)
-        assert yielded_task_id == task_id
-        assert manager._updates[update_id].payload["status"] == BackgroundTaskStatus.COMPLETED
+        event = await asyncio.wait_for(watcher.__anext__(), timeout=1)
+        assert event.task_id == task_id
+        assert manager._updates_by_id[event.update_id].status == BackgroundTaskStatus.COMPLETED
 
     @pytest.mark.asyncio
     async def test_yields_failed_and_cancelled_tasks_too(self) -> None:
@@ -333,8 +333,8 @@ class TestListenTaskUpdates:
 
         await manager.submit_task(_fails, summary="s")
         watcher = manager.listen_task_updates()
-        _task_id, update_id = await asyncio.wait_for(watcher.__anext__(), timeout=1)
-        assert manager._updates[update_id].payload["status"] == BackgroundTaskStatus.FAILED
+        event = await asyncio.wait_for(watcher.__anext__(), timeout=1)
+        assert manager._updates_by_id[event.update_id].status == BackgroundTaskStatus.FAILED
 
     @pytest.mark.asyncio
     async def test_blocks_until_next_completion(self) -> None:
@@ -349,8 +349,8 @@ class TestListenTaskUpdates:
             return "done"
 
         await manager.submit_task(_work, summary="s")
-        _task_id, update_id = await asyncio.wait_for(pending, timeout=1)
-        assert manager._updates[update_id].payload["status"] == BackgroundTaskStatus.COMPLETED
+        event = await asyncio.wait_for(pending, timeout=1)
+        assert manager._updates_by_id[event.update_id].status == BackgroundTaskStatus.COMPLETED
 
 
 class TestTaskUpdates:
@@ -372,9 +372,9 @@ class TestTaskUpdates:
         assert manager.has_task_updates() is True
         updates = await manager.pull_task_updates()
         assert [u.task_id for u in updates] == [task_id]
-        assert updates[0].kind == TaskUpdateKind.COMPLETION
-        assert updates[0].payload["status"] == BackgroundTaskStatus.COMPLETED
-        assert updates[0].payload["result"] == "done"
+        assert updates[0].kind == BackgroundTaskUpdateKind.COMPLETED
+        assert updates[0].status == BackgroundTaskStatus.COMPLETED
+        assert updates[0].result == "done"
 
     @pytest.mark.asyncio
     async def test_multiple_completions_accumulate_and_pull_together(self) -> None:
@@ -427,7 +427,7 @@ class TestTaskUpdates:
         await asyncio.sleep(0)
 
         updates = await manager.pull_task_updates()
-        assert {u.payload["status"] for u in updates} == {
+        assert {u.status for u in updates} == {
             BackgroundTaskStatus.FAILED,
             BackgroundTaskStatus.CANCELLED,
         }
@@ -444,8 +444,8 @@ class TestTaskUpdates:
         task_id = await manager.submit_task(_work, summary="s")
 
         listener = manager.listen_task_updates()
-        listened_task_id, _update_id = await asyncio.wait_for(listener.__anext__(), timeout=1)
-        assert listened_task_id == task_id
+        listened_event = await asyncio.wait_for(listener.__anext__(), timeout=1)
+        assert listened_event.task_id == task_id
 
         assert manager.has_task_updates() is True
         pulled = await manager.pull_task_updates()

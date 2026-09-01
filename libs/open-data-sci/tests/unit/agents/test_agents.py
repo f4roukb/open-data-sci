@@ -818,14 +818,16 @@ class TestAstreamDoesNotAutoDrainTaskManagerAtTurnStart:
 
     async def test_pending_task_updates_are_left_untouched(self) -> None:
         from opendatasci.streaming.events import TokenEvent
-        from opendatasci.tasks.base import BackgroundTaskStatus, TaskUpdateKind
+        from opendatasci.tasks.base import BackgroundTaskStatus, BackgroundTaskUpdateKind
         from opendatasci.tasks.local import BackgroundTaskManager
 
         manager = BackgroundTaskManager()
         await manager.record_task_update(
             uuid.uuid4(),
-            TaskUpdateKind.COMPLETION,
-            {"status": BackgroundTaskStatus.COMPLETED, "summary": "background work", "result": "r"},
+            BackgroundTaskUpdateKind.COMPLETED,
+            summary="background work",
+            status=BackgroundTaskStatus.COMPLETED,
+            result="r",
         )
 
         upstream = [TokenEvent(content="x")]

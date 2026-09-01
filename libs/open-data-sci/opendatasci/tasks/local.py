@@ -13,8 +13,9 @@ from opendatasci.tasks.base import (
     BackgroundTaskProgressUpdate,
     BackgroundTaskRecord,
     BackgroundTaskStatus,
-    TaskUpdate,
-    TaskUpdateKind,
+    BackgroundTaskUpdate,
+    BackgroundTaskUpdateEvent,
+    BackgroundTaskUpdateKind,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,9 +36,9 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
         self._records: dict[UUID, BackgroundTaskRecord] = {}
         self._tasks: dict[UUID, asyncio.Task[Any]] = {}
         self._output_root = output_root
-        self._updates: dict[UUID, TaskUpdate] = {}
-        self._pending_update_ids: list[UUID] = []
-        self._doorbell: asyncio.Queue[tuple[UUID, UUID]] = asyncio.Queue()
+        self._updates_by_id: dict[UUID, BackgroundTaskUpdate] = {}
+        self._unpulled_update_ids: list[UUID] = []
+        self._update_event_queue: asyncio.Queue[BackgroundTaskUpdateEvent] = asyncio.Queue()
 
     async def submit_task(self, work: Callable[[UUID], Awaitable[Any]], summary: str) -> UUID:
         task_id = uuid4()
@@ -55,8 +56,9 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
                 await self.upsert_record(record)
                 await self.record_task_update(
                     task_id,
-                    TaskUpdateKind.COMPLETION,
-                    {"status": record.status, "summary": record.summary},
+                    BackgroundTaskUpdateKind.COMPLETED,
+                    summary=record.summary,
+                    status=record.status,
                 )
                 raise
             except Exception as exc:
@@ -67,8 +69,10 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
                 await self.upsert_record(record)
                 await self.record_task_update(
                     task_id,
-                    TaskUpdateKind.COMPLETION,
-                    {"status": record.status, "summary": record.summary, "error": record.error},
+                    BackgroundTaskUpdateKind.COMPLETED,
+                    summary=record.summary,
+                    status=record.status,
+                    error=record.error,
                 )
             else:
                 record.status = BackgroundTaskStatus.COMPLETED
@@ -78,8 +82,10 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
                 await self._publish_task_result(task_id, record)
                 await self.record_task_update(
                     task_id,
-                    TaskUpdateKind.COMPLETION,
-                    {"status": record.status, "summary": record.summary, "result": record.result},
+                    BackgroundTaskUpdateKind.COMPLETED,
+                    summary=record.summary,
+                    status=record.status,
+                    result=record.result,
                 )
             finally:
                 self._tasks.pop(task_id, None)
@@ -138,22 +144,38 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
         await self.upsert_record(record)
 
     async def record_task_update(
-        self, task_id: UUID, kind: TaskUpdateKind, payload: dict[str, Any]
+        self,
+        task_id: UUID,
+        kind: BackgroundTaskUpdateKind,
+        summary: str,
+        status: BackgroundTaskStatus | None = None,
+        result: Any = None,
+        error: str | None = None,
     ) -> UUID:
         update_id = uuid4()
-        update = TaskUpdate(update_id=update_id, task_id=task_id, kind=kind, payload=payload)
-        self._updates[update_id] = update
-        self._pending_update_ids.append(update_id)
-        self._doorbell.put_nowait((task_id, update_id))
+        new_update = BackgroundTaskUpdate(
+            update_id=update_id,
+            task_id=task_id,
+            kind=kind,
+            summary=summary,
+            status=status,
+            result=result,
+            error=error,
+        )
+        self._updates_by_id[update_id] = new_update
+        self._unpulled_update_ids.append(update_id)
+        self._update_event_queue.put_nowait(
+            BackgroundTaskUpdateEvent(task_id=task_id, update_id=update_id)
+        )
         return update_id
 
-    async def listen_task_updates(self) -> AsyncIterator[tuple[UUID, UUID]]:
+    async def listen_task_updates(self) -> AsyncIterator[BackgroundTaskUpdateEvent]:
         while True:
-            yield await self._doorbell.get()
+            yield await self._update_event_queue.get()
 
-    async def pull_task_updates(self) -> list[TaskUpdate]:
-        update_ids, self._pending_update_ids = self._pending_update_ids, []
-        return [self._updates[update_id] for update_id in update_ids]
+    async def pull_task_updates(self) -> list[BackgroundTaskUpdate]:
+        update_ids, self._unpulled_update_ids = self._unpulled_update_ids, []
+        return [self._updates_by_id[update_id] for update_id in update_ids]
 
     def has_task_updates(self) -> bool:
-        return bool(self._pending_update_ids)
+        return bool(self._unpulled_update_ids)

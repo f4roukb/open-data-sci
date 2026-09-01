@@ -904,23 +904,31 @@ async def _aiter(*events: AgentStreamEvent):
 
 
 def _make_task_update(summary: str = "s", result: object = "done"):
-    from opendatasci.tasks.base import BackgroundTaskStatus, TaskUpdate, TaskUpdateKind
+    from opendatasci.tasks.base import (
+        BackgroundTaskStatus,
+        BackgroundTaskUpdate,
+        BackgroundTaskUpdateKind,
+    )
 
     task_id = uuid4()
-    return TaskUpdate(
+    return BackgroundTaskUpdate(
         update_id=uuid4(),
         task_id=task_id,
-        kind=TaskUpdateKind.COMPLETION,
-        payload={"status": BackgroundTaskStatus.COMPLETED, "summary": summary, "result": result},
+        kind=BackgroundTaskUpdateKind.COMPLETED,
+        summary=summary,
+        status=BackgroundTaskStatus.COMPLETED,
+        result=result,
     )
 
 
 class TestBackgroundTaskWatcher:
     @staticmethod
     def _doorbell(*updates):
+        from opendatasci.tasks.base import BackgroundTaskUpdateEvent
+
         async def _gen():
             for u in updates:
-                yield (u.task_id, u.update_id)
+                yield BackgroundTaskUpdateEvent(task_id=u.task_id, update_id=u.update_id)
 
         return _gen()
 
