@@ -13,6 +13,9 @@ from opendatasci.tasks.base import (
     BackgroundTaskProgressUpdate,
     BackgroundTaskRecord,
     BackgroundTaskStatus,
+    BackgroundTaskUpdate,
+    BackgroundTaskUpdateEvent,
+    BackgroundTaskUpdateKind,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,8 +36,9 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
         self._records: dict[UUID, BackgroundTaskRecord] = {}
         self._tasks: dict[UUID, asyncio.Task[Any]] = {}
         self._output_root = output_root
-        self._task_completions: asyncio.Queue[BackgroundTaskRecord] = asyncio.Queue()
-        self._task_updates: list[BackgroundTaskRecord] = []
+        self._updates_by_id: dict[UUID, BackgroundTaskUpdate] = {}
+        self._unpulled_update_ids: list[UUID] = []
+        self._update_event_queue: asyncio.Queue[BackgroundTaskUpdateEvent] = asyncio.Queue()
 
     async def submit_task(self, work: Callable[[UUID], Awaitable[Any]], summary: str) -> UUID:
         task_id = uuid4()
@@ -50,8 +54,12 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
                 record.status = BackgroundTaskStatus.CANCELLED
                 record.finished_at = time.time()
                 await self.upsert_record(record)
-                self._task_completions.put_nowait(record)
-                self._task_updates.append(record)
+                await self.record_task_update(
+                    task_id,
+                    BackgroundTaskUpdateKind.COMPLETED,
+                    summary=record.summary,
+                    status=record.status,
+                )
                 raise
             except Exception as exc:
                 logger.exception("Background task %s (%s) failed", task_id, summary)
@@ -59,16 +67,26 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
                 record.error = str(exc)
                 record.finished_at = time.time()
                 await self.upsert_record(record)
-                self._task_completions.put_nowait(record)
-                self._task_updates.append(record)
+                await self.record_task_update(
+                    task_id,
+                    BackgroundTaskUpdateKind.COMPLETED,
+                    summary=record.summary,
+                    status=record.status,
+                    error=record.error,
+                )
             else:
                 record.status = BackgroundTaskStatus.COMPLETED
                 record.result = result
                 record.finished_at = time.time()
                 await self.upsert_record(record)
                 await self._publish_task_result(task_id, record)
-                self._task_completions.put_nowait(record)
-                self._task_updates.append(record)
+                await self.record_task_update(
+                    task_id,
+                    BackgroundTaskUpdateKind.COMPLETED,
+                    summary=record.summary,
+                    status=record.status,
+                    result=record.result,
+                )
             finally:
                 self._tasks.pop(task_id, None)
 
@@ -125,13 +143,39 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
         )
         await self.upsert_record(record)
 
-    async def listen_task_updates(self) -> AsyncIterator[BackgroundTaskRecord]:
-        while True:
-            yield await self._task_completions.get()
+    async def record_task_update(
+        self,
+        task_id: UUID,
+        kind: BackgroundTaskUpdateKind,
+        summary: str,
+        status: BackgroundTaskStatus | None = None,
+        result: Any = None,
+        error: str | None = None,
+    ) -> UUID:
+        update_id = uuid4()
+        new_update = BackgroundTaskUpdate(
+            update_id=update_id,
+            task_id=task_id,
+            kind=kind,
+            summary=summary,
+            status=status,
+            result=result,
+            error=error,
+        )
+        self._updates_by_id[update_id] = new_update
+        self._unpulled_update_ids.append(update_id)
+        self._update_event_queue.put_nowait(
+            BackgroundTaskUpdateEvent(task_id=task_id, update_id=update_id)
+        )
+        return update_id
 
-    async def gather_task_updates(self) -> list[BackgroundTaskRecord]:
-        records, self._task_updates = self._task_updates, []
-        return records
+    async def listen_task_updates(self) -> AsyncIterator[BackgroundTaskUpdateEvent]:
+        while True:
+            yield await self._update_event_queue.get()
+
+    async def pull_task_updates(self) -> list[BackgroundTaskUpdate]:
+        update_ids, self._unpulled_update_ids = self._unpulled_update_ids, []
+        return [self._updates_by_id[update_id] for update_id in update_ids]
 
     def has_task_updates(self) -> bool:
-        return bool(self._task_updates)
+        return bool(self._unpulled_update_ids)

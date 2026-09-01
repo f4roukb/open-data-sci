@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from contextlib import AsyncExitStack
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, override
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
@@ -323,14 +323,6 @@ class Agent(BaseOpenDataSciAgent):
 
     @classmethod
     def _prepare_batch_messages(cls, items: list[Invocation]) -> list[BaseMessage]:
-        """Build one message per item, in the order given.
-
-        Each item's :attr:`Invocation.origin` decides whether it renders as a
-        :class:`TaskMessage` or a :class:`UserMessage` — see
-        :meth:`_message_from_invocation`. Ordering (e.g. task results ahead of
-        user text) is the caller's responsibility, since it's the caller's
-        list.
-        """
         return [cls._message_from_invocation(item) for item in items]
 
     def _thread_config(self, thread_id: Any) -> RunnableConfig:
@@ -367,6 +359,7 @@ class Agent(BaseOpenDataSciAgent):
     # Public API
     # ------------------------------------------------------------------
 
+    @override
     async def astream(
         self, invocation: Invocation | list[Invocation]
     ) -> AsyncIterator[AgentStreamEvent]:
@@ -414,6 +407,7 @@ class Agent(BaseOpenDataSciAgent):
         async for event in self._stream_turn(graph_input, thread_id, config):
             yield event
 
+    @override
     async def resume_with_input(self, answer: str) -> AsyncIterator[AgentStreamEvent]:
         """Answer a pending :class:`~opendatasci.streaming.InputRequiredEvent` with *answer*.
 
@@ -426,6 +420,7 @@ class Agent(BaseOpenDataSciAgent):
         async for event in self._stream_turn(Command(resume=answer), thread_id, config):
             yield event
 
+    @override
     async def resume_with_approval(self, approved: bool) -> AsyncIterator[AgentStreamEvent]:
         """Answer a pending :class:`~opendatasci.streaming.ApprovalRequiredEvent` with *approved*.
 
@@ -438,6 +433,7 @@ class Agent(BaseOpenDataSciAgent):
         async for event in self._stream_turn(Command(resume=approved), thread_id, config):
             yield event
 
+    @override
     def is_user_input_required(self) -> bool:
         """True iff the agent is paused awaiting the user's answer to a pending question or approval request."""
         return is_interrupt_state_snapshot(self._graph.get_state(self._graph_config))
@@ -483,6 +479,7 @@ class Agent(BaseOpenDataSciAgent):
 
         yield ResponseEvent(content=final_response)
 
+    @override
     async def rewind_turn(self) -> None:
         """Remove the last turn from the conversation history."""
         snapshot = await self._graph.aget_state(self._graph_config)
@@ -499,6 +496,7 @@ class Agent(BaseOpenDataSciAgent):
                 {"messages": [RemoveMessage(id=msg.id) for msg in removed]},
             )
 
+    @override
     async def clear_chat_history(self) -> None:
         """Clear all conversation context (preserves session state such as the sandbox).
 
@@ -512,6 +510,7 @@ class Agent(BaseOpenDataSciAgent):
         if self._context_store is not None:
             self._context_store.clear_plans(self._session_id)
 
+    @override
     async def compact_chat_history(self) -> str:
         """Fold the rolling turn summaries into a single compaction summary.
 

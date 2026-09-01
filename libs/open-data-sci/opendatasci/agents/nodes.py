@@ -1,15 +1,18 @@
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from typing import Any, Awaitable, Callable, Optional
+from uuid import UUID
 
 from langchain_core.messages import SystemMessage
 from langchain_core.runnables import RunnableConfig
 
+from opendatasci._utils.background_tasks_utils import merge_task_updates
 from opendatasci._utils.mixins import RenderableMessageMixin
 from opendatasci.agents.chat_history import ChatHistoryBuilder
 from opendatasci.agents.states import AgentState
 from opendatasci.memory.messages import AgentMessage
 from opendatasci.models.factory import _RetryRunnable
-from opendatasci.tasks.base import BackgroundTaskManagerBase
+from opendatasci.tasks.base import BackgroundTaskManagerBase, BackgroundTaskUpdate
 
 BuildSystemContext = Callable[[AgentState], list[SystemMessage]]
 
@@ -88,7 +91,10 @@ class SynchronizationNode(BaseNode):
     async def ainvoke(
         self, state: AgentState, config: Optional[RunnableConfig] = None
     ) -> dict[str, Any]:
-        records = await self._background_task_manager.gather_task_updates()
-        if not records:
+        updates = await self._background_task_manager.pull_task_updates()
+        if not updates:
             return {}
-        return {"messages": [record.to_update_message() for record in records]}
+        grouped: dict[UUID, list[BackgroundTaskUpdate]] = defaultdict(list)
+        for update in updates:
+            grouped[update.task_id].append(update)
+        return {"messages": [merge_task_updates(group) for group in grouped.values()]}
