@@ -19,7 +19,7 @@ This background-scheduling layer is backed by `opendatasci.tasks`.
 | `get_task(task_id)` | Look up one task's current record. |
 | `list_tasks()` | List every tracked task. |
 | `cancel_task(task_id)` | Request cancellation (best-effort). |
-| `listen_task_updates()` | `async for record in agent.task_manager.listen_task_updates():` — yields each task's record as soon as it finishes. Use this to show a notification or trigger your own follow-up logic without polling. |
+| `listen_task_updates()` | `async for task_id, update_id in agent.task_manager.listen_task_updates():` — yields a task ID as soon as an update (e.g. a completion) is recorded against it. Use this to show a notification or trigger your own follow-up logic without polling. |
 
 While a turn is already in progress, the agent drains its own task manager automatically as work completes, so a result can change what it does next within the same turn rather than sitting unused until the turn ends. Starting a *new* turn to deliver a result — when the agent is otherwise idle, or once the current turn wraps up — is the driving caller's job: the bundled TUI does this for you by watching `listen_task_updates()` and kicking off a turn as soon as one is warranted, so if you're using the TUI you never need to think about this at all.
 

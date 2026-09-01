@@ -19,9 +19,11 @@ import asyncio
 import difflib
 import logging
 import string
+from collections import defaultdict
 from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import AsyncIterator
+from uuid import UUID
 
 from rich.markup import escape as escape_markup
 
@@ -46,7 +48,7 @@ from opendatasci.streaming.events import (
     ToolResultEvent,
     UsageEvent,
 )
-from opendatasci.tasks.base import BackgroundTaskStatus
+from opendatasci.tasks.base import BackgroundTaskStatus, TaskUpdate, merge_task_updates
 from opendatasci.tools.mcp import load_mcp_servers
 
 from . import theme as _theme
@@ -406,14 +408,19 @@ class CLIController:
         ``has_task_updates()``/``listen_task_updates()`` check.
         """
         assert self._service is not None
-        records = await self._service.task_manager.gather_task_updates()
+        updates = await self._service.task_manager.pull_task_updates()
+        if not updates:
+            return []
+        grouped: dict[UUID, list[TaskUpdate]] = defaultdict(list)
+        for update in updates:
+            grouped[update.task_id].append(update)
         return [
             Invocation(
-                content=(msg := record.to_update_message()).content,
+                content=(msg := merge_task_updates(group)).content,
                 created_at=msg.created_at,
                 origin=MessageOrigin.TASK,
             )
-            for record in records
+            for group in grouped.values()
         ]
 
     async def _drain_loop(self) -> None:
@@ -456,7 +463,7 @@ class CLIController:
         instead of waiting on the next unrelated user message.
         """
         assert self._service is not None
-        async for _record in self._service.task_manager.listen_task_updates():
+        async for _task_id, _update_id in self._service.task_manager.listen_task_updates():
             if self._agent_running or self._service.is_user_input_required():
                 continue
             batch = await self._drain_task_updates_batch()

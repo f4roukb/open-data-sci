@@ -781,17 +781,6 @@ class TestAgentResumeMethods:
 # ---------------------------------------------------------------------------
 
 
-def _make_task_record(summary: str = "s", result: object = "r", status: object = None):
-    from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
-
-    return BackgroundTaskRecord(
-        task_id=uuid.uuid4(),
-        summary=summary,
-        status=status or BackgroundTaskStatus.COMPLETED,
-        result=result,
-    )
-
-
 class TestPrepareBatchMessages:
     def test_task_origin_item_renders_as_task_message(self) -> None:
         item = Invocation.from_text("externally drained", origin=MessageOrigin.TASK)
@@ -829,10 +818,15 @@ class TestAstreamDoesNotAutoDrainTaskManagerAtTurnStart:
 
     async def test_pending_task_updates_are_left_untouched(self) -> None:
         from opendatasci.streaming.events import TokenEvent
+        from opendatasci.tasks.base import BackgroundTaskStatus, TaskUpdateKind
         from opendatasci.tasks.local import BackgroundTaskManager
 
         manager = BackgroundTaskManager()
-        manager._task_updates.append(_make_task_record(summary="background work"))
+        await manager.record_task_update(
+            uuid.uuid4(),
+            TaskUpdateKind.COMPLETION,
+            {"status": BackgroundTaskStatus.COMPLETED, "summary": "background work", "result": "r"},
+        )
 
         upstream = [TokenEvent(content="x")]
         async with _agent_with_overrides_ctx(background_task_manager=manager) as agent:

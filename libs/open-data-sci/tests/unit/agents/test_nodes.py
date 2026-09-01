@@ -307,9 +307,14 @@ class TestSynchronizationNode:
         assert await node.ainvoke(_make_state()) == {}
 
     async def test_drains_and_wraps_records_as_task_messages(self) -> None:
+        from opendatasci.tasks.base import BackgroundTaskStatus, TaskUpdateKind
+
         manager = BackgroundTaskManager()
-        record = _make_task_record(summary="mid-turn work", result="done")
-        manager._task_updates.append(record)
+        await manager.record_task_update(
+            uuid.uuid4(),
+            TaskUpdateKind.COMPLETION,
+            {"status": BackgroundTaskStatus.COMPLETED, "summary": "mid-turn work", "result": "done"},
+        )
         node = SynchronizationNode(background_task_manager=manager)
 
         result = await node.ainvoke(_make_state())
@@ -320,13 +325,47 @@ class TestSynchronizationNode:
         # The buffer is drained — a second call finds nothing left.
         assert await node.ainvoke(_make_state()) == {}
 
-    async def test_multiple_records_all_wrapped(self) -> None:
+    async def test_multiple_records_from_different_tasks_all_wrapped(self) -> None:
+        from opendatasci.tasks.base import BackgroundTaskStatus, TaskUpdateKind
+
         manager = BackgroundTaskManager()
-        manager._task_updates.append(_make_task_record(summary="a"))
-        manager._task_updates.append(_make_task_record(summary="b"))
+        await manager.record_task_update(
+            uuid.uuid4(),
+            TaskUpdateKind.COMPLETION,
+            {"status": BackgroundTaskStatus.COMPLETED, "summary": "a", "result": "r"},
+        )
+        await manager.record_task_update(
+            uuid.uuid4(),
+            TaskUpdateKind.COMPLETION,
+            {"status": BackgroundTaskStatus.COMPLETED, "summary": "b", "result": "r"},
+        )
         node = SynchronizationNode(background_task_manager=manager)
 
         result = await node.ainvoke(_make_state())
 
         assert len(result["messages"]) == 2
         assert all(isinstance(m, TaskMessage) for m in result["messages"])
+
+    async def test_multiple_updates_for_the_same_task_are_merged(self) -> None:
+        from opendatasci.tasks.base import BackgroundTaskStatus, TaskUpdateKind
+
+        manager = BackgroundTaskManager()
+        task_id = uuid.uuid4()
+        await manager.record_task_update(
+            task_id,
+            TaskUpdateKind.COMPLETION,
+            {"status": BackgroundTaskStatus.COMPLETED, "summary": "a", "result": "r"},
+        )
+        # A second update for the same task_id (can't happen for COMPLETION in
+        # practice, but exercises the grouping contract other update kinds rely on).
+        await manager.record_task_update(
+            task_id,
+            TaskUpdateKind.COMPLETION,
+            {"status": BackgroundTaskStatus.COMPLETED, "summary": "a", "result": "r2"},
+        )
+        node = SynchronizationNode(background_task_manager=manager)
+
+        result = await node.ainvoke(_make_state())
+
+        assert len(result["messages"]) == 1
+        assert isinstance(result["messages"][0], TaskMessage)

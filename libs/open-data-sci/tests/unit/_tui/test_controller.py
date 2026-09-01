@@ -903,27 +903,35 @@ async def _aiter(*events: AgentStreamEvent):
         yield e
 
 
+def _make_task_update(summary: str = "s", result: object = "done"):
+    from opendatasci.tasks.base import BackgroundTaskStatus, TaskUpdate, TaskUpdateKind
+
+    task_id = uuid4()
+    return TaskUpdate(
+        update_id=uuid4(),
+        task_id=task_id,
+        kind=TaskUpdateKind.COMPLETION,
+        payload={"status": BackgroundTaskStatus.COMPLETED, "summary": summary, "result": result},
+    )
+
+
 class TestBackgroundTaskWatcher:
     @staticmethod
-    def _completions(*records):
+    def _doorbell(*updates):
         async def _gen():
-            for r in records:
-                yield r
+            for u in updates:
+                yield (u.task_id, u.update_id)
 
         return _gen()
 
     async def test_kicks_new_turn_when_idle(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
-        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
-
-        record = BackgroundTaskRecord(
-            task_id=uuid4(), summary="s", status=BackgroundTaskStatus.COMPLETED, result="done"
-        )
+        update = _make_task_update()
         mock_service.task_manager.listen_task_updates = MagicMock(
-            return_value=self._completions(record)
+            return_value=self._doorbell(update)
         )
-        mock_service.task_manager.gather_task_updates = AsyncMock(return_value=[record])
+        mock_service.task_manager.pull_task_updates = AsyncMock(return_value=[update])
         mock_service.astream.return_value = _aiter()
         loaded_controller._agent_running = False
 
@@ -942,15 +950,11 @@ class TestBackgroundTaskWatcher:
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
         """The raw completion is never surfaced as a chat bubble — only the agent's own response is."""
-        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
-
-        record = BackgroundTaskRecord(
-            task_id=uuid4(), summary="s", status=BackgroundTaskStatus.COMPLETED, result="done"
-        )
+        update = _make_task_update()
         mock_service.task_manager.listen_task_updates = MagicMock(
-            return_value=self._completions(record)
+            return_value=self._doorbell(update)
         )
-        mock_service.task_manager.gather_task_updates = AsyncMock(return_value=[record])
+        mock_service.task_manager.pull_task_updates = AsyncMock(return_value=[update])
         mock_service.astream.return_value = _aiter()
         loaded_controller._agent_running = False
 
@@ -964,15 +968,11 @@ class TestBackgroundTaskWatcher:
         """A race with another consumer (e.g. the mid-turn node) can leave the
         drain empty even after a completion notification — no turn should
         start over nothing to inject."""
-        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
-
-        record = BackgroundTaskRecord(
-            task_id=uuid4(), summary="s", status=BackgroundTaskStatus.COMPLETED, result="done"
-        )
+        update = _make_task_update()
         mock_service.task_manager.listen_task_updates = MagicMock(
-            return_value=self._completions(record)
+            return_value=self._doorbell(update)
         )
-        mock_service.task_manager.gather_task_updates = AsyncMock(return_value=[])
+        mock_service.task_manager.pull_task_updates = AsyncMock(return_value=[])
         loaded_controller._agent_running = False
 
         await loaded_controller._watch_background_tasks()
@@ -982,13 +982,9 @@ class TestBackgroundTaskWatcher:
     async def test_no_new_turn_when_turn_in_progress(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
-        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
-
-        record = BackgroundTaskRecord(
-            task_id=uuid4(), summary="s", status=BackgroundTaskStatus.COMPLETED, result="done"
-        )
+        update = _make_task_update()
         mock_service.task_manager.listen_task_updates = MagicMock(
-            return_value=self._completions(record)
+            return_value=self._doorbell(update)
         )
         loaded_controller._agent_running = True
 
@@ -1003,13 +999,9 @@ class TestBackgroundTaskWatcher:
     async def test_no_new_turn_while_interrupted(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
-        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
-
-        record = BackgroundTaskRecord(
-            task_id=uuid4(), summary="s", status=BackgroundTaskStatus.COMPLETED, result="done"
-        )
+        update = _make_task_update()
         mock_service.task_manager.listen_task_updates = MagicMock(
-            return_value=self._completions(record)
+            return_value=self._doorbell(update)
         )
         mock_service.is_user_input_required = MagicMock(return_value=True)
         loaded_controller._agent_running = False
@@ -1279,14 +1271,10 @@ class TestResumeMethods:
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
         """A task result missed by the mid-turn node still gets surfaced right after the turn."""
-        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
-
-        record = BackgroundTaskRecord(
-            task_id=uuid4(), summary="s", status=BackgroundTaskStatus.COMPLETED, result="done"
-        )
+        update = _make_task_update()
         mock_service.astream.return_value = _aiter()
         mock_service.task_manager.has_task_updates = MagicMock(side_effect=[True, False])
-        mock_service.task_manager.gather_task_updates = AsyncMock(return_value=[record])
+        mock_service.task_manager.pull_task_updates = AsyncMock(return_value=[update])
 
         await loaded_controller.run_agent("query")
 
