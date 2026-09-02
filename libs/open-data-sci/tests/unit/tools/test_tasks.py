@@ -22,7 +22,6 @@ from opendatasci.tools.tasks import (
     ListTasksTool,
     MonitorTaskTool,
     ReportProgressTool,
-    StopTaskMonitoringTool,
     StopTaskTool,
     TaskTool,
     create_task_management_tools,
@@ -44,7 +43,6 @@ class TestCreateTaskManagementTools:
             "list_tasks",
             "stop_task",
             "monitor_task",
-            "stop_monitoring_task",
         }
 
 
@@ -311,9 +309,7 @@ class TestMonitorTaskTool:
         await asyncio.wait_for(started.wait(), timeout=1)
 
         tool = MonitorTaskTool(background_task_manager=manager)
-        result = await tool.ainvoke(
-            {"task_id": str(task_id), "regex_patterns": ["a", "b"]}
-        )
+        result = await tool.ainvoke({"task_id": str(task_id), "regex_patterns": ["a", "b"]})
         monitors = await manager.list_task_monitors(task_id)
         assert set(monitors.values()) == {"a", "b"}
         for monitor_id in monitors:
@@ -341,10 +337,8 @@ class TestMonitorTaskTool:
 
         await manager.cancel_task(task_id)
 
-
-class TestStopTaskMonitoringTool:
     @pytest.mark.asyncio
-    async def test_stop_by_task_id(self) -> None:
+    async def test_registering_the_same_pattern_twice_does_not_duplicate(self) -> None:
         manager = BackgroundTaskManager()
         started = asyncio.Event()
 
@@ -355,111 +349,15 @@ class TestStopTaskMonitoringTool:
 
         task_id = await manager.submit_task(_work, summary="s")
         await asyncio.wait_for(started.wait(), timeout=1)
-        await manager.monitor_task(task_id, ["a"])
 
-        tool = StopTaskMonitoringTool(background_task_manager=manager)
-        result = await tool.ainvoke({"task_id": str(task_id)})
-        assert str(task_id) in result
-        assert await manager.list_task_monitors(task_id) == {}
+        tool = MonitorTaskTool(background_task_manager=manager)
+        await tool.ainvoke({"task_id": str(task_id), "regex_patterns": ["a"]})
+        await tool.ainvoke({"task_id": str(task_id), "regex_patterns": ["a"]})
 
-        await manager.cancel_task(task_id)
-
-    @pytest.mark.asyncio
-    async def test_stop_by_monitor_ids(self) -> None:
-        manager = BackgroundTaskManager()
-        started = asyncio.Event()
-
-        async def _work(task_id: object) -> str:
-            started.set()
-            await asyncio.sleep(10)
-            return "never"
-
-        task_id = await manager.submit_task(_work, summary="s")
-        await asyncio.wait_for(started.wait(), timeout=1)
-        monitor_id1, monitor_id2 = await manager.monitor_task(task_id, ["a", "b"])
-
-        tool = StopTaskMonitoringTool(background_task_manager=manager)
-        result = await tool.ainvoke({"monitor_ids": [str(monitor_id1)]})
-        assert str(monitor_id1) in result
-        assert await manager.list_task_monitors(task_id) == {monitor_id2: "b"}
+        assert len(await manager.list_task_monitors(task_id)) == 1
 
         await manager.cancel_task(task_id)
 
-    @pytest.mark.asyncio
-    async def test_task_id_and_monitor_ids_together_disables_a_specific_monitor(self) -> None:
-        manager = BackgroundTaskManager()
-        started = asyncio.Event()
-
-        async def _work(task_id: object) -> str:
-            started.set()
-            await asyncio.sleep(10)
-            return "never"
-
-        task_id = await manager.submit_task(_work, summary="s")
-        await asyncio.wait_for(started.wait(), timeout=1)
-        monitor_id1, monitor_id2 = await manager.monitor_task(task_id, ["a", "b"])
-
-        tool = StopTaskMonitoringTool(background_task_manager=manager)
-        result = await tool.ainvoke({"task_id": str(task_id), "monitor_ids": [str(monitor_id1)]})
-        assert str(monitor_id1) in result
-        assert await manager.list_task_monitors(task_id) == {monitor_id2: "b"}
-
-        await manager.cancel_task(task_id)
-
-    @pytest.mark.asyncio
-    async def test_neither_task_id_nor_monitor_ids_returns_error_string(self) -> None:
-        tool = StopTaskMonitoringTool(background_task_manager=BackgroundTaskManager())
-        result = await tool.ainvoke({})
-        assert "provide" in result.lower()
-
-    @pytest.mark.asyncio
-    async def test_unknown_task_id_returns_error_string(self) -> None:
-        tool = StopTaskMonitoringTool(background_task_manager=BackgroundTaskManager())
-        unknown_id = uuid4()
-        result = await tool.ainvoke({"task_id": str(unknown_id)})
-        assert str(unknown_id) in result
-        assert "no task found" in result.lower()
-
-    @pytest.mark.asyncio
-    async def test_unknown_monitor_id_returns_error_string(self) -> None:
-        tool = StopTaskMonitoringTool(background_task_manager=BackgroundTaskManager())
-        unknown_id = uuid4()
-        result = await tool.ainvoke({"monitor_ids": [str(unknown_id)]})
-        assert str(unknown_id) in result
-
-    @pytest.mark.asyncio
-    async def test_monitor_id_not_belonging_to_task_returns_error_string(self) -> None:
-        manager = BackgroundTaskManager()
-        started1 = asyncio.Event()
-
-        async def _hangs1(task_id: object) -> str:
-            started1.set()
-            await asyncio.sleep(10)
-            return "never"
-
-        task_id1 = await manager.submit_task(_hangs1, summary="one")
-        await asyncio.wait_for(started1.wait(), timeout=1)
-
-        started2 = asyncio.Event()
-
-        async def _hangs2(task_id: object) -> str:
-            started2.set()
-            await asyncio.sleep(10)
-            return "never"
-
-        task_id2 = await manager.submit_task(_hangs2, summary="two")
-        await asyncio.wait_for(started2.wait(), timeout=1)
-        (monitor_id_on_task2,) = await manager.monitor_task(task_id2, ["a"])
-
-        tool = StopTaskMonitoringTool(background_task_manager=manager)
-        result = await tool.ainvoke(
-            {"task_id": str(task_id1), "monitor_ids": [str(monitor_id_on_task2)]}
-        )
-        assert str(monitor_id_on_task2) in result
-        assert await manager.list_task_monitors(task_id2) == {monitor_id_on_task2: "a"}
-
-        await manager.cancel_task(task_id1)
-        await manager.cancel_task(task_id2)
 
 
 # ---------------------------------------------------------------------------
@@ -681,9 +579,7 @@ class TestActivityLog:
         manager = BackgroundTaskManager()
         task_id = uuid4()
         await manager.upsert_record(
-            BackgroundTaskRecord(
-                task_id=task_id, summary="s", status=BackgroundTaskStatus.RUNNING
-            )
+            BackgroundTaskRecord(task_id=task_id, summary="s", status=BackgroundTaskStatus.RUNNING)
         )
         tool = _make_tool(background_task_manager=manager)
 

@@ -125,6 +125,8 @@ Execute Python code in the active workspace environment.
 - Assign ``result = ...`` to return a value.
 - Any library can be imported; check ``list_python_libs`` first for non-standard ones.
 - Prefer vectorised operations over row-wise loops on large DataFrames.
+- For long-running code, print or log periodic progress rather than staying silent —
+  it can then be tracked with `monitor_task` when running in the background.
 
 # How NOT to use this tool
 - Don't retry the same failing code verbatim — address the structured error before retrying.
@@ -175,6 +177,10 @@ and that access is scoped to GitHub's own hosts.
 ``ls``, ``cat``, ``grep``, ``wc``, ``find``, ``head``, ``tail``, ``cut``,
 ``diff``, ``gh``, and others in the safe set. ``|`` and ``&&`` are allowed.
 
+# How to use this tool
+- For a long-running command, prefer a form that prints progress as it goes —
+  it can then be tracked with `monitor_task` when running in the background.
+
 # When NOT to use this tool
 - For write operations (file creation, deletion, or modification) — not permitted,
   including ``gh`` write subcommands (``create``, ``merge``, ``delete``, etc.).
@@ -224,6 +230,10 @@ and that access is scoped to GitHub's own hosts.
 # Permitted commands
 ``ls``, ``cat``, ``grep``, ``wc``, ``find``, ``head``, ``tail``, ``cut``,
 ``diff``, ``gh``, and others in the safe set. ``|`` and ``&&`` are allowed.
+
+# How to use this tool
+- For a long-running command, prefer a form that prints progress as it goes —
+  it can then be tracked with `monitor_task` when running in the background.
 
 # When NOT to use this tool
 - For write operations (file creation, deletion, or modification) — not permitted,

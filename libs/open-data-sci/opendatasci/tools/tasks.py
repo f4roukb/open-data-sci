@@ -535,10 +535,10 @@ class MonitorTaskTool(OpenDataSciBaseTool):
     name: str = "monitor_task"
     description: str = """
 Register one or more regex monitors against the activity log of a background task previously
-scheduled via the `task` tool with `run_mode="background"`. Each monitor keeps firing on every
-matching activity entry for as long as it stays registered — it does not stop after the first
-match. Use `stop_monitoring_task` to remove monitors, and `check_task`/`list_tasks` to see which
-monitors are currently active and their IDs.
+scheduled via the `task` tool with `run_mode="background"`. Each monitor fires exactly once:
+the first activity entry that matches its pattern triggers an update and the monitor is then
+gone — call `monitor_task` again if you need to keep watching for that pattern. Use
+`check_task`/`list_tasks` to see which monitors are currently active and their IDs.
 
 Each registered pattern gets its own monitor ID, even if the same regex is reused across
 different tasks or across multiple calls on the same task.
@@ -568,62 +568,10 @@ Args:
         return "\n".join(lines)
 
 
-class StopTaskMonitoringTool(OpenDataSciBaseTool):
-    """Remove monitors previously registered via ``monitor_task``."""
-
-    class CallArgs(BaseModel):
-        task_id: UUID | None = None
-        monitor_ids: list[UUID] | None = None
-
-    name: str = "stop_monitoring_task"
-    description: str = """
-Remove monitors previously registered via `monitor_task`. Provide at least one of:
-
-- task_id only:               Removes every monitor currently active on that task.
-- monitor_ids only:           Removes exactly those monitors, regardless of which task(s)
-                               they belong to.
-- task_id and monitor_ids:    Removes exactly those monitor IDs, but each must belong to
-                               task_id — use this to disable specific monitors on a task
-                               that has several, without touching its other monitors.
-
-Fails with an error if task_id is unknown, if any monitor_ids entry is unknown, or (when
-both are given) if a monitor ID doesn't belong to task_id.
-
-Args:
-    task_id:     Scope the removal to this task (all its monitors if monitor_ids is omitted).
-    monitor_ids: Remove exactly these monitor IDs (from `monitor_task`, `check_task`, or
-                 `list_tasks`).
-""".strip()
-
-    args_schema: type[BaseModel] = CallArgs
-
-    background_task_manager: BackgroundTaskManagerBase
-
-    @override
-    async def _arun(
-        self,
-        task_id: UUID | None = None,
-        monitor_ids: list[UUID] | None = None,
-        **kwargs: Any,
-    ) -> str:
-        if task_id is None and monitor_ids is None:
-            return "Provide task_id and/or monitor_ids."
-        try:
-            await self.background_task_manager.stop_monitoring_task(
-                task_id=task_id, monitor_ids=monitor_ids
-            )
-        except ValueError as exc:
-            return str(exc)
-        if monitor_ids is not None:
-            return f"Stopped monitor(s): {', '.join(str(m) for m in monitor_ids)}."
-        return f"Stopped all monitors on task_id={task_id}."
-
-
 def create_task_management_tools(
     background_task_manager: BackgroundTaskManagerBase,
 ) -> list[BaseTool]:
-    """Return the ``check_task``, ``list_tasks``, ``stop_task``, ``monitor_task``, and
-    ``stop_monitoring_task`` tools.
+    """Return the ``check_task``, ``list_tasks``, ``stop_task``, and ``monitor_task`` tools.
 
     *background_task_manager* must be the same instance passed to :func:`create_task_tools`
     so these tools can see the background tasks scheduled by the ``task`` tool.
@@ -633,5 +581,4 @@ def create_task_management_tools(
         ListTasksTool(background_task_manager=background_task_manager),
         StopTaskTool(background_task_manager=background_task_manager),
         MonitorTaskTool(background_task_manager=background_task_manager),
-        StopTaskMonitoringTool(background_task_manager=background_task_manager),
     ]

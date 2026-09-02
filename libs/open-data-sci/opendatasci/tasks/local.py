@@ -159,15 +159,21 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
         # storage bound on the persisted activity log, not a matching window,
         # so a match past the truncation cutoff must never be missed.
         for monitor_id, regex in list(self._monitors.get(task_id, {}).items()):
-            for match in regex.finditer(entry):
-                await self.record_task_update(
-                    task_id,
-                    BackgroundTaskUpdateKind.PROGRESS,
-                    summary=record.summary,
-                    monitor_id=monitor_id,
-                    pattern=regex.pattern,
-                    matched_text=match.group(0),
-                )
+            matches = [m.group(0) for m in regex.finditer(entry)]
+            if not matches:
+                continue
+            # Fire-once: remove the monitor before recording the update so a
+            # burst of matching entries can't queue more than one firing. All
+            # matches within this one entry are carried in a single update.
+            self._remove_monitor(task_id, monitor_id)
+            await self.record_task_update(
+                task_id,
+                BackgroundTaskUpdateKind.PROGRESS,
+                summary=record.summary,
+                monitor_id=monitor_id,
+                pattern=regex.pattern,
+                matched_texts=matches,
+            )
 
         if len(entry) > _MAX_ACTIVITY_ENTRY_LEN:
             entry = entry[:_MAX_ACTIVITY_ENTRY_LEN] + "... (truncated)"
@@ -180,48 +186,28 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
         if task_id not in self._records:
             logger.warning("monitor_task called with unknown task_id=%s", task_id)
             return []
+        # Compile every pattern before mutating any state, so an invalid
+        # pattern later in the list never leaves earlier ones registered.
         compiled = [re.compile(regex_pattern) for regex_pattern in regex_patterns]
+
         task_monitors = self._monitors.setdefault(task_id, {})
+        existing_by_pattern = {
+            regex.pattern: monitor_id for monitor_id, regex in task_monitors.items()
+        }
         monitor_ids: list[UUID] = []
         for regex in compiled:
+            existing_monitor_id = existing_by_pattern.get(regex.pattern)
+            if existing_monitor_id is not None:
+                # A monitor for this exact pattern is already scheduled on
+                # this task — do nothing rather than register a duplicate.
+                monitor_ids.append(existing_monitor_id)
+                continue
             monitor_id = uuid4()
             task_monitors[monitor_id] = regex
             self._monitor_task_ids[monitor_id] = task_id
+            existing_by_pattern[regex.pattern] = monitor_id
             monitor_ids.append(monitor_id)
         return monitor_ids
-
-    async def stop_monitoring_task(
-        self,
-        task_id: UUID | None = None,
-        monitor_ids: list[UUID] | None = None,
-    ) -> None:
-        if task_id is None and monitor_ids is None:
-            raise ValueError("Provide task_id and/or monitor_ids.")
-
-        if task_id is not None and task_id not in self._records:
-            raise ValueError(f"No task found with task_id={task_id}.")
-
-        if monitor_ids is not None:
-            invalid = [
-                monitor_id
-                for monitor_id in monitor_ids
-                if self._monitor_task_ids.get(monitor_id) is None
-                or (task_id is not None and self._monitor_task_ids[monitor_id] != task_id)
-            ]
-            if invalid:
-                ids = ", ".join(str(m) for m in invalid)
-                scope = f" on task_id={task_id}" if task_id is not None else ""
-                raise ValueError(f"No monitor(s) found{scope}: {ids}.")
-            for monitor_id in monitor_ids:
-                owning_task_id = self._monitor_task_ids.pop(monitor_id)
-                task_monitors = self._monitors[owning_task_id]
-                del task_monitors[monitor_id]
-                if not task_monitors:
-                    del self._monitors[owning_task_id]
-            return
-
-        if task_id is not None:
-            self._remove_monitors_for_task(task_id)
 
     async def list_task_monitors(self, task_id: UUID) -> dict[UUID, str]:
         return {
@@ -233,6 +219,15 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
         for monitor_id in self._monitors.pop(task_id, {}):
             self._monitor_task_ids.pop(monitor_id, None)
 
+    def _remove_monitor(self, task_id: UUID, monitor_id: UUID) -> None:
+        self._monitor_task_ids.pop(monitor_id, None)
+        task_monitors = self._monitors.get(task_id)
+        if task_monitors is None:
+            return
+        task_monitors.pop(monitor_id, None)
+        if not task_monitors:
+            del self._monitors[task_id]
+
     async def record_task_update(
         self,
         task_id: UUID,
@@ -243,7 +238,7 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
         error: str | None = None,
         monitor_id: UUID | None = None,
         pattern: str | None = None,
-        matched_text: str | None = None,
+        matched_texts: list[str] | None = None,
     ) -> UUID:
         update_id = uuid4()
         new_update = BackgroundTaskUpdate(
@@ -256,7 +251,7 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
             error=error,
             monitor_id=monitor_id,
             pattern=pattern,
-            matched_text=matched_text,
+            matched_texts=matched_texts,
         )
         self._updates_by_id[update_id] = new_update
         self._unpulled_update_ids.append(update_id)
