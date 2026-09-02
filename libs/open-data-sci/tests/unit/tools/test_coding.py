@@ -2,6 +2,7 @@
 
 from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 import pydantic
 import pytest
@@ -314,6 +315,120 @@ class TestGetCodingTools:
         execute_python_code = next(t for t in tools if t.name == "execute_python_code")
         await execute_python_code.ainvoke({"code": "x = 1", "summary": "s", "communication": "c"})
         sandbox.execute.assert_awaited_once_with("x = 1")
+
+    def test_without_manager_tool_has_no_run_mode_arg(self) -> None:
+        tools = create_coding_tools(self._make_sandbox())
+        execute_python_code = next(t for t in tools if t.name == "execute_python_code")
+        assert "run_mode" not in execute_python_code.args
+
+
+# ---------------------------------------------------------------------------
+# execute_python_code — background run mode (execute_python_code with a
+# background_task_manager, i.e. what create_coding_tools returns for the main
+# agent — mirrors task's own run_mode="background")
+# ---------------------------------------------------------------------------
+
+
+class TestExecutePythonCodeBackgroundMode:
+    def _make_sandbox(self) -> MagicMock:
+        sandbox = MagicMock(spec=BaseSandbox)
+        sandbox.execute = AsyncMock()
+        return sandbox
+
+    def _make_manager(self) -> MagicMock:
+        from opendatasci.tasks.base import BackgroundTaskManagerBase
+
+        manager = MagicMock(spec=BackgroundTaskManagerBase)
+        manager.submit_task = AsyncMock(return_value=uuid4())
+        manager.push_activity = AsyncMock()
+        return manager
+
+    def test_with_manager_tool_keeps_canonical_name(self) -> None:
+        tools = create_coding_tools(self._make_sandbox(), self._make_manager())
+        execute_python_code = next(t for t in tools if t.name == "execute_python_code")
+        assert execute_python_code.name == "execute_python_code"
+
+    def test_with_manager_run_mode_defaults_to_foreground(self) -> None:
+        tools = create_coding_tools(self._make_sandbox(), self._make_manager())
+        execute_python_code = next(t for t in tools if t.name == "execute_python_code")
+        assert execute_python_code.args["run_mode"]["default"] == "foreground"
+
+    @pytest.mark.asyncio
+    async def test_foreground_run_mode_behaves_like_the_plain_tool(self) -> None:
+        sandbox = self._make_sandbox()
+        sandbox.execute.return_value = SandboxExecResult(success=True, stdout="hello", output=None)
+        manager = self._make_manager()
+        tools = create_coding_tools(sandbox, manager)
+        execute_python_code = next(t for t in tools if t.name == "execute_python_code")
+        result = await execute_python_code.ainvoke(
+            {"code": "print('hello')", "summary": "s", "communication": "c"}
+        )
+        assert "hello" in result
+        manager.submit_task.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_background_run_mode_returns_task_id_immediately(self) -> None:
+        sandbox = self._make_sandbox()
+        manager = self._make_manager()
+        task_id = uuid4()
+        manager.submit_task = AsyncMock(return_value=task_id)
+        tools = create_coding_tools(sandbox, manager)
+        execute_python_code = next(t for t in tools if t.name == "execute_python_code")
+
+        result = await execute_python_code.ainvoke(
+            {
+                "code": "x = 1",
+                "summary": "long job",
+                "communication": "c",
+                "run_mode": "background",
+            }
+        )
+
+        assert str(task_id) in result
+        assert "check_task" in result
+        assert "monitor_task" in result
+        sandbox.execute.assert_not_awaited()
+        manager.submit_task.assert_awaited_once()
+        _, kwargs = manager.submit_task.call_args
+        assert kwargs["summary"] == "long job"
+
+    @pytest.mark.asyncio
+    async def test_background_work_closure_executes_code_and_streams_activity(self) -> None:
+        sandbox = self._make_sandbox()
+        sandbox.execute.return_value = SandboxExecResult(success=True, stdout="42", output=None)
+        manager = self._make_manager()
+        submitted_work = {}
+
+        async def _capture_submit(work, summary):
+            submitted_work["work"] = work
+            return uuid4()
+
+        manager.submit_task = AsyncMock(side_effect=_capture_submit)
+        tools = create_coding_tools(sandbox, manager)
+        execute_python_code = next(t for t in tools if t.name == "execute_python_code")
+
+        await execute_python_code.ainvoke(
+            {
+                "code": "print(42)",
+                "summary": "s",
+                "communication": "c",
+                "run_mode": "background",
+            }
+        )
+
+        task_id = uuid4()
+        result = await submitted_work["work"](task_id)
+
+        assert "42" in result
+        sandbox.execute.assert_awaited_once()
+        call_args, call_kwargs = sandbox.execute.call_args
+        assert call_args[0] == "print(42)"
+        assert "on_stdout_line" in call_kwargs
+
+        # Exercise the on_stdout_line callback passed to sandbox.execute: it
+        # should forward straight to push_activity for this task_id.
+        await call_kwargs["on_stdout_line"]("42")
+        manager.push_activity.assert_awaited_once_with(task_id, "42")
 
 
 # ---------------------------------------------------------------------------

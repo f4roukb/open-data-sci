@@ -138,9 +138,12 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
             logger.warning("push_activity called with unknown task_id=%s", task_id)
             return
 
-        # Monitors scan the full, untruncated entry — truncation below is a
-        # storage bound on the persisted activity log, not a matching window,
-        # so a match past the truncation cutoff must never be missed.
+        if len(entry) > _MAX_ACTIVITY_ENTRY_LEN:
+            entry = entry[:_MAX_ACTIVITY_ENTRY_LEN] + "... (truncated)"
+
+        # Monitors scan the truncated entry, not the raw one — bounding regex
+        # execution time against a fixed-size string rather than however much
+        # a single tool call happened to output.
         for monitor_id, regex in list(self._monitors.get(task_id, {}).items()):
             matches = [m.group(0) for m in regex.finditer(entry)]
             if not matches:
@@ -158,8 +161,6 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
                 matched_texts=matches,
             )
 
-        if len(entry) > _MAX_ACTIVITY_ENTRY_LEN:
-            entry = entry[:_MAX_ACTIVITY_ENTRY_LEN] + "... (truncated)"
         record.activity.append(entry)
         if len(record.activity) > _MAX_ACTIVITY_ENTRIES:
             del record.activity[: len(record.activity) - _MAX_ACTIVITY_ENTRIES]

@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from opendatasci.sandbox.base import PAYLOAD_SENTINEL
+
 _RUNNER = str(Path(__file__).parents[3] / "opendatasci" / "sandbox" / "_runner.py")
 
 
@@ -33,14 +35,16 @@ def _run(code: str, state_path: str, workspace: str) -> dict:
         text=True,
         env=env,
     )
-    # The last non-empty line of stdout is the JSON payload.
-    for line in reversed(result.stdout.splitlines()):
-        line = line.strip()
-        if line:
-            return json.loads(line)
-    pytest.fail(
-        f"Runner produced no JSON payload.\nstdout: {result.stdout}\nstderr: {result.stderr}"
-    )
+    # The runner now tees progress prints straight to real stdout as they
+    # happen (see _runner.py's _TeeStdout), so the payload is no longer
+    # necessarily the only content on stdout -- find it by its sentinel
+    # prefix instead of assuming it's the last line.
+    idx = result.stdout.rfind(PAYLOAD_SENTINEL)
+    if idx == -1:
+        pytest.fail(
+            f"Runner produced no payload sentinel.\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+    return json.loads(result.stdout[idx + len(PAYLOAD_SENTINEL) :].strip())
 
 
 @pytest.fixture()

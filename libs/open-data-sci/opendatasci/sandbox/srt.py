@@ -493,6 +493,14 @@ class SRTSandbox(BaseSandbox):
                 limit=_STDOUT_STREAM_LIMIT,
                 **spawn_kwargs,
             )
+            # Never None: both stdout and stderr are always requested as PIPE
+            # above, so asyncio always attaches a StreamReader to each. Bound
+            # to locals (rather than narrowed via `assert proc.stdout is not
+            # None`) so the type-checker can see the non-None type inside the
+            # nested closure below, which it can't infer through `proc.stdout`.
+            assert proc.stdout is not None
+            assert proc.stderr is not None
+            proc_stdout, proc_stderr = proc.stdout, proc.stderr
             try:
                 # stdout is drained line-by-line (forwarding each line to
                 # on_stdout_line as it arrives, when given) while stderr is
@@ -506,8 +514,8 @@ class SRTSandbox(BaseSandbox):
                 # time bound stays exactly self._command_timeout as before.
                 async def _drain_and_wait() -> tuple[str, bytes]:
                     stdout_str, stderr_bytes = await asyncio.gather(
-                        self._drain_stdout(proc.stdout, on_stdout_line),
-                        proc.stderr.read(),
+                        self._drain_stdout(proc_stdout, on_stdout_line),
+                        proc_stderr.read(),
                     )
                     await proc.wait()
                     return stdout_str, stderr_bytes

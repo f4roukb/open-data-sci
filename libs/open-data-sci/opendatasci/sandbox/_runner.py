@@ -12,6 +12,7 @@ import pickle
 import sys
 import traceback
 from pathlib import Path
+from typing import TextIO
 
 try:
     import pandas as pd
@@ -42,7 +43,7 @@ class _TeeStdout(io.TextIOBase):
     harmless defaults instead of ``AttributeError``.
     """
 
-    def __init__(self, real_stdout) -> None:
+    def __init__(self, real_stdout: TextIO) -> None:
         self._real = real_stdout
         self._buffer = io.StringIO()
 

@@ -540,7 +540,7 @@ class TestActivityLog:
 
         record = await manager.get_task(task_id)
         assert record is not None
-        assert record.activity == ["tool: execute\nresult: 42"]
+        assert record.activity == ["<tool>execute</tool>\n<output>42</output>"]
 
     @pytest.mark.asyncio
     async def test_foreground_worker_tool_result_does_not_raise(self) -> None:

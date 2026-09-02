@@ -21,6 +21,17 @@ class BackgroundTaskStatus(StrEnum):
     CANCELLED = auto()
 
 
+class RunMode(StrEnum):
+    """Whether a tool that supports background execution waits for its result
+    (foreground) or schedules it against a :class:`BackgroundTaskManagerBase`
+    and returns immediately (background). Shared by every tool with this
+    choice (``task``, ``execute_python_code``) so they present one consistent
+    vocabulary to the model rather than each defining their own enum."""
+
+    FOREGROUND = auto()
+    BACKGROUND = auto()
+
+
 class BackgroundTaskUpdateKind(StrEnum):
     PROGRESS = auto()
     COMPLETED = auto()

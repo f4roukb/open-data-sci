@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 
 import opendatasci.sandbox as _sandbox_pkg
+from opendatasci.sandbox.base import PAYLOAD_SENTINEL
 
 RUNNER_PATH = Path(_sandbox_pkg.__file__).parent / "_runner.py"
 
@@ -53,7 +54,14 @@ def runner_env(tmp_path, monkeypatch):
         finally:
             os.chdir(old_cwd)
             sys.stdin = old_stdin
-        return json.loads(buf.getvalue())
+        # The runner now tees progress prints straight through as they
+        # happen (see _runner.py's _TeeStdout), so captured stdout is no
+        # longer necessarily just the JSON payload -- pull it out by its
+        # PAYLOAD_SENTINEL prefix instead of parsing the whole buffer.
+        stdout = buf.getvalue()
+        idx = stdout.rfind(PAYLOAD_SENTINEL)
+        assert idx != -1, f"Runner produced no payload sentinel.\nstdout: {stdout}"
+        return json.loads(stdout[idx + len(PAYLOAD_SENTINEL) :].strip())
 
     run.state_path = state_path  # type: ignore[attr-defined]
     run.workspace = workspace  # type: ignore[attr-defined]

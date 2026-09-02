@@ -5,6 +5,7 @@ import re
 import tomllib
 from pathlib import Path
 from typing import Any, ClassVar, Literal, override
+from uuid import UUID
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
@@ -14,6 +15,7 @@ from opendatasci.configs import OpenDataSciConfig
 from opendatasci.human_inputs.human_approval import HumanApprovalBaseManager
 from opendatasci.models.factory import create_model
 from opendatasci.sandbox.base import BaseSandbox, SandboxExecResult
+from opendatasci.tasks.base import BackgroundTaskManagerBase, RunMode
 from opendatasci.tools.base import OpenDataSciBaseTool
 
 PYPROJECT_TOML: Path = Path(__file__).parent.parent / "pyproject.toml"
@@ -66,6 +68,18 @@ def _format_exec_error(code: str, error: str) -> str:
     return "\n".join(parts)
 
 
+def _format_exec_result(code: str, exec_result: SandboxExecResult) -> str:
+    """Format a completed Python execution as the string returned to the agent."""
+    if exec_result.success:
+        parts = []
+        if exec_result.stdout:
+            parts.append(f"stdout:\n{exec_result.stdout}")
+        if exec_result.output is not None:
+            parts.append(f"result:\n{exec_result.output}")
+        return "\n".join(parts) if parts else "Code executed successfully (no output)"
+    return _format_exec_error(code, exec_result.error or "")
+
+
 def _format_cli_result(result: SandboxExecResult) -> str:
     """Format a TUI SandboxExecResult as a string for the agent."""
     if result.success:
@@ -102,8 +116,13 @@ class ListPythonLibsTool(OpenDataSciBaseTool):
         return ",".join(libs)
 
 
-class ExecutePythonCodeTool(OpenDataSciBaseTool):
-    """Execute Python code inside the active sandbox."""
+class ExecutePythonCodeForegroundOnlyTool(OpenDataSciBaseTool):
+    """Execute Python code inside the active sandbox, foreground only.
+
+    Used where there's no way to monitor a background run (worker agents have
+    no ``check_task``/``monitor_task`` tools) -- see ``ExecutePythonCodeTool``
+    for the background-capable variant given to the main agent.
+    """
 
     class CallArgs(BaseModel):
         code: str
@@ -125,8 +144,6 @@ Execute Python code in the active workspace environment.
 - Assign ``result = ...`` to return a value.
 - Any library can be imported; check ``list_python_libs`` first for non-standard ones.
 - Prefer vectorised operations over row-wise loops on large DataFrames.
-- For long-running code, print or log periodic progress rather than staying silent —
-  it can then be tracked with `monitor_task` when running in the background.
 
 # How NOT to use this tool
 - Don't retry the same failing code verbatim — address the structured error before retrying.
@@ -143,15 +160,98 @@ Args:
 
     @override
     async def _arun(self, code: str, summary: str, communication: str, **kwargs: Any) -> str:
-        exec_result = await self.sandbox.execute(code)
-        if exec_result.success:
-            parts = []
-            if exec_result.stdout:
-                parts.append(f"stdout:\n{exec_result.stdout}")
-            if exec_result.output is not None:
-                parts.append(f"result:\n{exec_result.output}")
-            return "\n".join(parts) if parts else "Code executed successfully (no output)"
-        return _format_exec_error(code, exec_result.error or "")
+        return _format_exec_result(code, await self.sandbox.execute(code))
+
+
+class ExecutePythonCodeTool(OpenDataSciBaseTool):
+    """Execute Python code inside the active sandbox, with an optional background run mode."""
+
+    class CallArgs(BaseModel):
+        code: str
+        summary: str
+        communication: str
+        run_mode: RunMode = RunMode.FOREGROUND
+
+    name: str = "execute_python_code"
+    description: str = """\
+Execute Python code in the active workspace environment.
+
+# Pre-bound variables
+- ``wb``: workspace data files.
+- ``sheets``: ``{"sheet_name": DataFrame, ...}``
+- ``text_files``: ``{"filename": content, ...}``
+- ``opendatasci_directory``: ``Path`` for saving output files to the workspace.
+- ``save_result(name, value)``: persist a named result for export.
+
+# How to use this tool
+- Assign ``result = ...`` to return a value.
+- Any library can be imported; check ``list_python_libs`` first for non-standard ones.
+- Prefer vectorised operations over row-wise loops on large DataFrames.
+- Assign a ``run_mode``:
+
+  # When to use "background"
+  - You don't need the result right away and can keep helping the user with
+    something else in the meantime.
+  - The code is expected to take a while (heavy training runs, large-scale
+    data processing, anything that would otherwise stall the conversation).
+  - Print or log periodic progress rather than staying silent — each line
+    is streamed into the task's activity log as it's printed, so a
+    `monitor_task` registered against it can catch a marker (e.g. "epoch 5
+    done", "ERROR") the moment it appears, not just once the whole run ends.
+
+  # When to use "foreground" (default)
+  - You need the result before you can proceed with anything else.
+  - The code is quick — scheduling overhead outweighs the benefit.
+
+  ``"background"`` schedules the code in the background and returns a task ID
+  immediately instead of blocking on completion. Rather than polling, register
+  a `monitor_task` for a pattern you expect to see (e.g. a completion marker
+  or error) to be notified the moment it shows up; use `check_task`/`list_tasks`
+  to inspect the run on demand, and `stop_task` to stop it.
+
+# How NOT to use this tool
+- Don't retry the same failing code verbatim — address the structured error before retrying.
+
+Args:
+    code:          Python code to execute.
+    summary:       3-4 word status label (e.g. "Calculating monthly totals").
+    communication: Brief message to the user about what you're doing
+                   (e.g. "Let me load the sales data and check for missing values.").
+    run_mode:      "foreground" to wait for and return the result; "background" to
+                   schedule it in the background and return its task ID immediately.
+                   Prefer "background" for long-running code.\
+"""
+    args_schema: type[BaseModel] = CallArgs
+
+    sandbox: BaseSandbox
+    background_task_manager: BackgroundTaskManagerBase
+
+    @override
+    async def _arun(
+        self,
+        code: str,
+        summary: str,
+        communication: str,
+        run_mode: RunMode = RunMode.FOREGROUND,
+        **kwargs: Any,
+    ) -> str:
+        if run_mode == RunMode.BACKGROUND:
+
+            async def _work(task_id: UUID) -> str:
+                async def _on_stdout_line(line: str) -> None:
+                    await self.background_task_manager.push_activity(task_id, line)
+
+                exec_result = await self.sandbox.execute(code, on_stdout_line=_on_stdout_line)
+                return _format_exec_result(code, exec_result)
+
+            task_id = await self.background_task_manager.submit_task(_work, summary=summary)
+            return (
+                f"Scheduled background task_id={task_id} — {summary}\n"
+                "Use `check_task`/`list_tasks` to monitor, `stop_task` to stop it, "
+                "or `monitor_task` to watch its activity log for a pattern."
+            )
+
+        return _format_exec_result(code, await self.sandbox.execute(code))
 
 
 class ExecuteCliCommandTool(OpenDataSciBaseTool):
@@ -387,9 +487,27 @@ Args:
         )
 
 
-def create_coding_tools(sandbox: BaseSandbox) -> list[BaseTool]:
-    """Return execution tools bound to *sandbox*: execute_python_code and list_python_libs."""
-    return [ExecutePythonCodeTool(sandbox=sandbox), ListPythonLibsTool()]
+def create_coding_tools(
+    sandbox: BaseSandbox,
+    background_task_manager: BackgroundTaskManagerBase | None = None,
+) -> list[BaseTool]:
+    """Return execution tools bound to *sandbox*: execute_python_code and list_python_libs.
+
+    When *background_task_manager* is provided (main agent only — background
+    tasks are only reachable via ``check_task``/``list_tasks``/``monitor_task``,
+    which worker agents don't have), ``execute_python_code`` exposes a
+    ``run_mode`` argument that schedules the code in the background instead of
+    blocking on it, mirroring the ``task`` tool's own background mode. Worker
+    agents omit it and get the plain, foreground-only tool — same pattern as
+    ``create_cli_tools``'s ``approval_manager``.
+    """
+    if background_task_manager is None:
+        execute_python_code: BaseTool = ExecutePythonCodeForegroundOnlyTool(sandbox=sandbox)
+    else:
+        execute_python_code = ExecutePythonCodeTool(
+            sandbox=sandbox, background_task_manager=background_task_manager
+        )
+    return [execute_python_code, ListPythonLibsTool()]
 
 
 def create_cli_tools(
