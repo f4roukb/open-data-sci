@@ -188,6 +188,18 @@ Args:
             if initial_skill is None:
                 logger.warning("Subtask %d: skill %r not found", idx, subtask.skill)
 
+        # asyncio only holds a weak reference to a scheduled task, so this set
+        # keeps each emit() background task alive until it finishes running.
+        pending_emit_tasks: set[asyncio.Task[None]] = set()
+
+        def _on_emit_task_done(background_task: asyncio.Task[None]) -> None:
+            pending_emit_tasks.discard(background_task)
+            if background_task.cancelled():
+                return
+            exc = background_task.exception()
+            if exc is not None:
+                logger.warning("Subtask %d: dropped task_event/activity update: %r", idx, exc)
+
         def emit(event_type: str, content: str, metadata: dict[str, Any] | None = None) -> None:
             async def _emit() -> None:
                 await adispatch_custom_event(
@@ -206,7 +218,9 @@ Args:
                         task_id, f"tool: {content}\nresult: {output}"
                     )
 
-            asyncio.get_running_loop().create_task(_emit())
+            background_task = asyncio.get_running_loop().create_task(_emit())
+            pending_emit_tasks.add(background_task)
+            background_task.add_done_callback(_on_emit_task_done)
 
         cancelled = False
         exc_info: BaseException | None = None

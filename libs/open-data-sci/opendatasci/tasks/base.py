@@ -71,11 +71,11 @@ class BackgroundTaskRecord(MutableStrictBaseModel):
 class BackgroundTaskUpdate(MutableStrictBaseModel):
     """One event pushed against a background task — a completion today, other kinds later.
 
-    Fields below the ``kind`` line are kind-specific: only ``summary``,
-    ``status``, ``result``, and ``error`` are populated for
-    :attr:`BackgroundTaskUpdateKind.COMPLETED` today. A future
-    :attr:`BackgroundTaskUpdateKind.PROGRESS` producer would populate its own
-    fields the same way, rather than reintroducing an untyped payload.
+    Fields below the ``kind`` line are kind-specific: ``status``, ``result``,
+    and ``error`` are populated for :attr:`BackgroundTaskUpdateKind.COMPLETED`;
+    ``monitor_id``, ``pattern``, and ``matched_text`` are populated for
+    :attr:`BackgroundTaskUpdateKind.PROGRESS` (a monitor's regex matching a
+    running task's activity — the only non-terminal update kind today).
     """
 
     update_id: UUID
@@ -85,18 +85,27 @@ class BackgroundTaskUpdate(MutableStrictBaseModel):
     status: BackgroundTaskStatus | None = None
     result: Any = None
     error: str | None = None
+    monitor_id: UUID | None = None
+    pattern: str | None = None
+    matched_text: str | None = None
     created_at: float = Field(default_factory=time.time)
 
     def to_message(self) -> TaskMessage:
         """Render this update as the content fed to the model, dispatching on kind."""
-        if self.kind != BackgroundTaskUpdateKind.COMPLETED:
-            raise ValueError(f"Unknown BackgroundTaskUpdateKind: {self.kind!r}")
-        if self.status == BackgroundTaskStatus.COMPLETED:
-            text = f"Background task '{self.summary}' finished:\n\n{self.result}"
-        elif self.status == BackgroundTaskStatus.FAILED:
-            text = f"Background task '{self.summary}' failed: {self.error}"
+        if self.kind == BackgroundTaskUpdateKind.PROGRESS:
+            text = (
+                f"Background task '{self.summary}': Monitor({self.monitor_id}) matched "
+                f"regex {self.pattern!r}:\n\n{self.matched_text}"
+            )
+        elif self.kind == BackgroundTaskUpdateKind.COMPLETED:
+            if self.status == BackgroundTaskStatus.COMPLETED:
+                text = f"Background task '{self.summary}' finished:\n\n{self.result}"
+            elif self.status == BackgroundTaskStatus.FAILED:
+                text = f"Background task '{self.summary}' failed: {self.error}"
+            else:
+                text = f"Background task '{self.summary}' was cancelled."
         else:
-            text = f"Background task '{self.summary}' was cancelled."
+            raise ValueError(f"Unknown BackgroundTaskUpdateKind: {self.kind!r}")
         return TaskMessage(
             content=to_text_content_blocks(text),
             created_at=datetime.fromtimestamp(self.created_at, tz=timezone.utc),
@@ -183,6 +192,9 @@ class BackgroundTaskManagerBase(ABC):
         status: BackgroundTaskStatus | None = None,
         result: Any = None,
         error: str | None = None,
+        monitor_id: UUID | None = None,
+        pattern: str | None = None,
+        matched_text: str | None = None,
     ) -> UUID:
         """Store a :class:`BackgroundTaskUpdate` against *task_id* and notify both delivery paths.
 
@@ -190,6 +202,50 @@ class BackgroundTaskManagerBase(ABC):
         path both :meth:`listen_task_updates` (the doorbell) and
         :meth:`pull_task_updates` (the content buffer) are fed from — a
         completion is one *kind* of update, not a separate mechanism.
+        """
+        ...
+
+    @abstractmethod
+    async def monitor_task(self, task_id: UUID, regex_patterns: list[str]) -> list[UUID]:
+        """Register one monitor per pattern in *regex_patterns* against *task_id*.
+
+        Each activity entry (see :meth:`push_activity`) is checked against
+        every monitor currently registered for its task; a match records a
+        :attr:`BackgroundTaskUpdateKind.PROGRESS` update via
+        :meth:`record_task_update` and identifies which monitor fired. Unlike
+        a one-shot watch, a monitor keeps firing on every subsequent matching
+        entry until removed via :meth:`stop_monitoring_task`.
+
+        Returns the new monitor IDs, one per pattern, in the same order as
+        *regex_patterns*. Each monitor gets its own ID — two monitors with
+        the same pattern (whether on the same task or different ones) never
+        share an ID. No-op (aside from logging), returning ``[]``, if
+        *task_id* is unknown. Raises ``re.error`` before registering anything
+        if any pattern in *regex_patterns* fails to compile.
+        """
+        ...
+
+    @abstractmethod
+    async def stop_monitoring_task(
+        self,
+        task_id: UUID | None = None,
+        monitor_ids: list[UUID] | None = None,
+    ) -> None:
+        """Remove monitors, by owning task or by explicit ID.
+
+        If *task_id* is given, every monitor registered against it is
+        removed. If *monitor_ids* is given, exactly those monitors are
+        removed, regardless of which task(s) they belong to. Removing an
+        unknown *task_id* or an unknown monitor ID is a no-op for that
+        entry — this method never raises for unknown IDs.
+        """
+        ...
+
+    @abstractmethod
+    async def list_task_monitors(self, task_id: UUID) -> dict[UUID, str]:
+        """Return ``{monitor_id: pattern}`` for every monitor currently active on *task_id*.
+
+        Empty if *task_id* is unknown or has no active monitors.
         """
         ...
 

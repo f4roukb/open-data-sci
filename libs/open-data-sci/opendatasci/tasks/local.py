@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Any, AsyncIterator, Awaitable, Callable
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 _MAX_RECORDS = 128
 _MAX_ACTIVITY_ENTRIES = 200
+_MAX_ACTIVITY_ENTRY_LEN = 32768
 
 
 class BackgroundTaskManager(BackgroundTaskManagerBase):
@@ -40,6 +42,8 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
         self._updates_by_id: dict[UUID, BackgroundTaskUpdate] = {}
         self._unpulled_update_ids: list[UUID] = []
         self._update_event_queue: asyncio.Queue[BackgroundTaskUpdateEvent] = asyncio.Queue()
+        self._monitors: dict[UUID, dict[UUID, re.Pattern[str]]] = {}
+        self._monitor_task_ids: dict[UUID, UUID] = {}
 
     async def submit_task(self, work: Callable[[UUID], Awaitable[Any]], summary: str) -> UUID:
         task_id = uuid4()
@@ -90,6 +94,7 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
                 )
             finally:
                 self._tasks.pop(task_id, None)
+                self._remove_monitors_for_task(task_id)
 
         self._tasks[task_id] = asyncio.create_task(_run())
         return task_id
@@ -149,10 +154,68 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
         if record is None:
             logger.warning("push_activity called with unknown task_id=%s", task_id)
             return
+        if len(entry) > _MAX_ACTIVITY_ENTRY_LEN:
+            entry = entry[:_MAX_ACTIVITY_ENTRY_LEN] + "... (truncated)"
         record.activity.append(entry)
         if len(record.activity) > _MAX_ACTIVITY_ENTRIES:
             del record.activity[: len(record.activity) - _MAX_ACTIVITY_ENTRIES]
         await self.upsert_record(record)
+
+        # Only this newly-appended entry is scanned — never the task's prior
+        # activity — so a monitor never re-matches text it has already seen.
+        for monitor_id, regex in list(self._monitors.get(task_id, {}).items()):
+            for match in regex.finditer(entry):
+                await self.record_task_update(
+                    task_id,
+                    BackgroundTaskUpdateKind.PROGRESS,
+                    summary=record.summary,
+                    monitor_id=monitor_id,
+                    pattern=regex.pattern,
+                    matched_text=match.group(0),
+                )
+
+    async def monitor_task(self, task_id: UUID, regex_patterns: list[str]) -> list[UUID]:
+        if task_id not in self._records:
+            logger.warning("monitor_task called with unknown task_id=%s", task_id)
+            return []
+        compiled = [re.compile(regex_pattern) for regex_pattern in regex_patterns]
+        task_monitors = self._monitors.setdefault(task_id, {})
+        monitor_ids: list[UUID] = []
+        for regex in compiled:
+            monitor_id = uuid4()
+            task_monitors[monitor_id] = regex
+            self._monitor_task_ids[monitor_id] = task_id
+            monitor_ids.append(monitor_id)
+        return monitor_ids
+
+    async def stop_monitoring_task(
+        self,
+        task_id: UUID | None = None,
+        monitor_ids: list[UUID] | None = None,
+    ) -> None:
+        if task_id is not None:
+            self._remove_monitors_for_task(task_id)
+        if monitor_ids is not None:
+            for monitor_id in monitor_ids:
+                owning_task_id = self._monitor_task_ids.pop(monitor_id, None)
+                if owning_task_id is None:
+                    continue
+                task_monitors = self._monitors.get(owning_task_id)
+                if task_monitors is None:
+                    continue
+                task_monitors.pop(monitor_id, None)
+                if not task_monitors:
+                    del self._monitors[owning_task_id]
+
+    async def list_task_monitors(self, task_id: UUID) -> dict[UUID, str]:
+        return {
+            monitor_id: regex.pattern
+            for monitor_id, regex in self._monitors.get(task_id, {}).items()
+        }
+
+    def _remove_monitors_for_task(self, task_id: UUID) -> None:
+        for monitor_id in self._monitors.pop(task_id, {}):
+            self._monitor_task_ids.pop(monitor_id, None)
 
     async def record_task_update(
         self,
@@ -162,6 +225,9 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
         status: BackgroundTaskStatus | None = None,
         result: Any = None,
         error: str | None = None,
+        monitor_id: UUID | None = None,
+        pattern: str | None = None,
+        matched_text: str | None = None,
     ) -> UUID:
         update_id = uuid4()
         new_update = BackgroundTaskUpdate(
@@ -172,6 +238,9 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
             status=status,
             result=result,
             error=error,
+            monitor_id=monitor_id,
+            pattern=pattern,
+            matched_text=matched_text,
         )
         self._updates_by_id[update_id] = new_update
         self._unpulled_update_ids.append(update_id)
