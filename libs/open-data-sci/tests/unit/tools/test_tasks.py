@@ -10,12 +10,15 @@ import pytest
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory
 from opendatasci.skills.base import BaseSkillStore
-from opendatasci.tasks.base import BackgroundTaskProgressReport, BackgroundTaskProgressUpdate
+from opendatasci.tasks.base import (
+    BackgroundTaskRecord,
+    BackgroundTaskStatus,
+)
 from opendatasci.tasks.local import BackgroundTaskManager
 from opendatasci.tools.tasks import (
     CheckTaskTool,
     ListTasksTool,
-    ReportProgressTool,
+    MonitorTaskTool,
     StopTaskTool,
     TaskTool,
     create_task_management_tools,
@@ -32,7 +35,12 @@ class TestCreateTaskManagementTools:
     def test_returns_check_list_and_cancel_tools(self) -> None:
         tools = create_task_management_tools(BackgroundTaskManager())
         names = {t.name for t in tools}
-        assert names == {"check_task", "list_tasks", "stop_task"}
+        assert names == {
+            "check_task",
+            "list_tasks",
+            "stop_task",
+            "monitor_task",
+        }
 
 
 class TestCheckTaskTool:
@@ -76,8 +84,10 @@ class TestCheckTaskTool:
         assert payload["status"] == "failed"
         assert payload["error"] == "boom"
 
+        await manager.cancel_task(task_id)
+
     @pytest.mark.asyncio
-    async def test_includes_progress_reports(self) -> None:
+    async def test_includes_activity_log(self) -> None:
         manager = BackgroundTaskManager()
 
         async def _work(task_id: object) -> str:
@@ -85,28 +95,49 @@ class TestCheckTaskTool:
             return "never"
 
         task_id = await manager.submit_task(_work, summary="s")
-        record = await manager.get_task(task_id)
-        record.progress.append(
-            BackgroundTaskProgressReport(
-                progress_update=BackgroundTaskProgressUpdate(done="a", ongoing="b", blockers="c"),
-                eta_seconds=15.0,
-            ),
-        )
+        await manager.push_activity(task_id, "tool: execute\nresult: 42")
 
         tool = CheckTaskTool(background_task_manager=manager)
         result = await tool.ainvoke({"task_id": str(task_id)})
         payload = json.loads(result)
-        assert payload["progress"] == [
-            {
-                "done": "a",
-                "ongoing": "b",
-                "blockers": "c",
-                "eta_seconds": 15.0,
-                "reported_at": payload["progress"][0]["reported_at"],
-            }
-        ]
+        assert payload["activity"] == ["tool: execute\nresult: 42"]
 
         await manager.cancel_task(task_id)
+
+    @pytest.mark.asyncio
+    async def test_includes_monitoring_logs(self) -> None:
+        manager = BackgroundTaskManager()
+
+        async def _work(task_id: object) -> str:
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        (monitor_id,) = await manager.monitor_task(task_id, [r"error: \d+"])
+
+        tool = CheckTaskTool(background_task_manager=manager)
+        result = await tool.ainvoke({"task_id": str(task_id)})
+        payload = json.loads(result)
+        assert payload["monitors"] == (
+            f"Monitoring logs:\n- Monitor({monitor_id}) Matches regex: error: \\d+\n"
+        )
+
+        await manager.cancel_task(task_id)
+
+    @pytest.mark.asyncio
+    async def test_monitoring_logs_present_with_no_active_monitors(self) -> None:
+        manager = BackgroundTaskManager()
+
+        async def _work(task_id: object) -> str:
+            return "done"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await asyncio.sleep(0)
+
+        tool = CheckTaskTool(background_task_manager=manager)
+        result = await tool.ainvoke({"task_id": str(task_id)})
+        payload = json.loads(result)
+        assert payload["monitors"] == "Monitoring logs:\n"
 
 
 class TestListTasksTool:
@@ -152,6 +183,50 @@ class TestListTasksTool:
         result = await tool.ainvoke({})
         assert "no background tasks" in result.lower()
 
+    @pytest.mark.asyncio
+    async def test_show_monitors_false_by_default_omits_monitors(self) -> None:
+        manager = BackgroundTaskManager()
+        started = asyncio.Event()
+
+        async def _work(task_id: object) -> str:
+            started.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await asyncio.wait_for(started.wait(), timeout=1)
+        await manager.monitor_task(task_id, ["pattern"])
+
+        tool = ListTasksTool(background_task_manager=manager)
+        result = await tool.ainvoke({})
+        entries = json.loads(result)
+        assert "monitors" not in entries[0]
+
+        await manager.cancel_task(task_id)
+
+    @pytest.mark.asyncio
+    async def test_show_monitors_true_includes_monitoring_logs(self) -> None:
+        manager = BackgroundTaskManager()
+        started = asyncio.Event()
+
+        async def _work(task_id: object) -> str:
+            started.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await asyncio.wait_for(started.wait(), timeout=1)
+        (monitor_id,) = await manager.monitor_task(task_id, ["pattern"])
+
+        tool = ListTasksTool(background_task_manager=manager)
+        result = await tool.ainvoke({"show_monitors": True})
+        entries = json.loads(result)
+        assert entries[0]["monitors"] == (
+            f"Monitoring logs:\n- Monitor({monitor_id}) Matches regex: pattern\n"
+        )
+
+        await manager.cancel_task(task_id)
+
 
 class TestStopTaskTool:
     @pytest.mark.asyncio
@@ -177,6 +252,78 @@ class TestStopTaskTool:
         result = await tool.ainvoke({"task_id": str(task_id)})
         assert "stop requested" in result.lower()
         assert str(task_id) in result
+
+
+class TestMonitorTaskTool:
+    @pytest.mark.asyncio
+    async def test_unknown_task_id(self) -> None:
+        tool = MonitorTaskTool(background_task_manager=BackgroundTaskManager())
+        unknown_id = uuid4()
+        result = await tool.ainvoke({"task_id": str(unknown_id), "regex_patterns": ["a"]})
+        assert "no background task found" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_registers_monitors_and_reports_their_ids(self) -> None:
+        manager = BackgroundTaskManager()
+        started = asyncio.Event()
+
+        async def _work(task_id: object) -> str:
+            started.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        tool = MonitorTaskTool(background_task_manager=manager)
+        result = await tool.ainvoke({"task_id": str(task_id), "regex_patterns": ["a", "b"]})
+        monitors = await manager.list_task_monitors(task_id)
+        assert set(monitors.values()) == {"a", "b"}
+        for monitor_id in monitors:
+            assert str(monitor_id) in result
+
+        await manager.cancel_task(task_id)
+
+    @pytest.mark.asyncio
+    async def test_invalid_pattern_returns_error_string_not_raised(self) -> None:
+        manager = BackgroundTaskManager()
+        started = asyncio.Event()
+
+        async def _work(task_id: object) -> str:
+            started.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        tool = MonitorTaskTool(background_task_manager=manager)
+        result = await tool.ainvoke({"task_id": str(task_id), "regex_patterns": ["(unclosed"]})
+        assert "invalid regex" in result.lower()
+        assert await manager.list_task_monitors(task_id) == {}
+
+        await manager.cancel_task(task_id)
+
+    @pytest.mark.asyncio
+    async def test_registering_the_same_pattern_twice_does_not_duplicate(self) -> None:
+        manager = BackgroundTaskManager()
+        started = asyncio.Event()
+
+        async def _work(task_id: object) -> str:
+            started.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        tool = MonitorTaskTool(background_task_manager=manager)
+        await tool.ainvoke({"task_id": str(task_id), "regex_patterns": ["a"]})
+        await tool.ainvoke({"task_id": str(task_id), "regex_patterns": ["a"]})
+
+        assert len(await manager.list_task_monitors(task_id)) == 1
+
+        await manager.cancel_task(task_id)
 
 
 # ---------------------------------------------------------------------------
@@ -340,56 +487,84 @@ class TestRunOne:
         assert "nonexistent" in caplog.text
 
     @pytest.mark.asyncio
-    async def test_report_progress_tool_added_in_background_mode(self) -> None:
+    async def test_worker_toolset_same_in_background_and_foreground_mode(self) -> None:
+        # report_progress used to be bound only in background mode; now that
+        # it's retired (monitoring moved to the scheduling agent's
+        # monitor_task tool), a worker's toolset shouldn't depend on task_id.
         tool = _make_tool()
         with patch(_AGENT_PATCH) as MockAgent:
             MockAgent.return_value.ainvoke = AsyncMock(return_value="ok")
             await tool._arun_one(
                 0, TaskTool.TaskDetails(subtask="x", summary="y"), uuid4(), MagicMock()
             )
-        _, kwargs = MockAgent.call_args
-        assert "report_progress" in {t.name for t in kwargs["tools"]}
+        _, background_kwargs = MockAgent.call_args
+        background_tool_names = {t.name for t in background_kwargs["tools"]}
 
-    @pytest.mark.asyncio
-    async def test_report_progress_tool_absent_in_foreground_mode(self) -> None:
-        tool = _make_tool()
         with patch(_AGENT_PATCH) as MockAgent:
             MockAgent.return_value.ainvoke = AsyncMock(return_value="ok")
             await tool._arun_one(
                 0, TaskTool.TaskDetails(subtask="x", summary="y"), None, MagicMock()
             )
-        _, kwargs = MockAgent.call_args
-        assert "report_progress" not in {t.name for t in kwargs["tools"]}
+        _, foreground_kwargs = MockAgent.call_args
+        foreground_tool_names = {t.name for t in foreground_kwargs["tools"]}
+
+        assert background_tool_names == foreground_tool_names
 
 
-class TestReportProgressTool:
+class TestActivityLog:
     @pytest.mark.asyncio
-    async def test_pushes_progress_to_manager(self) -> None:
+    async def test_background_worker_tool_result_appends_activity(self) -> None:
         manager = BackgroundTaskManager()
-        started = asyncio.Event()
-
-        async def _work(task_id: object) -> str:
-            started.set()
-            await asyncio.sleep(10)
-            return "never"
-
-        task_id = await manager.submit_task(_work, summary="s")
-        await asyncio.wait_for(started.wait(), timeout=1)
-
-        tool = ReportProgressTool(task_id=task_id, background_task_manager=manager)
-        result = await tool.ainvoke(
-            {"done": "a", "ongoing": "b", "blockers": "c", "eta_seconds": 3.0}
+        task_id = uuid4()
+        await manager.upsert_record(
+            BackgroundTaskRecord(task_id=task_id, summary="s", status=BackgroundTaskStatus.RUNNING)
         )
+        tool = _make_tool(background_task_manager=manager)
 
-        assert "recorded" in result.lower()
+        async def _fake_ainvoke(task, system_prompt, on_event=None, **kwargs):
+            on_event("task_tool_result", "execute", {"success": True, "output": "42"})
+            return "done"
+
+        async def _noop_dispatch(*args, **kwargs) -> None:
+            return None
+
+        with (
+            patch(_AGENT_PATCH) as MockAgent,
+            patch("opendatasci.tools.tasks.adispatch_custom_event", _noop_dispatch),
+        ):
+            MockAgent.return_value.ainvoke = _fake_ainvoke
+            await tool._arun_one(
+                0, TaskTool.TaskDetails(subtask="x", summary="y"), task_id, MagicMock()
+            )
+            await _drain_emit_tasks()
+
         record = await manager.get_task(task_id)
         assert record is not None
-        assert record.progress[-1].progress_update.done == "a"
-        assert record.progress[-1].progress_update.ongoing == "b"
-        assert record.progress[-1].progress_update.blockers == "c"
-        assert record.progress[-1].eta_seconds == 3.0
+        assert record.activity == ["tool: execute\nresult: 42"]
 
-        await manager.cancel_task(task_id)
+    @pytest.mark.asyncio
+    async def test_foreground_worker_tool_result_does_not_raise(self) -> None:
+        manager = BackgroundTaskManager()
+        tool = _make_tool(background_task_manager=manager)
+
+        async def _fake_ainvoke(task, system_prompt, on_event=None, **kwargs):
+            on_event("task_tool_result", "execute", {"success": True, "output": "42"})
+            return "done"
+
+        async def _noop_dispatch(*args, **kwargs) -> None:
+            return None
+
+        with (
+            patch(_AGENT_PATCH) as MockAgent,
+            patch("opendatasci.tools.tasks.adispatch_custom_event", _noop_dispatch),
+        ):
+            MockAgent.return_value.ainvoke = _fake_ainvoke
+            await tool._arun_one(
+                0, TaskTool.TaskDetails(subtask="x", summary="y"), None, MagicMock()
+            )
+            await _drain_emit_tasks()
+
+        assert await manager.list_tasks() == []
 
 
 class TestTaskTool:

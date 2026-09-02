@@ -487,11 +487,7 @@ class CLIController:
             if not running:
                 self._ui.set_background_tasks("")
                 continue
-            parts = []
-            for record in running:
-                latest = record.progress[-1].progress_update.ongoing if record.progress else ""
-                parts.append(f"{record.summary} — {latest}" if latest else record.summary)
-            self._ui.set_background_tasks("; ".join(parts))
+            self._ui.set_background_tasks("; ".join(r.summary for r in running))
 
     def _drain_pending_batch(self) -> list[Invocation]:
         """Drain every queued user message, surface each in the UI, and return the batch.

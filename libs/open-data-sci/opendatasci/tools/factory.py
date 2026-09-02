@@ -48,7 +48,7 @@ class ToolName(StrEnum):
     CHECK_TASK = auto()
     LIST_TASKS = auto()
     STOP_TASK = auto()
-    REPORT_PROGRESS = auto()
+    MONITOR_TASK = auto()
     READ_DATASET_INFO = auto()
     UPDATE_DATASET_INFO = auto()
     PROFILE_DATASET = auto()

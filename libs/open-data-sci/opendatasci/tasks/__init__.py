@@ -1,7 +1,5 @@
 from opendatasci.tasks.base import (
     BackgroundTaskManagerBase,
-    BackgroundTaskProgressReport,
-    BackgroundTaskProgressUpdate,
     BackgroundTaskRecord,
     BackgroundTaskStatus,
 )
@@ -11,7 +9,5 @@ __all__ = [
     "BackgroundTaskManagerBase",
     "BackgroundTaskRecord",
     "BackgroundTaskStatus",
-    "BackgroundTaskProgressReport",
-    "BackgroundTaskProgressUpdate",
     "BackgroundTaskManager",
 ]

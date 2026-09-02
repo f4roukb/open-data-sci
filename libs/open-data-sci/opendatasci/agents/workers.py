@@ -127,7 +127,9 @@ class WorkerAgent:
                     else:
                         content = ""
                     is_error = isinstance(content, str) and content.startswith("Error")
-                    on_event("task_tool_result", tool_name, {"success": not is_error})
+                    on_event(
+                        "task_tool_result", tool_name, {"success": not is_error, "output": content}
+                    )
                 elif kind == "on_chain_end" and event.get("name") == "LangGraph":
                     final_state = event["data"].get("output")
         else:

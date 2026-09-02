@@ -1,10 +1,11 @@
 """Task tools: spawn worker subtasks (``task``) and manage background tasks
-(``check_task``, ``list_tasks``, ``stop_task``).
+(``check_task``, ``list_tasks``, ``stop_task``, ``monitor_task``).
 """
 
 import asyncio
 import json
 import logging
+import re
 from datetime import datetime
 from enum import StrEnum, auto
 from pathlib import Path
@@ -24,7 +25,6 @@ from opendatasci.sandbox.base import BaseSandboxFactory
 from opendatasci.skills import BaseSkillStore
 from opendatasci.tasks.base import (
     BackgroundTaskManagerBase,
-    BackgroundTaskProgressUpdate,
     BackgroundTaskRecord,
     BackgroundTaskStatus,
 )
@@ -41,59 +41,6 @@ class RunMode(StrEnum):
 
     FOREGROUND = auto()
     BACKGROUND = auto()
-
-
-class ReportProgressTool(OpenDataSciBaseTool):
-    """Report progress on the background task this worker is running under.
-
-    Bound with a fixed ``task_id`` at construction time — only handed to a
-    worker running in the background (``run_mode="background"``), since a
-    foreground worker has no task record to report against.
-    """
-
-    class CallArgs(BaseModel):
-        done: str
-        """What has been completed so far."""
-        ongoing: str
-        """What is currently being worked on."""
-        blockers: str
-        """Anything blocking progress, or an empty string if none."""
-        eta_seconds: float | None = None
-        """Estimated seconds remaining, if it can be reasonably guessed."""
-
-    name: str = "report_progress"
-    description: str = """
-Report progress on the background task you are currently running as. Call this
-periodically on long-running work so whoever scheduled you can see what's done,
-what's ongoing, and what's blocking further progress without waiting for you to finish.
-
-Args:
-    done:        What has been completed so far.
-    ongoing:     What you are currently working on.
-    blockers:    Anything blocking progress, or an empty string if none.
-    eta_seconds: Estimated seconds remaining, if it can be reasonably guessed.
-""".strip()
-
-    args_schema: type[BaseModel] = CallArgs
-
-    task_id: UUID
-    background_task_manager: BackgroundTaskManagerBase
-
-    @override
-    async def _arun(
-        self,
-        done: str,
-        ongoing: str,
-        blockers: str,
-        eta_seconds: float | None = None,
-        **kwargs: Any,
-    ) -> str:
-        await self.background_task_manager.push_task_progress(
-            self.task_id,
-            BackgroundTaskProgressUpdate(done=done, ongoing=ongoing, blockers=blockers),
-            eta_seconds=eta_seconds,
-        )
-        return "Progress recorded."
 
 
 class TaskTool(OpenDataSciBaseTool):
@@ -150,8 +97,10 @@ other subtasks. Each subtask runs to completion independently before results are
   - The subtask is quick — scheduling overhead outweighs the benefit.
 
   ``"background"`` schedules each subtask in the background and returns immediately
-  with one task ID per subtask instead of blocking on completion. Check on scheduled
-  work with `check_task`/`list_tasks`, stop it with `stop_task`.
+  with one task ID per subtask instead of blocking on completion. Rather than polling,
+  register a `monitor_task` for a pattern you expect to see (e.g. a completion marker
+  or error) to be notified the moment it shows up; use `check_task`/`list_tasks` to
+  inspect a task on demand, and `stop_task` to stop one.
 
 Args:
     subtasks:      1-3 subtask descriptors (see TaskDetails fields).
@@ -188,18 +137,39 @@ Args:
             if initial_skill is None:
                 logger.warning("Subtask %d: skill %r not found", idx, subtask.skill)
 
+        # asyncio only holds a weak reference to a scheduled task, so this set
+        # keeps each emit() background task alive until it finishes running.
+        pending_emit_tasks: set[asyncio.Task[None]] = set()
+
+        def _on_emit_task_done(background_task: asyncio.Task[None]) -> None:
+            pending_emit_tasks.discard(background_task)
+            if background_task.cancelled():
+                return
+            exc = background_task.exception()
+            if exc is not None:
+                logger.warning("Subtask %d: dropped task_event/activity update: %r", idx, exc)
+
         def emit(event_type: str, content: str, metadata: dict[str, Any] | None = None) -> None:
-            coro = adispatch_custom_event(
-                "task_event",
-                {
-                    "task_idx": idx,
-                    "event_type": event_type,
-                    "content": content,
-                    **(metadata or {}),
-                },
-                config=outer_config,
-            )
-            asyncio.get_running_loop().create_task(coro)
+            async def _emit() -> None:
+                await adispatch_custom_event(
+                    "task_event",
+                    {
+                        "task_idx": idx,
+                        "event_type": event_type,
+                        "content": content,
+                        **(metadata or {}),
+                    },
+                    config=outer_config,
+                )
+                if task_id is not None and event_type == "task_tool_result":
+                    output = (metadata or {}).get("output", "")
+                    await self.background_task_manager.push_activity(
+                        task_id, f"tool: {content}\nresult: {output}"
+                    )
+
+            background_task = asyncio.get_running_loop().create_task(_emit())
+            pending_emit_tasks.add(background_task)
+            background_task.add_done_callback(_on_emit_task_done)
 
         cancelled = False
         exc_info: BaseException | None = None
@@ -212,12 +182,6 @@ Args:
                 *create_cli_tools(worker_sandbox),
                 *create_skill_tools(self.skill_store),
             ]
-            if task_id is not None:
-                tools.append(
-                    ReportProgressTool(
-                        task_id=task_id, background_task_manager=self.background_task_manager
-                    )
-                )
 
             agent = WorkerAgent(tools=tools, config=self.datasci_config)
             emit("task_started", subtask.summary)
@@ -359,22 +323,23 @@ def _record_to_dict(record: BackgroundTaskRecord) -> dict[str, Any]:
         "status": record.status.value,
         "created_at": _isoformat(record.created_at),
         "finished_at": _isoformat(record.finished_at),
-        "progress": [
-            {
-                "done": report.progress_update.done,
-                "ongoing": report.progress_update.ongoing,
-                "blockers": report.progress_update.blockers,
-                "eta_seconds": report.eta_seconds,
-                "reported_at": _isoformat(report.reported_at),
-            }
-            for report in record.progress
-        ],
+        "activity": record.activity,
     }
     if record.status == BackgroundTaskStatus.COMPLETED:
         data["result"] = record.result
     elif record.status == BackgroundTaskStatus.FAILED:
         data["error"] = record.error
     return data
+
+
+def _format_monitoring_logs(monitors: dict[UUID, str]) -> str:
+    """Render a task's active monitors as one "Monitoring logs:" text block."""
+    lines = ["Monitoring logs:"]
+    lines.extend(
+        f"- Monitor({monitor_id}) Matches regex: {pattern}"
+        for monitor_id, pattern in monitors.items()
+    )
+    return "\n".join(lines) + "\n"
 
 
 class CheckTaskTool(OpenDataSciBaseTool):
@@ -386,8 +351,9 @@ class CheckTaskTool(OpenDataSciBaseTool):
     name: str = "check_task"
     description: str = """
 Check the status of a background task previously scheduled via the `task` tool with
-`run_mode="background"`. Returns the task's summary, status, timestamps, and any
-progress reported by the worker, plus its result or error once it reaches a terminal state.
+`run_mode="background"`. Returns the task's summary, status, timestamps, its activity
+log, and its active monitors (see `monitor_task`), plus its result or error once it
+reaches a terminal state.
 
 Args:
     task_id: The task ID returned when the background task was scheduled.
@@ -402,7 +368,10 @@ Args:
         record = await self.background_task_manager.get_task(task_id)
         if record is None:
             return f"No background task found with task_id={task_id}."
-        return json.dumps(_record_to_dict(record), indent=2, default=str)
+        data = _record_to_dict(record)
+        monitors = await self.background_task_manager.list_task_monitors(task_id)
+        data["monitors"] = _format_monitoring_logs(monitors)
+        return json.dumps(data, indent=2, default=str)
 
 
 class ListTasksTool(OpenDataSciBaseTool):
@@ -412,15 +381,18 @@ class ListTasksTool(OpenDataSciBaseTool):
         status_in: set[BackgroundTaskStatus] = Field(
             default_factory=lambda: {BackgroundTaskStatus.RUNNING}
         )
+        show_monitors: bool = False
 
     name: str = "list_tasks"
     description: str = """
 List background tasks previously scheduled via the `task` tool with `run_mode="background"`,
-filtered by status. Returns a table of task_id, summary, status, and start time.
+filtered by status. Returns task_id, summary, status, and start time for each.
 
 Args:
-    status_in: Set of statuses to include (e.g. {"running"}, {"completed", "failed"}).
-               Defaults to {"running"} — currently active background tasks.
+    status_in:         Set of statuses to include (e.g. {"running"}, {"completed", "failed"}).
+                        Defaults to {"running"} — currently active background tasks.
+    show_monitors:     Add each task's active monitors (see `monitor_task`) to its entry.
+                        Defaults to False.
 """.strip()
 
     args_schema: type[BaseModel] = CallArgs
@@ -428,7 +400,12 @@ Args:
     background_task_manager: BackgroundTaskManagerBase
 
     @override
-    async def _arun(self, status_in: set[BackgroundTaskStatus] | None = None, **kwargs: Any) -> str:
+    async def _arun(
+        self,
+        status_in: set[BackgroundTaskStatus] | None = None,
+        show_monitors: bool = False,
+        **kwargs: Any,
+    ) -> str:
         status_in = status_in or {BackgroundTaskStatus.RUNNING}
         records = [
             r for r in await self.background_task_manager.list_tasks() if r.status in status_in
@@ -436,13 +413,19 @@ Args:
         if not records:
             return "No background tasks match the given status filter."
 
-        header = "| task_id | summary | status | started_at |"
-        separator = "|---|---|---|---|"
-        rows = [
-            f"| {r.task_id} | {r.summary} | {r.status.value} | {_isoformat(r.created_at)} |"
-            for r in records
-        ]
-        return "\n".join([header, separator, *rows])
+        entries = []
+        for r in records:
+            entry: dict[str, Any] = {
+                "task_id": str(r.task_id),
+                "summary": r.summary,
+                "status": r.status.value,
+                "started_at": _isoformat(r.created_at),
+            }
+            if show_monitors:
+                monitors = await self.background_task_manager.list_task_monitors(r.task_id)
+                entry["monitors"] = _format_monitoring_logs(monitors)
+            entries.append(entry)
+        return json.dumps(entries, indent=2, default=str)
 
 
 class StopTaskTool(OpenDataSciBaseTool):
@@ -474,10 +457,53 @@ Args:
         return f"Stop requested for task_id={task_id}."
 
 
+class MonitorTaskTool(OpenDataSciBaseTool):
+    """Register regex monitors against a background task's activity log."""
+
+    class CallArgs(BaseModel):
+        task_id: UUID
+        regex_patterns: Annotated[list[str], MinLen(1)]
+
+    name: str = "monitor_task"
+    description: str = """
+Register one or more regex monitors against the activity log of a background task previously
+scheduled via the `task` tool with `run_mode="background"`. Each monitor fires exactly once:
+the first activity entry that matches its pattern triggers an update and the monitor is then
+gone — call `monitor_task` again if you need to keep watching for that pattern. Use
+`check_task`/`list_tasks` to see which monitors are currently active and their IDs.
+
+Each registered pattern gets its own monitor ID, even if the same regex is reused across
+different tasks or across multiple calls on the same task.
+
+Args:
+    task_id:        The task ID returned when the background task was scheduled.
+    regex_patterns: One or more regexes to watch for in the task's activity log.
+""".strip()
+
+    args_schema: type[BaseModel] = CallArgs
+
+    background_task_manager: BackgroundTaskManagerBase
+
+    @override
+    async def _arun(self, task_id: UUID, regex_patterns: list[str], **kwargs: Any) -> str:
+        try:
+            monitor_ids = await self.background_task_manager.monitor_task(task_id, regex_patterns)
+        except re.error as exc:
+            return f"Invalid regex pattern: {exc}"
+        if not monitor_ids:
+            return f"No background task found with task_id={task_id}."
+        lines = [f"Registered {len(monitor_ids)} monitor(s) on task_id={task_id}:"]
+        lines.extend(
+            f"- Monitor({monitor_id}) Matches regex: {pattern}"
+            for monitor_id, pattern in zip(monitor_ids, regex_patterns)
+        )
+        return "\n".join(lines)
+
+
 def create_task_management_tools(
     background_task_manager: BackgroundTaskManagerBase,
 ) -> list[BaseTool]:
-    """Return the ``check_task``, ``list_tasks``, and ``stop_task`` tools.
+    """Return the ``check_task``, ``list_tasks``, ``stop_task``, and ``monitor_task`` tools.
 
     *background_task_manager* must be the same instance passed to :func:`create_task_tools`
     so these tools can see the background tasks scheduled by the ``task`` tool.
@@ -486,4 +512,5 @@ def create_task_management_tools(
         CheckTaskTool(background_task_manager=background_task_manager),
         ListTasksTool(background_task_manager=background_task_manager),
         StopTaskTool(background_task_manager=background_task_manager),
+        MonitorTaskTool(background_task_manager=background_task_manager),
     ]

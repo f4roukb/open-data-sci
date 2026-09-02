@@ -1,18 +1,23 @@
 """Unit tests for opendatasci.tasks.local.BackgroundTaskManager."""
 
 import asyncio
+import re
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
 from opendatasci.tasks.base import (
-    BackgroundTaskProgressUpdate,
     BackgroundTaskRecord,
     BackgroundTaskStatus,
     BackgroundTaskUpdateKind,
 )
-from opendatasci.tasks.local import _MAX_RECORDS, BackgroundTaskManager
+from opendatasci.tasks.local import (
+    _MAX_ACTIVITY_ENTRIES,
+    _MAX_ACTIVITY_ENTRY_LEN,
+    _MAX_RECORDS,
+    BackgroundTaskManager,
+)
 
 
 class TestSubmitAndStatus:
@@ -271,9 +276,9 @@ class TestUpsertRecord:
         assert await manager.get_task(task_ids[0]) is not None
 
 
-class TestPushTaskProgress:
+class TestPushActivity:
     @pytest.mark.asyncio
-    async def test_appends_progress_report(self) -> None:
+    async def test_appends_activity_entry(self) -> None:
         manager = BackgroundTaskManager()
         started = asyncio.Event()
 
@@ -285,28 +290,387 @@ class TestPushTaskProgress:
         task_id = await manager.submit_task(_work, summary="s")
         await asyncio.wait_for(started.wait(), timeout=1)
 
-        await manager.push_task_progress(
-            task_id,
-            BackgroundTaskProgressUpdate(done="a", ongoing="b", blockers=""),
-            eta_seconds=5.0,
-        )
+        await manager.push_activity(task_id, "tool: execute\nresult: ok")
         record = await manager.get_task(task_id)
         assert record is not None
-        assert len(record.progress) == 1
-        assert record.progress[0].progress_update.done == "a"
-        assert record.progress[0].progress_update.ongoing == "b"
-        assert record.progress[0].eta_seconds == 5.0
+        assert record.activity == ["tool: execute\nresult: ok"]
 
         await manager.cancel_task(task_id)
 
     @pytest.mark.asyncio
     async def test_unknown_task_id_is_a_noop(self) -> None:
         manager = BackgroundTaskManager()
-        await manager.push_task_progress(
-            "no-such-id", BackgroundTaskProgressUpdate(done="", ongoing="", blockers="")
-        )
+        await manager.push_activity("no-such-id", "entry")
         # No exception, and nothing to read back — the only observable
         # behavior is that this doesn't raise.
+
+    @pytest.mark.asyncio
+    async def test_caps_at_max_activity_entries(self) -> None:
+        manager = BackgroundTaskManager()
+        started = asyncio.Event()
+
+        async def _work(task_id: object) -> str:
+            started.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        for i in range(_MAX_ACTIVITY_ENTRIES + 5):
+            await manager.push_activity(task_id, f"entry {i}")
+
+        record = await manager.get_task(task_id)
+        assert record is not None
+        assert len(record.activity) == _MAX_ACTIVITY_ENTRIES
+        assert record.activity[0] == "entry 5"
+        assert record.activity[-1] == f"entry {_MAX_ACTIVITY_ENTRIES + 4}"
+
+        await manager.cancel_task(task_id)
+
+
+class TestMonitorTask:
+    @pytest.mark.asyncio
+    async def test_matching_activity_produces_a_progress_update(self) -> None:
+        manager = BackgroundTaskManager()
+        started = asyncio.Event()
+
+        async def _work(task_id: object) -> str:
+            started.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        (monitor_id,) = await manager.monitor_task(task_id, [r"error: \d+"])
+        await manager.push_activity(task_id, "tool: execute\nresult: error: 42")
+
+        updates = await manager.pull_task_updates()
+        assert len(updates) == 1
+        assert updates[0].task_id == task_id
+        assert updates[0].kind == BackgroundTaskUpdateKind.PROGRESS
+        assert updates[0].monitor_id == monitor_id
+        assert updates[0].pattern == r"error: \d+"
+        assert updates[0].matched_texts == ["error: 42"]
+
+        await manager.cancel_task(task_id)
+
+    @pytest.mark.asyncio
+    async def test_fires_once_then_is_removed(self) -> None:
+        manager = BackgroundTaskManager()
+        started = asyncio.Event()
+
+        async def _work(task_id: object) -> str:
+            started.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        await manager.monitor_task(task_id, ["boom"])
+        await manager.push_activity(task_id, "boom")
+        await manager.push_activity(task_id, "boom again")
+
+        updates = await manager.pull_task_updates()
+        assert len(updates) == 1
+        assert await manager.list_task_monitors(task_id) == {}
+
+        await manager.cancel_task(task_id)
+
+    @pytest.mark.asyncio
+    async def test_multiple_matches_in_one_entry_are_numbered_in_one_update(self) -> None:
+        manager = BackgroundTaskManager()
+        started = asyncio.Event()
+
+        async def _work(task_id: object) -> str:
+            started.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        await manager.monitor_task(task_id, [r"error: \d+"])
+        await manager.push_activity(task_id, "error: 1 then error: 2 then error: 3")
+
+        updates = await manager.pull_task_updates()
+        assert len(updates) == 1
+        assert updates[0].matched_texts == ["error: 1", "error: 2", "error: 3"]
+
+        await manager.cancel_task(task_id)
+
+    @pytest.mark.asyncio
+    async def test_does_not_rematch_earlier_activity_entries(self) -> None:
+        manager = BackgroundTaskManager()
+        started = asyncio.Event()
+
+        async def _work(task_id: object) -> str:
+            started.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        await manager.push_activity(task_id, "boom")
+        await manager.monitor_task(task_id, ["boom"])
+        await manager.push_activity(task_id, "quiet")
+
+        assert manager.has_task_updates() is False
+
+        await manager.cancel_task(task_id)
+
+    @pytest.mark.asyncio
+    async def test_multiple_patterns_registered_in_one_call_get_distinct_monitor_ids(
+        self,
+    ) -> None:
+        manager = BackgroundTaskManager()
+        started = asyncio.Event()
+
+        async def _work(task_id: object) -> str:
+            started.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        monitor_ids = await manager.monitor_task(task_id, ["a", "b"])
+        assert len(monitor_ids) == 2
+        assert len(set(monitor_ids)) == 2
+
+        await manager.cancel_task(task_id)
+
+    @pytest.mark.asyncio
+    async def test_same_pattern_on_different_tasks_gets_different_monitor_ids(self) -> None:
+        manager = BackgroundTaskManager()
+        started1 = asyncio.Event()
+
+        async def _hangs1(task_id: object) -> str:
+            started1.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id1 = await manager.submit_task(_hangs1, summary="one")
+        await asyncio.wait_for(started1.wait(), timeout=1)
+
+        started2 = asyncio.Event()
+
+        async def _hangs2(task_id: object) -> str:
+            started2.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id2 = await manager.submit_task(_hangs2, summary="two")
+        await asyncio.wait_for(started2.wait(), timeout=1)
+
+        (monitor_id1,) = await manager.monitor_task(task_id1, ["same"])
+        (monitor_id2,) = await manager.monitor_task(task_id2, ["same"])
+        assert monitor_id1 != monitor_id2
+
+        await manager.cancel_task(task_id1)
+        await manager.cancel_task(task_id2)
+
+    @pytest.mark.asyncio
+    async def test_matches_past_the_storage_truncation_cutoff(self) -> None:
+        # Storage-side truncation of long entries must never shrink what a
+        # monitor actually scans — a match placed past the truncation cutoff
+        # would otherwise be silently missed.
+        manager = BackgroundTaskManager()
+        started = asyncio.Event()
+
+        async def _work(task_id: object) -> str:
+            started.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        await manager.monitor_task(task_id, ["needle"])
+        entry = ("x" * (_MAX_ACTIVITY_ENTRY_LEN + 10)) + "needle"
+        await manager.push_activity(task_id, entry)
+
+        updates = await manager.pull_task_updates()
+        assert updates[0].matched_texts == ["needle"]
+
+        record = await manager.get_task(task_id)
+        assert record is not None
+        assert record.activity[0].endswith("... (truncated)")
+
+        await manager.cancel_task(task_id)
+
+    @pytest.mark.asyncio
+    async def test_unknown_task_id_is_a_noop(self) -> None:
+        manager = BackgroundTaskManager()
+        assert await manager.monitor_task("no-such-id", ["pattern"]) == []
+
+    @pytest.mark.asyncio
+    async def test_invalid_pattern_raises_and_registers_nothing(self) -> None:
+        manager = BackgroundTaskManager()
+        started = asyncio.Event()
+
+        async def _work(task_id: object) -> str:
+            started.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        with pytest.raises(re.error):
+            await manager.monitor_task(task_id, ["valid", "(unclosed"])
+
+        assert await manager.list_task_monitors(task_id) == {}
+
+        await manager.cancel_task(task_id)
+
+    @pytest.mark.asyncio
+    async def test_monitors_dropped_on_terminal_status_without_a_match(self) -> None:
+        manager = BackgroundTaskManager()
+
+        async def _work(task_id: object) -> str:
+            return "done"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await manager.monitor_task(task_id, ["never matches"])
+        await asyncio.sleep(0)
+
+        assert await manager.list_task_monitors(task_id) == {}
+
+    @pytest.mark.asyncio
+    async def test_monitors_dropped_when_task_fails(self) -> None:
+        manager = BackgroundTaskManager()
+
+        async def _fails(task_id: object) -> str:
+            raise RuntimeError("boom")
+
+        task_id = await manager.submit_task(_fails, summary="s")
+        await manager.monitor_task(task_id, ["never matches"])
+        await asyncio.sleep(0)
+
+        assert await manager.list_task_monitors(task_id) == {}
+
+    @pytest.mark.asyncio
+    async def test_monitors_dropped_when_task_cancelled(self) -> None:
+        manager = BackgroundTaskManager()
+        started = asyncio.Event()
+
+        async def _hangs(task_id: object) -> str:
+            started.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_hangs, summary="s")
+        await asyncio.wait_for(started.wait(), timeout=1)
+        await manager.monitor_task(task_id, ["never matches"])
+
+        await manager.cancel_task(task_id)
+        await asyncio.sleep(0)
+
+        assert await manager.list_task_monitors(task_id) == {}
+
+    @pytest.mark.asyncio
+    async def test_registering_the_same_pattern_twice_reuses_the_monitor_id(self) -> None:
+        manager = BackgroundTaskManager()
+        started = asyncio.Event()
+
+        async def _work(task_id: object) -> str:
+            started.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        (monitor_id1,) = await manager.monitor_task(task_id, ["a"])
+        (monitor_id2,) = await manager.monitor_task(task_id, ["a"])
+
+        assert monitor_id1 == monitor_id2
+        assert await manager.list_task_monitors(task_id) == {monitor_id1: "a"}
+
+        await manager.cancel_task(task_id)
+
+    @pytest.mark.asyncio
+    async def test_dedup_is_scoped_to_the_task_not_global(self) -> None:
+        manager = BackgroundTaskManager()
+        started1 = asyncio.Event()
+
+        async def _hangs1(task_id: object) -> str:
+            started1.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id1 = await manager.submit_task(_hangs1, summary="one")
+        await asyncio.wait_for(started1.wait(), timeout=1)
+
+        started2 = asyncio.Event()
+
+        async def _hangs2(task_id: object) -> str:
+            started2.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id2 = await manager.submit_task(_hangs2, summary="two")
+        await asyncio.wait_for(started2.wait(), timeout=1)
+
+        (monitor_id1,) = await manager.monitor_task(task_id1, ["same"])
+        (monitor_id2,) = await manager.monitor_task(task_id2, ["same"])
+
+        assert monitor_id1 != monitor_id2
+
+        await manager.cancel_task(task_id1)
+        await manager.cancel_task(task_id2)
+
+    @pytest.mark.asyncio
+    async def test_dedup_alongside_a_new_pattern_in_the_same_call(self) -> None:
+        manager = BackgroundTaskManager()
+        started = asyncio.Event()
+
+        async def _work(task_id: object) -> str:
+            started.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        (monitor_id_a,) = await manager.monitor_task(task_id, ["a"])
+        monitor_id_a_again, monitor_id_b = await manager.monitor_task(task_id, ["a", "b"])
+
+        assert monitor_id_a_again == monitor_id_a
+        assert monitor_id_b != monitor_id_a
+        assert set((await manager.list_task_monitors(task_id)).values()) == {"a", "b"}
+
+        await manager.cancel_task(task_id)
+
+
+class TestListTaskMonitors:
+    @pytest.mark.asyncio
+    async def test_empty_for_unknown_task_id(self) -> None:
+        manager = BackgroundTaskManager()
+        assert await manager.list_task_monitors("no-such-id") == {}
+
+    @pytest.mark.asyncio
+    async def test_returns_pattern_per_monitor_id(self) -> None:
+        manager = BackgroundTaskManager()
+        started = asyncio.Event()
+
+        async def _hangs(task_id: object) -> str:
+            started.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_hangs, summary="s")
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        monitor_id1, monitor_id2 = await manager.monitor_task(task_id, ["a", "b"])
+
+        assert await manager.list_task_monitors(task_id) == {monitor_id1: "a", monitor_id2: "b"}
+
+        await manager.cancel_task(task_id)
 
 
 class TestListenTaskUpdates:

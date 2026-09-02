@@ -47,7 +47,7 @@ class TestToolName:
             "check_task",
             "list_tasks",
             "stop_task",
-            "report_progress",
+            "monitor_task",
             "read_dataset_info",
             "update_dataset_info",
             "profile_dataset",
