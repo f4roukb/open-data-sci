@@ -20,14 +20,32 @@ class TestToMessage:
             summary="s",
             monitor_id=monitor_id,
             pattern=r"error: \d+",
-            matched_text="error: 42",
+            matched_texts=["error: 42"],
         )
 
         text = update.to_message().content[0]["text"]
 
-        assert text.startswith(f"Update from monitor_id={monitor_id} on task_id={task_id} ")
-        assert "error: 42" in text
-        assert repr(r"error: \d+") in text
+        assert f"monitor(id={monitor_id})" in text
+        assert f"task(id={task_id})" in text
+        assert "will not fire again" in text
+        assert "Match 0: error: 42" in text
+
+    def test_progress_kind_numbers_multiple_matches(self) -> None:
+        update = BackgroundTaskUpdate(
+            update_id=uuid4(),
+            task_id=uuid4(),
+            kind=BackgroundTaskUpdateKind.PROGRESS,
+            summary="s",
+            monitor_id=uuid4(),
+            pattern=r"error: \d+",
+            matched_texts=["error: 1", "error: 2", "error: 3"],
+        )
+
+        text = update.to_message().content[0]["text"]
+
+        assert "Match 0: error: 1" in text
+        assert "Match 1: error: 2" in text
+        assert "Match 2: error: 3" in text
 
     def test_completed_kind_states_result(self) -> None:
         update = BackgroundTaskUpdate(
