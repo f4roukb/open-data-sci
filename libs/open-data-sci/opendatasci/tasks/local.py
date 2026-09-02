@@ -144,7 +144,6 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
         )
         await self.upsert_record(record)
 
-<<<<<<< HEAD
     async def push_activity(self, task_id: UUID, entry: str) -> None:
         record = self._records.get(task_id)
         if record is None:
@@ -181,34 +180,6 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
         )
         return update_id
 
-=======
-    async def record_task_update(
-        self,
-        task_id: UUID,
-        kind: BackgroundTaskUpdateKind,
-        summary: str,
-        status: BackgroundTaskStatus | None = None,
-        result: Any = None,
-        error: str | None = None,
-    ) -> UUID:
-        update_id = uuid4()
-        new_update = BackgroundTaskUpdate(
-            update_id=update_id,
-            task_id=task_id,
-            kind=kind,
-            summary=summary,
-            status=status,
-            result=result,
-            error=error,
-        )
-        self._updates_by_id[update_id] = new_update
-        self._unpulled_update_ids.append(update_id)
-        self._update_event_queue.put_nowait(
-            BackgroundTaskUpdateEvent(task_id=task_id, update_id=update_id)
-        )
-        return update_id
-
->>>>>>> @{-1}
     async def listen_task_updates(self) -> AsyncIterator[BackgroundTaskUpdateEvent]:
         while True:
             yield await self._update_event_queue.get()

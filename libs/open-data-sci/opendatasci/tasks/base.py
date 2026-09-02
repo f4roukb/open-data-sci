@@ -166,34 +166,15 @@ class BackgroundTaskManagerBase(ABC):
         ...
 
     @abstractmethod
-<<<<<<< HEAD
     async def push_activity(self, task_id: UUID, entry: str) -> None:
         """Append one plain-text activity entry to *task_id*'s record.
 
         No-op (aside from logging) if *task_id* is unknown, same contract as
         :meth:`push_task_progress`.
-=======
-    async def record_task_update(
-        self,
-        task_id: UUID,
-        kind: BackgroundTaskUpdateKind,
-        summary: str,
-        status: BackgroundTaskStatus | None = None,
-        result: Any = None,
-        error: str | None = None,
-    ) -> UUID:
-        """Store a :class:`BackgroundTaskUpdate` against *task_id* and notify both delivery paths.
-
-        Returns the new update's ``update_id``. This is the single write
-        path both :meth:`listen_task_updates` (the doorbell) and
-        :meth:`pull_task_updates` (the content buffer) are fed from — a
-        completion is one *kind* of update, not a separate mechanism.
->>>>>>> @{-1}
         """
         ...
 
     @abstractmethod
-<<<<<<< HEAD
     async def record_task_update(
         self,
         task_id: UUID,
@@ -216,11 +197,6 @@ class BackgroundTaskManagerBase(ABC):
     def listen_task_updates(self) -> AsyncIterator[BackgroundTaskUpdateEvent]:
         """Yield a :class:`BackgroundTaskUpdateEvent` exactly once per recorded update.
 
-=======
-    def listen_task_updates(self) -> AsyncIterator[BackgroundTaskUpdateEvent]:
-        """Yield a :class:`BackgroundTaskUpdateEvent` exactly once per recorded update.
-
->>>>>>> @{-1}
         Blocks between updates — this is a push source, not a poll.
         Single-consumer by contract (one listener per manager instance/
         session): each update is delivered exactly once, so two concurrent
