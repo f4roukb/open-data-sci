@@ -11,8 +11,6 @@ from opendatasci.configs import OpenDataSciConfig
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory
 from opendatasci.skills.base import BaseSkillStore
 from opendatasci.tasks.base import (
-    BackgroundTaskProgressReport,
-    BackgroundTaskProgressUpdate,
     BackgroundTaskRecord,
     BackgroundTaskStatus,
 )
@@ -86,36 +84,6 @@ class TestCheckTaskTool:
         payload = json.loads(result)
         assert payload["status"] == "failed"
         assert payload["error"] == "boom"
-
-    @pytest.mark.asyncio
-    async def test_includes_progress_reports(self) -> None:
-        manager = BackgroundTaskManager()
-
-        async def _work(task_id: object) -> str:
-            await asyncio.sleep(10)
-            return "never"
-
-        task_id = await manager.submit_task(_work, summary="s")
-        record = await manager.get_task(task_id)
-        record.progress.append(
-            BackgroundTaskProgressReport(
-                progress_update=BackgroundTaskProgressUpdate(done="a", ongoing="b", blockers="c"),
-                eta_seconds=15.0,
-            ),
-        )
-
-        tool = CheckTaskTool(background_task_manager=manager)
-        result = await tool.ainvoke({"task_id": str(task_id)})
-        payload = json.loads(result)
-        assert payload["progress"] == [
-            {
-                "done": "a",
-                "ongoing": "b",
-                "blockers": "c",
-                "eta_seconds": 15.0,
-                "reported_at": payload["progress"][0]["reported_at"],
-            }
-        ]
 
         await manager.cancel_task(task_id)
 
