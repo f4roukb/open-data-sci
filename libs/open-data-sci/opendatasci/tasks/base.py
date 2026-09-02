@@ -94,8 +94,9 @@ class BackgroundTaskUpdate(MutableStrictBaseModel):
         """Render this update as the content fed to the model, dispatching on kind."""
         if self.kind == BackgroundTaskUpdateKind.PROGRESS:
             text = (
-                f"Background task '{self.summary}': Monitor({self.monitor_id}) matched "
-                f"regex {self.pattern!r}:\n\n{self.matched_text}"
+                f"Update from monitor_id={self.monitor_id} on task_id={self.task_id} "
+                f"(background task '{self.summary}', regex {self.pattern!r}):\n\n"
+                f"{self.matched_text}"
             )
         elif self.kind == BackgroundTaskUpdateKind.COMPLETED:
             if self.status == BackgroundTaskStatus.COMPLETED:
@@ -231,13 +232,23 @@ class BackgroundTaskManagerBase(ABC):
         task_id: UUID | None = None,
         monitor_ids: list[UUID] | None = None,
     ) -> None:
-        """Remove monitors, by owning task or by explicit ID.
+        """Remove monitors, by owning task, by explicit ID, or both.
 
-        If *task_id* is given, every monitor registered against it is
-        removed. If *monitor_ids* is given, exactly those monitors are
-        removed, regardless of which task(s) they belong to. Removing an
-        unknown *task_id* or an unknown monitor ID is a no-op for that
-        entry — this method never raises for unknown IDs.
+        At least one of *task_id*/*monitor_ids* must be given. Behavior:
+
+        - *task_id* only: every monitor registered against it is removed.
+        - *monitor_ids* only: exactly those monitors are removed, regardless
+          of which task(s) they belong to.
+        - Both: exactly those monitor IDs are removed, but each one must
+          belong to *task_id* — this scopes the removal to one task while
+          still targeting specific monitors (e.g. disabling one monitor on a
+          task that has several).
+
+        Raises ``ValueError`` — with a message identifying the offending
+        ID(s) — if *task_id* is unknown, if any *monitor_ids* entry is
+        unknown, or (when both are given) if a monitor ID doesn't belong to
+        *task_id*. The caller must be able to tell a mistaken ID from a
+        successful no-op, so this never silently no-ops on bad input.
         """
         ...
 

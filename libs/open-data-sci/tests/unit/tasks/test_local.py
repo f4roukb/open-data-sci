@@ -13,7 +13,12 @@ from opendatasci.tasks.base import (
     BackgroundTaskStatus,
     BackgroundTaskUpdateKind,
 )
-from opendatasci.tasks.local import _MAX_ACTIVITY_ENTRIES, _MAX_RECORDS, BackgroundTaskManager
+from opendatasci.tasks.local import (
+    _MAX_ACTIVITY_ENTRIES,
+    _MAX_ACTIVITY_ENTRY_LEN,
+    _MAX_RECORDS,
+    BackgroundTaskManager,
+)
 
 
 class TestSubmitAndStatus:
@@ -506,6 +511,35 @@ class TestMonitorTask:
         await manager.cancel_task(task_id2)
 
     @pytest.mark.asyncio
+    async def test_matches_past_the_storage_truncation_cutoff(self) -> None:
+        # Storage-side truncation of long entries must never shrink what a
+        # monitor actually scans — a match placed past the truncation cutoff
+        # would otherwise be silently missed.
+        manager = BackgroundTaskManager()
+        started = asyncio.Event()
+
+        async def _work(task_id: object) -> str:
+            started.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        await manager.monitor_task(task_id, ["needle"])
+        entry = ("x" * (_MAX_ACTIVITY_ENTRY_LEN + 10)) + "needle"
+        await manager.push_activity(task_id, entry)
+
+        updates = await manager.pull_task_updates()
+        assert [u.matched_text for u in updates] == ["needle"]
+
+        record = await manager.get_task(task_id)
+        assert record is not None
+        assert record.activity[0].endswith("... (truncated)")
+
+        await manager.cancel_task(task_id)
+
+    @pytest.mark.asyncio
     async def test_unknown_task_id_is_a_noop(self) -> None:
         manager = BackgroundTaskManager()
         assert await manager.monitor_task("no-such-id", ["pattern"]) == []
@@ -648,16 +682,52 @@ class TestStopMonitoringTask:
         await manager.cancel_task(task_id2)
 
     @pytest.mark.asyncio
-    async def test_stop_with_unknown_task_id_is_a_noop(self) -> None:
+    async def test_stop_by_task_id_and_monitor_ids_scopes_to_that_task(self) -> None:
         manager = BackgroundTaskManager()
-        await manager.stop_monitoring_task(task_id="no-such-id")
-        # No exception — the only observable behavior is that this doesn't raise.
+        task_id = await self._setup_running_task(manager)
+        monitor_id1, monitor_id2 = await manager.monitor_task(task_id, ["a", "b"])
+
+        await manager.stop_monitoring_task(task_id=task_id, monitor_ids=[monitor_id1])
+
+        assert await manager.list_task_monitors(task_id) == {monitor_id2: "b"}
+
+        await manager.cancel_task(task_id)
 
     @pytest.mark.asyncio
-    async def test_stop_with_unknown_monitor_ids_is_a_noop(self) -> None:
+    async def test_stop_with_neither_task_id_nor_monitor_ids_raises(self) -> None:
         manager = BackgroundTaskManager()
-        await manager.stop_monitoring_task(monitor_ids=[uuid4()])
-        # No exception — the only observable behavior is that this doesn't raise.
+        with pytest.raises(ValueError, match="Provide task_id and/or monitor_ids"):
+            await manager.stop_monitoring_task()
+
+    @pytest.mark.asyncio
+    async def test_stop_with_unknown_task_id_raises(self) -> None:
+        manager = BackgroundTaskManager()
+        unknown_id = uuid4()
+        with pytest.raises(ValueError, match=str(unknown_id)):
+            await manager.stop_monitoring_task(task_id=unknown_id)
+
+    @pytest.mark.asyncio
+    async def test_stop_with_unknown_monitor_id_raises(self) -> None:
+        manager = BackgroundTaskManager()
+        unknown_id = uuid4()
+        with pytest.raises(ValueError, match=str(unknown_id)):
+            await manager.stop_monitoring_task(monitor_ids=[unknown_id])
+
+    @pytest.mark.asyncio
+    async def test_stop_with_monitor_id_not_belonging_to_given_task_raises(self) -> None:
+        manager = BackgroundTaskManager()
+        task_id1 = await self._setup_running_task(manager)
+        task_id2 = await self._setup_running_task(manager)
+        (monitor_id_on_task2,) = await manager.monitor_task(task_id2, ["a"])
+
+        with pytest.raises(ValueError, match=str(monitor_id_on_task2)):
+            await manager.stop_monitoring_task(task_id=task_id1, monitor_ids=[monitor_id_on_task2])
+
+        # Neither task's monitors were touched by the rejected call.
+        assert await manager.list_task_monitors(task_id2) == {monitor_id_on_task2: "a"}
+
+        await manager.cancel_task(task_id1)
+        await manager.cancel_task(task_id2)
 
 
 class TestListTaskMonitors:

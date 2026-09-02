@@ -5,6 +5,7 @@
 import asyncio
 import json
 import logging
+import re
 from datetime import datetime
 from enum import StrEnum, auto
 from pathlib import Path
@@ -399,6 +400,16 @@ def _record_to_dict(record: BackgroundTaskRecord) -> dict[str, Any]:
     return data
 
 
+def _format_monitoring_logs(monitors: dict[UUID, str]) -> str:
+    """Render a task's active monitors as one "Monitoring logs:" text block."""
+    lines = ["Monitoring logs:"]
+    lines.extend(
+        f"- Monitor({monitor_id}) Matches regex: {pattern}"
+        for monitor_id, pattern in monitors.items()
+    )
+    return "\n".join(lines) + "\n"
+
+
 class CheckTaskTool(OpenDataSciBaseTool):
     """Check on a single previously scheduled background task."""
 
@@ -408,8 +419,9 @@ class CheckTaskTool(OpenDataSciBaseTool):
     name: str = "check_task"
     description: str = """
 Check the status of a background task previously scheduled via the `task` tool with
-`run_mode="background"`. Returns the task's summary, status, timestamps, and any
-progress reported by the worker, plus its result or error once it reaches a terminal state.
+`run_mode="background"`. Returns the task's summary, status, timestamps, any progress
+reported by the worker, its active monitors (see `monitor_task`), plus its result or
+error once it reaches a terminal state.
 
 Args:
     task_id: The task ID returned when the background task was scheduled.
@@ -424,7 +436,10 @@ Args:
         record = await self.background_task_manager.get_task(task_id)
         if record is None:
             return f"No background task found with task_id={task_id}."
-        return json.dumps(_record_to_dict(record), indent=2, default=str)
+        data = _record_to_dict(record)
+        monitors = await self.background_task_manager.list_task_monitors(task_id)
+        data["monitors"] = _format_monitoring_logs(monitors)
+        return json.dumps(data, indent=2, default=str)
 
 
 class ListTasksTool(OpenDataSciBaseTool):
@@ -434,15 +449,18 @@ class ListTasksTool(OpenDataSciBaseTool):
         status_in: set[BackgroundTaskStatus] = Field(
             default_factory=lambda: {BackgroundTaskStatus.RUNNING}
         )
+        show_monitors: bool = False
 
     name: str = "list_tasks"
     description: str = """
 List background tasks previously scheduled via the `task` tool with `run_mode="background"`,
-filtered by status. Returns a table of task_id, summary, status, and start time.
+filtered by status. Returns task_id, summary, status, and start time for each.
 
 Args:
-    status_in: Set of statuses to include (e.g. {"running"}, {"completed", "failed"}).
-               Defaults to {"running"} — currently active background tasks.
+    status_in:         Set of statuses to include (e.g. {"running"}, {"completed", "failed"}).
+                        Defaults to {"running"} — currently active background tasks.
+    show_monitors:     Add each task's active monitors (see `monitor_task`) to its entry.
+                        Defaults to False.
 """.strip()
 
     args_schema: type[BaseModel] = CallArgs
@@ -450,7 +468,12 @@ Args:
     background_task_manager: BackgroundTaskManagerBase
 
     @override
-    async def _arun(self, status_in: set[BackgroundTaskStatus] | None = None, **kwargs: Any) -> str:
+    async def _arun(
+        self,
+        status_in: set[BackgroundTaskStatus] | None = None,
+        show_monitors: bool = False,
+        **kwargs: Any,
+    ) -> str:
         status_in = status_in or {BackgroundTaskStatus.RUNNING}
         records = [
             r for r in await self.background_task_manager.list_tasks() if r.status in status_in
@@ -458,13 +481,19 @@ Args:
         if not records:
             return "No background tasks match the given status filter."
 
-        header = "| task_id | summary | status | started_at |"
-        separator = "|---|---|---|---|"
-        rows = [
-            f"| {r.task_id} | {r.summary} | {r.status.value} | {_isoformat(r.created_at)} |"
-            for r in records
-        ]
-        return "\n".join([header, separator, *rows])
+        entries = []
+        for r in records:
+            entry: dict[str, Any] = {
+                "task_id": str(r.task_id),
+                "summary": r.summary,
+                "status": r.status.value,
+                "started_at": _isoformat(r.created_at),
+            }
+            if show_monitors:
+                monitors = await self.background_task_manager.list_task_monitors(r.task_id)
+                entry["monitors"] = _format_monitoring_logs(monitors)
+            entries.append(entry)
+        return json.dumps(entries, indent=2, default=str)
 
 
 class StopTaskTool(OpenDataSciBaseTool):
@@ -496,10 +525,105 @@ Args:
         return f"Stop requested for task_id={task_id}."
 
 
+class MonitorTaskTool(OpenDataSciBaseTool):
+    """Register regex monitors against a background task's activity log."""
+
+    class CallArgs(BaseModel):
+        task_id: UUID
+        regex_patterns: Annotated[list[str], MinLen(1)]
+
+    name: str = "monitor_task"
+    description: str = """
+Register one or more regex monitors against the activity log of a background task previously
+scheduled via the `task` tool with `run_mode="background"`. Each monitor keeps firing on every
+matching activity entry for as long as it stays registered — it does not stop after the first
+match. Use `stop_monitoring_task` to remove monitors, and `check_task`/`list_tasks` to see which
+monitors are currently active and their IDs.
+
+Each registered pattern gets its own monitor ID, even if the same regex is reused across
+different tasks or across multiple calls on the same task.
+
+Args:
+    task_id:        The task ID returned when the background task was scheduled.
+    regex_patterns: One or more regexes to watch for in the task's activity log.
+""".strip()
+
+    args_schema: type[BaseModel] = CallArgs
+
+    background_task_manager: BackgroundTaskManagerBase
+
+    @override
+    async def _arun(self, task_id: UUID, regex_patterns: list[str], **kwargs: Any) -> str:
+        try:
+            monitor_ids = await self.background_task_manager.monitor_task(task_id, regex_patterns)
+        except re.error as exc:
+            return f"Invalid regex pattern: {exc}"
+        if not monitor_ids:
+            return f"No background task found with task_id={task_id}."
+        lines = [f"Registered {len(monitor_ids)} monitor(s) on task_id={task_id}:"]
+        lines.extend(
+            f"- Monitor({monitor_id}) Matches regex: {pattern}"
+            for monitor_id, pattern in zip(monitor_ids, regex_patterns)
+        )
+        return "\n".join(lines)
+
+
+class StopTaskMonitoringTool(OpenDataSciBaseTool):
+    """Remove monitors previously registered via ``monitor_task``."""
+
+    class CallArgs(BaseModel):
+        task_id: UUID | None = None
+        monitor_ids: list[UUID] | None = None
+
+    name: str = "stop_monitoring_task"
+    description: str = """
+Remove monitors previously registered via `monitor_task`. Provide at least one of:
+
+- task_id only:               Removes every monitor currently active on that task.
+- monitor_ids only:           Removes exactly those monitors, regardless of which task(s)
+                               they belong to.
+- task_id and monitor_ids:    Removes exactly those monitor IDs, but each must belong to
+                               task_id — use this to disable specific monitors on a task
+                               that has several, without touching its other monitors.
+
+Fails with an error if task_id is unknown, if any monitor_ids entry is unknown, or (when
+both are given) if a monitor ID doesn't belong to task_id.
+
+Args:
+    task_id:     Scope the removal to this task (all its monitors if monitor_ids is omitted).
+    monitor_ids: Remove exactly these monitor IDs (from `monitor_task`, `check_task`, or
+                 `list_tasks`).
+""".strip()
+
+    args_schema: type[BaseModel] = CallArgs
+
+    background_task_manager: BackgroundTaskManagerBase
+
+    @override
+    async def _arun(
+        self,
+        task_id: UUID | None = None,
+        monitor_ids: list[UUID] | None = None,
+        **kwargs: Any,
+    ) -> str:
+        if task_id is None and monitor_ids is None:
+            return "Provide task_id and/or monitor_ids."
+        try:
+            await self.background_task_manager.stop_monitoring_task(
+                task_id=task_id, monitor_ids=monitor_ids
+            )
+        except ValueError as exc:
+            return str(exc)
+        if monitor_ids is not None:
+            return f"Stopped monitor(s): {', '.join(str(m) for m in monitor_ids)}."
+        return f"Stopped all monitors on task_id={task_id}."
+
+
 def create_task_management_tools(
     background_task_manager: BackgroundTaskManagerBase,
 ) -> list[BaseTool]:
-    """Return the ``check_task``, ``list_tasks``, and ``stop_task`` tools.
+    """Return the ``check_task``, ``list_tasks``, ``stop_task``, ``monitor_task``, and
+    ``stop_monitoring_task`` tools.
 
     *background_task_manager* must be the same instance passed to :func:`create_task_tools`
     so these tools can see the background tasks scheduled by the ``task`` tool.
@@ -508,4 +632,6 @@ def create_task_management_tools(
         CheckTaskTool(background_task_manager=background_task_manager),
         ListTasksTool(background_task_manager=background_task_manager),
         StopTaskTool(background_task_manager=background_task_manager),
+        MonitorTaskTool(background_task_manager=background_task_manager),
+        StopTaskMonitoringTool(background_task_manager=background_task_manager),
     ]

@@ -195,19 +195,33 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
         task_id: UUID | None = None,
         monitor_ids: list[UUID] | None = None,
     ) -> None:
-        if task_id is not None:
-            self._remove_monitors_for_task(task_id)
+        if task_id is None and monitor_ids is None:
+            raise ValueError("Provide task_id and/or monitor_ids.")
+
+        if task_id is not None and task_id not in self._records:
+            raise ValueError(f"No task found with task_id={task_id}.")
+
         if monitor_ids is not None:
+            invalid = [
+                monitor_id
+                for monitor_id in monitor_ids
+                if self._monitor_task_ids.get(monitor_id) is None
+                or (task_id is not None and self._monitor_task_ids[monitor_id] != task_id)
+            ]
+            if invalid:
+                ids = ", ".join(str(m) for m in invalid)
+                scope = f" on task_id={task_id}" if task_id is not None else ""
+                raise ValueError(f"No monitor(s) found{scope}: {ids}.")
             for monitor_id in monitor_ids:
-                owning_task_id = self._monitor_task_ids.pop(monitor_id, None)
-                if owning_task_id is None:
-                    continue
-                task_monitors = self._monitors.get(owning_task_id)
-                if task_monitors is None:
-                    continue
-                task_monitors.pop(monitor_id, None)
+                owning_task_id = self._monitor_task_ids.pop(monitor_id)
+                task_monitors = self._monitors[owning_task_id]
+                del task_monitors[monitor_id]
                 if not task_monitors:
                     del self._monitors[owning_task_id]
+            return
+
+        if task_id is not None:
+            self._remove_monitors_for_task(task_id)
 
     async def list_task_monitors(self, task_id: UUID) -> dict[UUID, str]:
         return {
