@@ -5,9 +5,18 @@ import shlex
 from abc import ABC, abstractmethod
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from opendatasci._utils.pydantic_utils import MutableStrictBaseModel
+
+# Marks the runner's final JSON-payload line within a sandboxed Python
+# execution's combined stdout stream, so a streaming reader can tell "this
+# line is progress output" from "this line is the terminal result" without
+# waiting for EOF. Duplicated verbatim as a literal in
+# ``sandbox/_runner.py``, which must stay a self-contained standalone script
+# (see its module docstring) and so cannot import this module from inside
+# the sandboxed subprocess.
+PAYLOAD_SENTINEL: str = "###OPENDATASCI_PAYLOAD###"
 
 
 class SandboxExecResult(MutableStrictBaseModel):
@@ -128,8 +137,20 @@ class BaseSandbox(ABC):
     """
 
     @abstractmethod
-    async def execute(self, code: str) -> SandboxExecResult:
-        """Execute Python *code* and return the result."""
+    async def execute(
+        self,
+        code: str,
+        on_stdout_line: Callable[[str], Awaitable[None]] | None = None,
+    ) -> SandboxExecResult:
+        """Execute Python *code* and return the result.
+
+        If *on_stdout_line* is given, it is awaited once per line of stdout
+        the code produces, in the order produced, while execution is still
+        in progress rather than only once the whole run has finished. Used
+        to stream progress into a background task's activity log (e.g.
+        :meth:`opendatasci.tasks.base.BackgroundTaskManagerBase.push_activity`)
+        so a long-running background execution can be monitored mid-run.
+        """
 
     @abstractmethod
     async def execute_cli(self, command: str) -> SandboxExecResult:

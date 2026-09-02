@@ -27,7 +27,7 @@ import traceback
 import warnings
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Awaitable, Callable
 
 from sandbox_runtime import SandboxManager, SandboxRuntimeConfig
 from sandbox_runtime.utils.platform import get_platform
@@ -36,6 +36,7 @@ from opendatasci._utils.accelerator_utils import discover_accelerator_devices
 from opendatasci._utils.fs_utils import find_maybe_sensitive_paths
 from opendatasci._utils.package_extras_utils import is_deep_learning_extra_active
 from opendatasci.sandbox.base import (
+    PAYLOAD_SENTINEL,
     BaseSandbox,
     BaseSandboxFactory,
     SandboxExecResult,
@@ -45,6 +46,17 @@ from opendatasci.sandbox.base import (
 logger = logging.getLogger(__name__)
 
 _DEFAULT_COMMAND_TIMEOUT = 43200  # 12 hours
+
+# asyncio.StreamReader.readline()'s default 64KB-per-line buffer is fine for
+# communicate()-style whole-output reads (no line splitting involved) but
+# becomes a real constraint once execute() reads line-by-line to stream
+# progress -- a single print() of an unformatted large object with no
+# embedded newline could exceed it. Raised generously here; a pathological
+# single line still longer than this degrades to an SRTError via execute()'s
+# broad except-Exception fallback rather than hanging, which is an accepted
+# (documented, not silently swallowed) edge case rather than something this
+# handles specially.
+_STDOUT_STREAM_LIMIT = 10 * 1024 * 1024  # 10 MB
 
 # Install commands per platform, used to build an actionable error message when
 # the native sandbox binaries (bwrap/socat/ripgrep) are missing. ``pip install``
@@ -274,7 +286,11 @@ class SRTSandbox(BaseSandbox):
     # Sandbox protocol
     # ------------------------------------------------------------------
 
-    async def execute(self, code: str) -> SandboxExecResult:
+    async def execute(
+        self,
+        code: str,
+        on_stdout_line: Callable[[str], Awaitable[None]] | None = None,
+    ) -> SandboxExecResult:
         async with self._lock:
             try:
                 await self._ensure_initialized()
@@ -301,7 +317,7 @@ class SRTSandbox(BaseSandbox):
                 if is_deep_learning_extra_active():
                     wrapped = _inject_accelerator_devices(wrapped)
                 stdout_str, stderr_str, _ = await self._run_subprocess(
-                    wrapped, env=env, cwd=workspace
+                    wrapped, env=env, cwd=workspace, on_stdout_line=on_stdout_line
                 )
 
                 payload = self._parse_runner_payload(stdout_str, stderr_str)
@@ -450,7 +466,11 @@ class SRTSandbox(BaseSandbox):
         return self._cli_sandbox_config
 
     async def _run_subprocess(
-        self, command: str, env: dict[str, str], cwd: str
+        self,
+        command: str,
+        env: dict[str, str],
+        cwd: str,
+        on_stdout_line: Callable[[str], Awaitable[None]] | None = None,
     ) -> tuple[str, str, int]:
         # Launch the wrapped command in its own process group/session so a
         # timeout can signal the *entire* tree (shell → bwrap/sandbox-exec →
@@ -470,12 +490,30 @@ class SRTSandbox(BaseSandbox):
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
                 cwd=cwd,
+                limit=_STDOUT_STREAM_LIMIT,
                 **spawn_kwargs,
             )
             try:
-                stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                    proc.communicate(),
-                    timeout=self._command_timeout,
+                # stdout is drained line-by-line (forwarding each line to
+                # on_stdout_line as it arrives, when given) while stderr is
+                # drained in full in parallel via asyncio.gather -- reading
+                # only one of the two pipes here would risk the classic
+                # subprocess deadlock (the unread pipe fills and blocks the
+                # child), which is exactly what proc.communicate() avoids
+                # internally. The trailing proc.wait() ensures returncode is
+                # populated, matching communicate()'s own guarantee; it's part
+                # of the same timeout budget below, not an extra one, so total
+                # time bound stays exactly self._command_timeout as before.
+                async def _drain_and_wait() -> tuple[str, bytes]:
+                    stdout_str, stderr_bytes = await asyncio.gather(
+                        self._drain_stdout(proc.stdout, on_stdout_line),
+                        proc.stderr.read(),
+                    )
+                    await proc.wait()
+                    return stdout_str, stderr_bytes
+
+                stdout_str, stderr_bytes = await asyncio.wait_for(
+                    _drain_and_wait(), timeout=self._command_timeout
                 )
             except asyncio.CancelledError:
                 # Cancellation (e.g. via stop_task) throws in here without ever
@@ -486,14 +524,14 @@ class SRTSandbox(BaseSandbox):
                 raise
             returncode = proc.returncode
             if returncode is None:
-                # Should not happen after communicate(); surface it as a failure
+                # Should not happen after proc.wait(); surface it as a failure
                 # rather than masking it as success (exit 0).
                 logger.warning(
-                    "Subprocess returncode is None after communicate(); treating as failure"
+                    "Subprocess returncode is None after proc.wait(); treating as failure"
                 )
                 returncode = -1
             return (
-                stdout_bytes.decode("utf-8", errors="replace").strip(),
+                stdout_str.strip(),
                 stderr_bytes.decode("utf-8", errors="replace").strip(),
                 returncode,
             )
@@ -501,6 +539,40 @@ class SRTSandbox(BaseSandbox):
             if proc is not None:
                 await self._terminate_process_tree(proc)
             raise TimeoutError(f"Command timed out after {self._command_timeout}s: {command!r}")
+
+    async def _drain_stdout(
+        self,
+        stream: asyncio.StreamReader,
+        on_stdout_line: Callable[[str], Awaitable[None]] | None,
+    ) -> str:
+        """Read *stream* to EOF, forwarding each line to *on_stdout_line* as it
+        arrives, and return the full decoded text (equivalent to what
+        ``communicate()`` would have returned for stdout).
+
+        Forwarding stops at the runner's PAYLOAD_SENTINEL-prefixed line (the
+        terminal JSON payload, see ``_parse_runner_payload``) -- that line is
+        the result, not progress, so a caller streaming into an activity log
+        never sees it as one more line of "output". For non-runner commands
+        (``execute_cli``) the sentinel never appears, so every line is
+        forwarded when *on_stdout_line* is given.
+        """
+        chunks: list[str] = []
+        payload_seen = False
+        while True:
+            raw_line = await stream.readline()
+            if not raw_line:
+                break
+            text = raw_line.decode("utf-8", errors="replace")
+            chunks.append(text)
+            if payload_seen:
+                continue
+            if PAYLOAD_SENTINEL in text:
+                payload_seen = True
+            elif on_stdout_line is not None:
+                stripped = text[:-1] if text.endswith("\n") else text
+                if stripped:
+                    await on_stdout_line(stripped)
+        return "".join(chunks)
 
     async def _terminate_process_tree(self, proc: asyncio.subprocess.Process) -> None:
         """Kill the subprocess's whole group and reap it, so no orphans or
@@ -518,26 +590,28 @@ class SRTSandbox(BaseSandbox):
             logger.exception("Failed to reap timed-out subprocess")
 
     def _parse_runner_payload(self, raw_stdout: str, raw_stderr: str = "") -> dict[str, Any]:
-        # The runner emits its result as a single trailing JSON line, so we scan
-        # bottom-up: this survives arbitrary user ``print()`` output captured
-        # above it. (A user subprocess writing raw bytes directly to fd 1 *after*
-        # the payload line could still corrupt parsing — an accepted edge case.)
+        # The runner prefixes its final JSON payload with PAYLOAD_SENTINEL, so
+        # look for the *last* occurrence (rfind, not find) -- if user code
+        # itself ever printed that literal string, only the runner's own
+        # trailing write is the real payload. This also lets a streaming
+        # reader (_drain_stdout) recognise the payload line the moment it
+        # arrives, without waiting for EOF to try "is this JSON?" on every line.
         if not raw_stdout:
             detail = f"stderr: {raw_stderr}" if raw_stderr else "no output"
             raise ValueError(f"SRT runner returned no stdout payload ({detail}).")
 
-        for line in reversed(raw_stdout.splitlines()):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                parsed = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(parsed, dict):
-                return parsed
+        idx = raw_stdout.rfind(PAYLOAD_SENTINEL)
+        if idx == -1:
+            raise ValueError(f"SRT runner output carried no payload sentinel: {raw_stdout}")
 
-        raise ValueError(f"SRT runner output was not JSON: {raw_stdout}")
+        payload_text = raw_stdout[idx + len(PAYLOAD_SENTINEL) :].strip()
+        try:
+            parsed = json.loads(payload_text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"SRT runner payload was not valid JSON: {payload_text}") from exc
+        if not isinstance(parsed, dict):
+            raise ValueError(f"SRT runner payload was not a JSON object: {payload_text}")
+        return parsed
 
     def _fail(self, code: str, error: str) -> SandboxExecResult:
         return SandboxExecResult(success=False, error=error, stdout="", code=code)

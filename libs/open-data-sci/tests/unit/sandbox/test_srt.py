@@ -7,7 +7,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from opendatasci.sandbox.base import PAYLOAD_SENTINEL
 from opendatasci.sandbox.srt import SRTSandbox, SRTSandboxFactory, check_sandbox_dependencies
+
+
+def _mock_proc(stdout_lines: list[bytes], stderr: bytes = b"", returncode: int = 0) -> MagicMock:
+    """Build a MagicMock standing in for asyncio.subprocess.Process, wired for
+    the streaming read path _run_subprocess now uses (readline()/read()/wait()
+    rather than communicate())."""
+    proc = MagicMock()
+    proc.stdout = MagicMock()
+    proc.stdout.readline = AsyncMock(side_effect=[*stdout_lines, b""])
+    proc.stderr = MagicMock()
+    proc.stderr.read = AsyncMock(return_value=stderr)
+    proc.wait = AsyncMock()
+    proc.returncode = returncode
+    return proc
 
 # ---------------------------------------------------------------------------
 # check_sandbox_dependencies
