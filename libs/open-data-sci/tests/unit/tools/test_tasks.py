@@ -520,56 +520,28 @@ class TestRunOne:
         assert "nonexistent" in caplog.text
 
     @pytest.mark.asyncio
-    async def test_report_progress_tool_added_in_background_mode(self) -> None:
+    async def test_worker_toolset_same_in_background_and_foreground_mode(self) -> None:
+        # report_progress used to be bound only in background mode; now that
+        # it's retired (monitoring moved to the scheduling agent's
+        # monitor_task tool), a worker's toolset shouldn't depend on task_id.
         tool = _make_tool()
         with patch(_AGENT_PATCH) as MockAgent:
             MockAgent.return_value.ainvoke = AsyncMock(return_value="ok")
             await tool._arun_one(
                 0, TaskTool.TaskDetails(subtask="x", summary="y"), uuid4(), MagicMock()
             )
-        _, kwargs = MockAgent.call_args
-        assert "report_progress" in {t.name for t in kwargs["tools"]}
+        _, background_kwargs = MockAgent.call_args
+        background_tool_names = {t.name for t in background_kwargs["tools"]}
 
-    @pytest.mark.asyncio
-    async def test_report_progress_tool_absent_in_foreground_mode(self) -> None:
-        tool = _make_tool()
         with patch(_AGENT_PATCH) as MockAgent:
             MockAgent.return_value.ainvoke = AsyncMock(return_value="ok")
             await tool._arun_one(
                 0, TaskTool.TaskDetails(subtask="x", summary="y"), None, MagicMock()
             )
-        _, kwargs = MockAgent.call_args
-        assert "report_progress" not in {t.name for t in kwargs["tools"]}
+        _, foreground_kwargs = MockAgent.call_args
+        foreground_tool_names = {t.name for t in foreground_kwargs["tools"]}
 
-
-class TestReportProgressTool:
-    @pytest.mark.asyncio
-    async def test_pushes_progress_to_manager(self) -> None:
-        manager = BackgroundTaskManager()
-        started = asyncio.Event()
-
-        async def _work(task_id: object) -> str:
-            started.set()
-            await asyncio.sleep(10)
-            return "never"
-
-        task_id = await manager.submit_task(_work, summary="s")
-        await asyncio.wait_for(started.wait(), timeout=1)
-
-        tool = ReportProgressTool(task_id=task_id, background_task_manager=manager)
-        result = await tool.ainvoke(
-            {"done": "a", "ongoing": "b", "blockers": "c", "eta_seconds": 3.0}
-        )
-
-        assert "recorded" in result.lower()
-        record = await manager.get_task(task_id)
-        assert record is not None
-        assert record.progress[-1].progress_update.done == "a"
-        assert record.progress[-1].progress_update.ongoing == "b"
-        assert record.progress[-1].progress_update.blockers == "c"
-        assert record.progress[-1].eta_seconds == 3.0
-
-        await manager.cancel_task(task_id)
+        assert background_tool_names == foreground_tool_names
 
 
 class TestActivityLog:

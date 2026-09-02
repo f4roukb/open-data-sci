@@ -84,8 +84,8 @@ register(
 )
 register("stop_task", ToolDisplay(label="Stopping task", icon="🛑", summary_arg="summary"))
 register(
-    "report_progress",
-    ToolDisplay(label="Reporting progress", icon="📶", summary_arg="summary"),
+    "monitor_task",
+    ToolDisplay(label="Monitoring task", icon="📶", summary_arg="summary"),
 )
 register(
     "read_dataset_info",

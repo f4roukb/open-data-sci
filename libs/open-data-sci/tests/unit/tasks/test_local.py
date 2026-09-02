@@ -8,7 +8,6 @@ from uuid import uuid4
 import pytest
 
 from opendatasci.tasks.base import (
-    BackgroundTaskProgressUpdate,
     BackgroundTaskRecord,
     BackgroundTaskStatus,
     BackgroundTaskUpdateKind,
@@ -275,44 +274,6 @@ class TestUpsertRecord:
 
         assert len(await manager.list_tasks()) == _MAX_RECORDS
         assert await manager.get_task(task_ids[0]) is not None
-
-
-class TestPushTaskProgress:
-    @pytest.mark.asyncio
-    async def test_appends_progress_report(self) -> None:
-        manager = BackgroundTaskManager()
-        started = asyncio.Event()
-
-        async def _work(task_id: object) -> str:
-            started.set()
-            await asyncio.sleep(10)
-            return "never"
-
-        task_id = await manager.submit_task(_work, summary="s")
-        await asyncio.wait_for(started.wait(), timeout=1)
-
-        await manager.push_task_progress(
-            task_id,
-            BackgroundTaskProgressUpdate(done="a", ongoing="b", blockers=""),
-            eta_seconds=5.0,
-        )
-        record = await manager.get_task(task_id)
-        assert record is not None
-        assert len(record.progress) == 1
-        assert record.progress[0].progress_update.done == "a"
-        assert record.progress[0].progress_update.ongoing == "b"
-        assert record.progress[0].eta_seconds == 5.0
-
-        await manager.cancel_task(task_id)
-
-    @pytest.mark.asyncio
-    async def test_unknown_task_id_is_a_noop(self) -> None:
-        manager = BackgroundTaskManager()
-        await manager.push_task_progress(
-            "no-such-id", BackgroundTaskProgressUpdate(done="", ongoing="", blockers="")
-        )
-        # No exception, and nothing to read back — the only observable
-        # behavior is that this doesn't raise.
 
 
 class TestPushActivity:

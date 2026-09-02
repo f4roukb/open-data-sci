@@ -1,5 +1,5 @@
 """Task tools: spawn worker subtasks (``task``) and manage background tasks
-(``check_task``, ``list_tasks``, ``stop_task``).
+(``check_task``, ``list_tasks``, ``stop_task``, ``monitor_task``).
 """
 
 import asyncio
@@ -25,7 +25,6 @@ from opendatasci.sandbox.base import BaseSandboxFactory
 from opendatasci.skills import BaseSkillStore
 from opendatasci.tasks.base import (
     BackgroundTaskManagerBase,
-    BackgroundTaskProgressUpdate,
     BackgroundTaskRecord,
     BackgroundTaskStatus,
 )
@@ -42,59 +41,6 @@ class RunMode(StrEnum):
 
     FOREGROUND = auto()
     BACKGROUND = auto()
-
-
-class ReportProgressTool(OpenDataSciBaseTool):
-    """Report progress on the background task this worker is running under.
-
-    Bound with a fixed ``task_id`` at construction time — only handed to a
-    worker running in the background (``run_mode="background"``), since a
-    foreground worker has no task record to report against.
-    """
-
-    class CallArgs(BaseModel):
-        done: str
-        """What has been completed so far."""
-        ongoing: str
-        """What is currently being worked on."""
-        blockers: str
-        """Anything blocking progress, or an empty string if none."""
-        eta_seconds: float | None = None
-        """Estimated seconds remaining, if it can be reasonably guessed."""
-
-    name: str = "report_progress"
-    description: str = """
-Report progress on the background task you are currently running as. Call this
-periodically on long-running work so whoever scheduled you can see what's done,
-what's ongoing, and what's blocking further progress without waiting for you to finish.
-
-Args:
-    done:        What has been completed so far.
-    ongoing:     What you are currently working on.
-    blockers:    Anything blocking progress, or an empty string if none.
-    eta_seconds: Estimated seconds remaining, if it can be reasonably guessed.
-""".strip()
-
-    args_schema: type[BaseModel] = CallArgs
-
-    task_id: UUID
-    background_task_manager: BackgroundTaskManagerBase
-
-    @override
-    async def _arun(
-        self,
-        done: str,
-        ongoing: str,
-        blockers: str,
-        eta_seconds: float | None = None,
-        **kwargs: Any,
-    ) -> str:
-        await self.background_task_manager.push_task_progress(
-            self.task_id,
-            BackgroundTaskProgressUpdate(done=done, ongoing=ongoing, blockers=blockers),
-            eta_seconds=eta_seconds,
-        )
-        return "Progress recorded."
 
 
 class TaskTool(OpenDataSciBaseTool):
@@ -151,8 +97,10 @@ other subtasks. Each subtask runs to completion independently before results are
   - The subtask is quick — scheduling overhead outweighs the benefit.
 
   ``"background"`` schedules each subtask in the background and returns immediately
-  with one task ID per subtask instead of blocking on completion. Check on scheduled
-  work with `check_task`/`list_tasks`, stop it with `stop_task`.
+  with one task ID per subtask instead of blocking on completion. Rather than polling,
+  register a `monitor_task` for a pattern you expect to see (e.g. a completion marker
+  or error) to be notified the moment it shows up; use `check_task`/`list_tasks` to
+  inspect a task on demand, and `stop_task` to stop one.
 
 Args:
     subtasks:      1-3 subtask descriptors (see TaskDetails fields).
@@ -234,12 +182,6 @@ Args:
                 *create_cli_tools(worker_sandbox),
                 *create_skill_tools(self.skill_store),
             ]
-            if task_id is not None:
-                tools.append(
-                    ReportProgressTool(
-                        task_id=task_id, background_task_manager=self.background_task_manager
-                    )
-                )
 
             agent = WorkerAgent(tools=tools, config=self.datasci_config)
             emit("task_started", subtask.summary)
@@ -381,16 +323,6 @@ def _record_to_dict(record: BackgroundTaskRecord) -> dict[str, Any]:
         "status": record.status.value,
         "created_at": _isoformat(record.created_at),
         "finished_at": _isoformat(record.finished_at),
-        "progress": [
-            {
-                "done": report.progress_update.done,
-                "ongoing": report.progress_update.ongoing,
-                "blockers": report.progress_update.blockers,
-                "eta_seconds": report.eta_seconds,
-                "reported_at": _isoformat(report.reported_at),
-            }
-            for report in record.progress
-        ],
         "activity": record.activity,
     }
     if record.status == BackgroundTaskStatus.COMPLETED:
@@ -419,9 +351,9 @@ class CheckTaskTool(OpenDataSciBaseTool):
     name: str = "check_task"
     description: str = """
 Check the status of a background task previously scheduled via the `task` tool with
-`run_mode="background"`. Returns the task's summary, status, timestamps, any progress
-reported by the worker, its active monitors (see `monitor_task`), plus its result or
-error once it reaches a terminal state.
+`run_mode="background"`. Returns the task's summary, status, timestamps, its activity
+log, and its active monitors (see `monitor_task`), plus its result or error once it
+reaches a terminal state.
 
 Args:
     task_id: The task ID returned when the background task was scheduled.

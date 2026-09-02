@@ -10,8 +10,6 @@ from uuid import UUID, uuid4
 
 from opendatasci.tasks.base import (
     BackgroundTaskManagerBase,
-    BackgroundTaskProgressReport,
-    BackgroundTaskProgressUpdate,
     BackgroundTaskRecord,
     BackgroundTaskStatus,
     BackgroundTaskUpdate,
@@ -133,21 +131,6 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
             oldest_task_id = next(iter(self._records))
             del self._records[oldest_task_id]
         self._records[record.task_id] = record
-
-    async def push_task_progress(
-        self,
-        task_id: UUID,
-        update: BackgroundTaskProgressUpdate,
-        eta_seconds: float | None = None,
-    ) -> None:
-        record = self._records.get(task_id)
-        if record is None:
-            logger.warning("push_task_progress called with unknown task_id=%s", task_id)
-            return
-        record.progress.append(
-            BackgroundTaskProgressReport(progress_update=update, eta_seconds=eta_seconds)
-        )
-        await self.upsert_record(record)
 
     async def push_activity(self, task_id: UUID, entry: str) -> None:
         record = self._records.get(task_id)
