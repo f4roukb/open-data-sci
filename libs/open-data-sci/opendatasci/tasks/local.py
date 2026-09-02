@@ -154,15 +154,10 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
         if record is None:
             logger.warning("push_activity called with unknown task_id=%s", task_id)
             return
-        if len(entry) > _MAX_ACTIVITY_ENTRY_LEN:
-            entry = entry[:_MAX_ACTIVITY_ENTRY_LEN] + "... (truncated)"
-        record.activity.append(entry)
-        if len(record.activity) > _MAX_ACTIVITY_ENTRIES:
-            del record.activity[: len(record.activity) - _MAX_ACTIVITY_ENTRIES]
-        await self.upsert_record(record)
 
-        # Only this newly-appended entry is scanned — never the task's prior
-        # activity — so a monitor never re-matches text it has already seen.
+        # Monitors scan the full, untruncated entry — truncation below is a
+        # storage bound on the persisted activity log, not a matching window,
+        # so a match past the truncation cutoff must never be missed.
         for monitor_id, regex in list(self._monitors.get(task_id, {}).items()):
             for match in regex.finditer(entry):
                 await self.record_task_update(
@@ -173,6 +168,13 @@ class BackgroundTaskManager(BackgroundTaskManagerBase):
                     pattern=regex.pattern,
                     matched_text=match.group(0),
                 )
+
+        if len(entry) > _MAX_ACTIVITY_ENTRY_LEN:
+            entry = entry[:_MAX_ACTIVITY_ENTRY_LEN] + "... (truncated)"
+        record.activity.append(entry)
+        if len(record.activity) > _MAX_ACTIVITY_ENTRIES:
+            del record.activity[: len(record.activity) - _MAX_ACTIVITY_ENTRIES]
+        await self.upsert_record(record)
 
     async def monitor_task(self, task_id: UUID, regex_patterns: list[str]) -> list[UUID]:
         if task_id not in self._records:

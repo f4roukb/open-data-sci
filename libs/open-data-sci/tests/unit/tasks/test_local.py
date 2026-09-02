@@ -3,7 +3,7 @@
 import asyncio
 import re
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
