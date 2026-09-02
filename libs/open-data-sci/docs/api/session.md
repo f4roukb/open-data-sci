@@ -46,11 +46,14 @@ Subclass `BaseSandbox` and `BaseSandboxFactory` to implement a remote or contain
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory, SandboxExecResult
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncIterator
+from typing import AsyncIterator, Awaitable, Callable
 
 class MyRemoteSandbox(BaseSandbox):
-    async def execute(self, code: str) -> SandboxExecResult:
-        # send code to a remote executor …
+    async def execute(
+        self, code: str, on_stdout_line: Callable[[str], Awaitable[None]] | None = None
+    ) -> SandboxExecResult:
+        # send code to a remote executor, awaiting on_stdout_line(line) per
+        # line of stdout as it's produced if streaming progress is supported …
         ...
 
     async def execute_cli(self, command: str) -> SandboxExecResult: ...
