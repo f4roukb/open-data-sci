@@ -19,7 +19,6 @@ from opendatasci.tools.tasks import (
     CheckTaskTool,
     ListTasksTool,
     MonitorTaskTool,
-    ReportProgressTool,
     StopTaskTool,
     TaskTool,
     create_task_management_tools,
