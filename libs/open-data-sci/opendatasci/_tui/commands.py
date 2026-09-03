@@ -75,7 +75,7 @@ def format_help_message() -> str:
         "## Available Commands\n",
         "- **/cancel-all-messages** — Cancel all messages queued while the agent was busy",
         "- **/cancel-message** — Cancel the most recently queued message",
-        "- **/clear** — Clear all conversation context, including the plan (preserves session variables)",
+        "- **/clear** — Clear all conversation context, including the plan",
         "- **/compact** — Summarize and compress the conversation history",
         "- **/exit** — Exit OpenDataSci",
         "- **/help** — Show this help message",

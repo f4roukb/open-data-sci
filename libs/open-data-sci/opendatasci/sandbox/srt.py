@@ -243,17 +243,18 @@ class SRTSandbox(BaseSandbox):
     """Session-scoped sandbox powered by Anthropic's Sandbox Runtime (SRT).
 
     Executes Python snippets and allowlisted TUI commands in an OS-level
-    sandbox — no Docker or remote container is required.  Python state
-    (variables, results) is preserved across calls within the same instance.
+    sandbox — no Docker or remote container is required. Every :meth:`execute`
+    spins up a fresh interpreter with an empty namespace: no Python-level
+    state (variables, results) carries over from one call to the next, even
+    within the same instance. Only the workspace filesystem persists across
+    calls. This keeps executions fully independent, so concurrent calls on
+    the same instance (e.g. a foreground call racing a background one) run
+    genuinely in parallel rather than serializing behind each other.
 
-    Each :meth:`execute`/:meth:`execute_cli`/:meth:`reset` call is serialized by
-    a per-instance lock so overlapping calls cannot interleave their
-    read-modify-write of the on-disk ``state.pkl``.
-
-    Note: every :meth:`execute` spins up a fresh interpreter that unpickles the
-    entire namespace, runs, and re-pickles it. This keeps executions hermetic
-    but makes cost O(state) per call; a persistent-kernel runner would remove
-    that overhead and is the natural next step for long interactive sessions.
+    ``reset()`` and construction-time bookkeeping (copying the runner script
+    once, initializing the process-global ``SandboxManager``) are the only
+    per-instance state that could otherwise race; :meth:`_ensure_initialized`
+    guards that under its own small lock.
     """
 
     def __init__(
@@ -268,19 +269,13 @@ class SRTSandbox(BaseSandbox):
         )
 
         self._session_dir = Path(tempfile.mkdtemp(prefix="opendatasci_srt_"))
-        self._state_path = self._session_dir / "state.pkl"
         self._runner_path = self._session_dir / "runner.py"
 
         self._history: list[SandboxExecResult] = []
-        self._results: dict[str, str] = {}
-        self._var_info: dict[str, str] = {}
         self._sandbox_config: SandboxRuntimeConfig | None = None
         self._cli_sandbox_config: SandboxRuntimeConfig | None = None
         self._initialized = False
-        # Set by reset(); consumed under _lock at the start of the next execute
-        # so the on-disk wipe happens inside the serialized critical section.
-        self._reset_pending = False
-        self._lock = asyncio.Lock()
+        self._init_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
     # Sandbox protocol
@@ -291,69 +286,53 @@ class SRTSandbox(BaseSandbox):
         code: str,
         on_stdout_line: Callable[[str], Awaitable[None]] | None = None,
     ) -> SandboxExecResult:
-        async with self._lock:
-            try:
-                await self._ensure_initialized()
+        try:
+            await self._ensure_initialized()
 
-                if self._reset_pending:
-                    # Deleting the state file clears both variables and saved
-                    # results (the latter live inside the pickle under
-                    # RESULTS_KEY), so a single unlink is a complete wipe.
-                    self._state_path.unlink(missing_ok=True)
-                    self._reset_pending = False
+            workspace = str(self._workspace_path or self._session_dir)
+            env = {
+                **_base_sandbox_env(),
+                "OPENDATASCI_CODE_B64": base64.b64encode(code.encode("utf-8")).decode("ascii"),
+                "OPENDATASCI_WORKSPACE": workspace,
+            }
 
-                workspace = str(self._workspace_path or self._session_dir)
-                env = {
-                    **_base_sandbox_env(),
-                    "OPENDATASCI_CODE_B64": base64.b64encode(code.encode("utf-8")).decode("ascii"),
-                    "OPENDATASCI_STATE_PATH": str(self._state_path),
-                    "OPENDATASCI_WORKSPACE": workspace,
-                }
+            command = f"{shlex.quote(sys.executable)} {shlex.quote(str(self._runner_path))}"
+            wrapped = await SandboxManager.wrap_with_sandbox(
+                command, custom_config=self._make_config()
+            )
+            if is_deep_learning_extra_active():
+                wrapped = _inject_accelerator_devices(wrapped)
+            stdout_str, stderr_str, _ = await self._run_subprocess(
+                wrapped, env=env, cwd=workspace, on_stdout_line=on_stdout_line
+            )
 
-                command = f"{shlex.quote(sys.executable)} {shlex.quote(str(self._runner_path))}"
-                wrapped = await SandboxManager.wrap_with_sandbox(
-                    command, custom_config=self._make_config()
+            payload = self._parse_runner_payload(stdout_str, stderr_str)
+            stdout = payload.get("stdout", "")
+
+            if payload.get("success"):
+                result = SandboxExecResult(
+                    success=True,
+                    output=payload.get("result"),
+                    stdout=stdout,
+                    code=code,
                 )
-                if is_deep_learning_extra_active():
-                    wrapped = _inject_accelerator_devices(wrapped)
-                stdout_str, stderr_str, _ = await self._run_subprocess(
-                    wrapped, env=env, cwd=workspace, on_stdout_line=on_stdout_line
+            else:
+                result = SandboxExecResult(
+                    success=False,
+                    error=payload.get("error", "Unknown execution error"),
+                    stdout=stdout,
+                    code=code,
                 )
+        except TimeoutError:
+            result = self._fail(
+                code,
+                f"TimeoutError: execution timed out after {self._command_timeout}s",
+            )
+        except Exception as exc:
+            result = self._fail(code, f"SRTError: {exc}\n{traceback.format_exc()}")
 
-                payload = self._parse_runner_payload(stdout_str, stderr_str)
-                self._var_info.update(payload.get("var_info", {}))
-                self._results.update(payload.get("saved_results", {}))
-
-                stdout = payload.get("stdout", "")
-                dropped_vars = payload.get("dropped_vars", [])
-                if dropped_vars:
-                    warning = f"Warning: variable(s) not persisted (not picklable): {', '.join(dropped_vars)}"
-                    stdout = f"{stdout}\n{warning}" if stdout else warning
-
-                if payload.get("success"):
-                    result = SandboxExecResult(
-                        success=True,
-                        output=payload.get("result"),
-                        stdout=stdout,
-                        code=code,
-                    )
-                else:
-                    result = SandboxExecResult(
-                        success=False,
-                        error=payload.get("error", "Unknown execution error"),
-                        stdout=stdout,
-                        code=code,
-                    )
-            except TimeoutError:
-                result = self._fail(
-                    code,
-                    f"TimeoutError: execution timed out after {self._command_timeout}s",
-                )
-            except Exception as exc:
-                result = self._fail(code, f"SRTError: {exc}\n{traceback.format_exc()}")
-
-            self._history.append(result)
-            return result
+        self._history.append(result)
+        return result
 
     async def execute_cli(self, command: str) -> SandboxExecResult:
         error = validate_cli_command(command)
@@ -362,50 +341,43 @@ class SRTSandbox(BaseSandbox):
             self._history.append(result)
             return result
 
-        async with self._lock:
-            try:
-                await self._ensure_initialized()
+        try:
+            await self._ensure_initialized()
 
-                workspace = str(self._workspace_path or self._session_dir)
-                wrapped = await SandboxManager.wrap_with_sandbox(
-                    command, custom_config=self._make_cli_config()
-                )
-                stdout_str, stderr_str, exit_code = await self._run_subprocess(
-                    wrapped, env=_base_sandbox_env(), cwd=workspace
-                )
+            workspace = str(self._workspace_path or self._session_dir)
+            wrapped = await SandboxManager.wrap_with_sandbox(
+                command, custom_config=self._make_cli_config()
+            )
+            stdout_str, stderr_str, exit_code = await self._run_subprocess(
+                wrapped, env=_base_sandbox_env(), cwd=workspace
+            )
 
-                combined = "\n".join(filter(None, [stdout_str, stderr_str]))
-                success = exit_code == 0
-                result = SandboxExecResult(
-                    success=success,
-                    stdout=combined,
-                    error=None if success else f"Command failed (exit {exit_code})",
-                    code=command,
-                )
-            except TimeoutError:
-                result = self._fail(
-                    command,
-                    f"TimeoutError: command timed out after {self._command_timeout}s",
-                )
-            except Exception as exc:
-                result = self._fail(command, f"SRTCLIError: {exc}")
+            combined = "\n".join(filter(None, [stdout_str, stderr_str]))
+            success = exit_code == 0
+            result = SandboxExecResult(
+                success=success,
+                stdout=combined,
+                error=None if success else f"Command failed (exit {exit_code})",
+                code=command,
+            )
+        except TimeoutError:
+            result = self._fail(
+                command,
+                f"TimeoutError: command timed out after {self._command_timeout}s",
+            )
+        except Exception as exc:
+            result = self._fail(command, f"SRTCLIError: {exc}")
 
-            self._history.append(result)
-            return result
+        self._history.append(result)
+        return result
 
     def get_history(self) -> list[SandboxExecResult]:
         return list(self._history)
 
     def reset(self) -> None:
-        # Clear the in-memory views eagerly; defer the on-disk state wipe to the
-        # next execute so it runs inside the serialized critical section (and
-        # cannot clobber an in-flight execution's pickle write). The two views
-        # only diverge in the window before the next execute, which itself
-        # reconciles them — no public read path observes the difference.
+        """Clear the execution history. No Python-level state to wipe: every
+        ``execute()`` call already starts from an empty namespace."""
         self._history.clear()
-        self._var_info.clear()
-        self._results.clear()
-        self._reset_pending = True
 
     async def close(self) -> None:
         # The SandboxManager is a process-global singleton shared with every
@@ -420,13 +392,17 @@ class SRTSandbox(BaseSandbox):
     # ------------------------------------------------------------------
 
     async def _ensure_initialized(self) -> None:
-        # Caller holds ``self._lock``, so the per-instance bookkeeping below
-        # (runner copy + flag) cannot race a concurrent first call.
+        # Concurrent execute()/execute_cli() calls no longer serialize behind
+        # a shared lock, so this one-time bookkeeping (runner copy + flag)
+        # needs its own guard against a race on the very first call.
         if self._initialized:
             return
-        await _ensure_manager_initialized(self._make_config())
-        shutil.copy2(_RUNNER_SRC, self._runner_path)
-        self._initialized = True
+        async with self._init_lock:
+            if self._initialized:
+                return
+            await _ensure_manager_initialized(self._make_config())
+            shutil.copy2(_RUNNER_SRC, self._runner_path)
+            self._initialized = True
 
     def _make_config(self) -> SandboxRuntimeConfig:
         if self._sandbox_config is None:

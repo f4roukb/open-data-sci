@@ -2,7 +2,7 @@
 
 The **sandbox** is an isolated Python execution environment that the agent uses to run code. All data manipulation, model training, and chart generation happen inside the sandbox — your Python environment is never modified.
 
-The default sandbox is backed by [SRT (Sandbox Runtime)](https://github.com/dreadnode/sandbox-runtime), a lightweight subprocess-based executor. Each agent session gets its own sandbox instance; state (variables, DataFrames, trained models) persists across turns within a session and is cleared on `/reset`.
+The default sandbox is backed by [SRT (Sandbox Runtime)](https://github.com/dreadnode/sandbox-runtime), a lightweight subprocess-based executor. Each agent session gets its own sandbox instance. Every `execute()` call runs in a fresh interpreter — no Python-level state (variables, DataFrames, trained models) carries over from one call to the next, so code that depends on an earlier result must recompute or reload it. The workspace filesystem does persist across turns and is where durable outputs (files, artifacts) should be written.
 
 ## SandboxExecResult
 

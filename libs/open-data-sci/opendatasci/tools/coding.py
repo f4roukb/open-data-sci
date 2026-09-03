@@ -138,7 +138,8 @@ Execute Python code in the active workspace environment.
 - ``sheets``: ``{"sheet_name": DataFrame, ...}``
 - ``text_files``: ``{"filename": content, ...}``
 - ``opendatasci_directory``: ``Path`` for saving output files to the workspace.
-- ``save_result(name, value)``: persist a named result for export.
+- ``save_result(name, value)``: record an additional named result from this run
+  (alongside, or instead of, ``result``); scoped to this single execution.
 
 # How to use this tool
 - Assign ``result = ...`` to return a value.
@@ -181,7 +182,8 @@ Execute Python code in the active workspace environment.
 - ``sheets``: ``{"sheet_name": DataFrame, ...}``
 - ``text_files``: ``{"filename": content, ...}``
 - ``opendatasci_directory``: ``Path`` for saving output files to the workspace.
-- ``save_result(name, value)``: persist a named result for export.
+- ``save_result(name, value)``: record an additional named result from this run
+  (alongside, or instead of, ``result``); scoped to this single execution.
 
 # How to use this tool
 - Assign ``result = ...`` to return a value.

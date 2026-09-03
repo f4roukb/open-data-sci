@@ -129,11 +129,12 @@ def validate_cli_command(command: str) -> str | None:
 
 
 class BaseSandbox(ABC):
-    """Stateful code execution sandbox scoped to a single agent session.
+    """Code execution sandbox scoped to a single agent session.
 
-    Responsible for running Python code and TUI commands, capturing output,
-    and preserving state (variables, results) across turns within the same
-    conversation.
+    Responsible for running Python code and TUI commands and capturing
+    output. Each :meth:`execute` call is independent — no Python-level state
+    (variables, results) carries over from one call to the next; only the
+    workspace filesystem persists across turns within the same conversation.
     """
 
     @abstractmethod

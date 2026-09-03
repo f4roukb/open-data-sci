@@ -217,7 +217,7 @@ Type `/` in the input box to trigger autocomplete. All commands are available at
 |---------|-------------|
 | `/cancel-all-messages` | Cancel all messages queued while the agent was busy |
 | `/cancel-message` | Cancel the most recently queued message |
-| `/clear` | Clear conversation context (preserves session variables and loaded data) |
+| `/clear` | Clear conversation context (workspace files are untouched) |
 | `/compact` | Summarise and compress conversation history to free up context |
 | `/help` | Show all available commands |
 | `/ls-workspace` | List all files currently in the workspace |
