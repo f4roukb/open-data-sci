@@ -732,7 +732,7 @@ class CLIController:
             await self._ui.add_message("agent", "Not loaded yet.").finish()
 
     async def clear_conv(self) -> None:
-        """Clear all conversation context (preserves session variables)."""
+        """Clear all conversation context."""
         if self._agent_running:
             # A still-running turn would write the cleared conversation back
             # into state (and schedule its summarization) when it finishes.
