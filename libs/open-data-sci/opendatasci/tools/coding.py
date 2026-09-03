@@ -145,6 +145,8 @@ Execute Python code in the active workspace environment.
 - Assign ``result = ...`` to return a value.
 - Any library can be imported; check ``list_python_libs`` first for non-standard ones.
 - Prefer vectorised operations over row-wise loops on large DataFrames.
+- For long-running code, print or log periodic progress rather than staying silent —
+  it can then be tracked with `monitor_task` when running in the background.
 
 # How NOT to use this tool
 - Don't retry the same failing code verbatim — address the structured error before retrying.
