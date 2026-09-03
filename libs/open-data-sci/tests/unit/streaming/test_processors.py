@@ -1,6 +1,5 @@
 """Unit tests for opendatasci.streaming.processors (and format_stream_error)."""
 
-
 import asyncio
 from unittest.mock import MagicMock
 
@@ -219,6 +218,7 @@ class TestStreamEventProcessor:
         assert tool_results[0].tool_call_id == "plan-tc"
         # The unwrapped ToolMessage must also be recorded as generated output.
         from opendatasci.streaming.events import MessageEvent
+
         assert any(isinstance(e, MessageEvent) and e.message is tool_msg for e in results)
 
     def test_process_tool_end_command_without_messages_passes_through(self) -> None:
@@ -613,6 +613,7 @@ class TestStreamEventProcessor:
         }
         results = p.process_event(event)
         from opendatasci.streaming.events import MessageEvent
+
         assert any(isinstance(e, MessageEvent) and e.message is ai_msg for e in results)
 
     def test_chain_end_with_non_ai_message_ignored(self) -> None:
@@ -960,7 +961,7 @@ class TestStreamEventProcessor:
 
 
 # ---------------------------------------------------------------------------
-# AgentTurnStreamProcessor — worker_event (on_custom_event) handling
+# AgentTurnStreamProcessor — task_event (on_custom_event) handling
 # ---------------------------------------------------------------------------
 
 
@@ -968,43 +969,43 @@ class TestWorkerEventHandling:
     def _proc(self) -> AgentTurnStreamProcessor:
         return AgentTurnStreamProcessor()
 
-    def _worker_event(self, data: dict) -> dict:
-        return {"event": "on_custom_event", "name": "worker_event", "data": data}
+    def _task_event(self, data: dict) -> dict:
+        return {"event": "on_custom_event", "name": "task_event", "data": data}
 
-    def test_worker_done_event_type(self) -> None:
+    def test_task_done_event_type(self) -> None:
         events = self._proc().process_event(
-            self._worker_event({"event_type": "worker_done", "worker_idx": 0, "success": True})
+            self._task_event({"event_type": "task_done", "task_idx": 0, "success": True})
         )
         assert len(events) == 1
-        assert events[0].type == "worker_done"
+        assert events[0].type == "task_done"
 
-    def test_worker_done_carries_idx_and_success(self) -> None:
+    def test_task_done_carries_idx_and_success(self) -> None:
         events = self._proc().process_event(
-            self._worker_event({"event_type": "worker_done", "worker_idx": 2, "success": False})
+            self._task_event({"event_type": "task_done", "task_idx": 2, "success": False})
         )
-        assert events[0].worker_idx == 2
+        assert events[0].task_idx == 2
         assert events[0].success is False
 
-    def test_worker_done_defaults_success_to_true(self) -> None:
+    def test_task_done_defaults_success_to_true(self) -> None:
         events = self._proc().process_event(
-            self._worker_event({"event_type": "worker_done", "worker_idx": 1})
+            self._task_event({"event_type": "task_done", "task_idx": 1})
         )
         assert events[0].success is True
 
     def test_lifecycle_event_becomes_subagent_event(self) -> None:
         events = self._proc().process_event(
-            self._worker_event({"event_type": "worker_started", "worker_idx": 1, "content": "task"})
+            self._task_event({"event_type": "task_started", "task_idx": 1, "content": "task"})
         )
         assert len(events) == 1
         assert events[0].type == "subagent_event"
-        assert events[0].event_type == "worker_started"
+        assert events[0].event_type == "task_started"
         assert events[0].content == "task"
 
-    def test_subagent_event_carries_worker_idx(self) -> None:
+    def test_subagent_event_carries_task_idx(self) -> None:
         events = self._proc().process_event(
-            self._worker_event({"event_type": "worker_tool_call", "worker_idx": 3, "content": ""})
+            self._task_event({"event_type": "task_tool_call", "task_idx": 3, "content": ""})
         )
-        assert events[0].worker_idx == 3
+        assert events[0].task_idx == 3
 
     def test_unknown_name_not_handled(self) -> None:
         events = self._proc().process_event(
@@ -1012,21 +1013,21 @@ class TestWorkerEventHandling:
         )
         assert events == []
 
-    def test_worker_event_not_filtered_by_subagent_tag(self) -> None:
+    def test_task_event_not_filtered_by_subagent_tag(self) -> None:
         """on_custom_event dispatched with the outer config carries no subagent tag."""
         events = self._proc().process_event(
             {
                 "event": "on_custom_event",
-                "name": "worker_event",
+                "name": "task_event",
                 "tags": [],
-                "data": {"event_type": "worker_done", "worker_idx": 0, "success": True},
+                "data": {"event_type": "task_done", "task_idx": 0, "success": True},
             }
         )
-        assert any(e.type == "worker_done" for e in events)
+        assert any(e.type == "task_done" for e in events)
 
 
 # ---------------------------------------------------------------------------
-# AgentTurnStreamProcessor — spawn_workers tool_call handling
+# AgentTurnStreamProcessor — task tool_call handling
 # ---------------------------------------------------------------------------
 
 
@@ -1040,92 +1041,92 @@ class TestSpawnWorkersToolCall:
     def _proc(self) -> AgentTurnStreamProcessor:
         return AgentTurnStreamProcessor()
 
-    def test_spawn_workers_emits_tool_call_with_spawn_workers_metadata(self) -> None:
-        from opendatasci.tools import ToolName
+    def test_task_emits_tool_call_with_task_metadata(self) -> None:
+        from opendatasci.tools.factory import ToolName
 
         tc = {
-            "name": ToolName.SPAWN_WORKERS,
+            "name": ToolName.TASK,
             "args": {"subtasks": [{"summary": "Analyse"}, {"summary": "Plot"}]},
             "id": "sw1",
         }
         results = self._proc().process_event(_chain_end_with_tool_calls([tc]))
         tool_calls = [e for e in results if e.type == "tool_call"]
         assert len(tool_calls) == 1
-        assert tool_calls[0].tool == ToolName.SPAWN_WORKERS
+        assert tool_calls[0].tool == ToolName.TASK
 
-    def test_spawn_workers_tool_metadata_survives_str_roundtrip(self) -> None:
+    def test_task_tool_metadata_survives_str_roundtrip(self) -> None:
         """Regression: ``ToolName`` is a (str, Enum), so ``str(member)`` yields
-        ``'ToolName.SPAWN_WORKERS'`` rather than ``'spawn_workers'``. The
+        ``'ToolName.TASK'`` rather than ``'task'``. The
         presenter does ``str(event.tool)`` before comparing against
-        ``ToolName.SPAWN_WORKERS`` — storing the enum here would cause that
+        ``ToolName.TASK`` — storing the enum here would cause that
         comparison to silently fail and the worker rows would never render."""
-        from opendatasci.tools import ToolName
+        from opendatasci.tools.factory import ToolName
 
         tc = {
-            "name": ToolName.SPAWN_WORKERS,
+            "name": ToolName.TASK,
             "args": {"subtasks": [{"summary": "Analyse"}]},
             "id": "sw1",
         }
         results = self._proc().process_event(_chain_end_with_tool_calls([tc]))
         tool_call = next(e for e in results if e.type == "tool_call")
         # This is the exact comparison the presenter performs.
-        assert str(tool_call.tool) == ToolName.SPAWN_WORKERS
+        assert str(tool_call.tool) == ToolName.TASK
 
-    def test_spawn_workers_extracts_summaries_from_subtasks(self) -> None:
-        from opendatasci.tools import ToolName
+    def test_task_extracts_summaries_from_subtasks(self) -> None:
+        from opendatasci.tools.factory import ToolName
 
         tc = {
-            "name": ToolName.SPAWN_WORKERS,
+            "name": ToolName.TASK,
             "args": {"subtasks": [{"summary": "Train"}, {"summary": "Evaluate"}]},
             "id": "sw1",
         }
         results = self._proc().process_event(_chain_end_with_tool_calls([tc]))
         tool_call = next(e for e in results if e.type == "tool_call")
-        assert tool_call.worker_summaries == ["Train", "Evaluate"]
+        assert tool_call.task_summaries == ["Train", "Evaluate"]
 
-    def test_spawn_workers_fills_default_summary_when_missing(self) -> None:
-        """A subtask dict without ``summary`` must fall back to ``ConcurrentWorkerAgent {i+1}``."""
-        from opendatasci.tools import ToolName
+    def test_task_fills_default_summary_when_missing(self) -> None:
+        """A subtask dict without ``summary`` must fall back to ``WorkerAgent {i+1}``."""
+        from opendatasci.tools.factory import ToolName
 
         tc = {
-            "name": ToolName.SPAWN_WORKERS,
+            "name": ToolName.TASK,
             "args": {"subtasks": [{"summary": "Train"}, {}]},  # second subtask has no summary
             "id": "sw1",
         }
         results = self._proc().process_event(_chain_end_with_tool_calls([tc]))
         tool_call = next(e for e in results if e.type == "tool_call")
-        assert tool_call.worker_summaries == ["Train", "ConcurrentWorkerAgent 2"]
+        assert tool_call.task_summaries == ["Train", "WorkerAgent 2"]
 
-    def test_spawn_workers_non_dict_subtask_falls_back_to_default(self) -> None:
+    def test_task_non_dict_subtask_falls_back_to_default(self) -> None:
         """If ``subtasks`` contains non-dict entries the placeholder name is used."""
-        from opendatasci.tools import ToolName
+        from opendatasci.tools.factory import ToolName
 
         tc = {
-            "name": ToolName.SPAWN_WORKERS,
+            "name": ToolName.TASK,
             "args": {"subtasks": ["not a dict"]},
             "id": "sw1",
         }
         results = self._proc().process_event(_chain_end_with_tool_calls([tc]))
         tool_call = next(e for e in results if e.type == "tool_call")
-        assert tool_call.worker_summaries == ["ConcurrentWorkerAgent 1"]
+        assert tool_call.task_summaries == ["WorkerAgent 1"]
 
-    def test_spawn_workers_empty_subtasks_yields_empty_summaries(self) -> None:
-        from opendatasci.tools import ToolName
+    def test_task_empty_subtasks_yields_empty_summaries(self) -> None:
+        from opendatasci.tools.factory import ToolName
 
         tc = {
-            "name": ToolName.SPAWN_WORKERS,
+            "name": ToolName.TASK,
             "args": {"subtasks": []},
             "id": "sw1",
         }
         results = self._proc().process_event(_chain_end_with_tool_calls([tc]))
         tool_call = next(e for e in results if e.type == "tool_call")
-        assert tool_call.worker_summaries == []
+        assert tool_call.task_summaries == []
 
-    def test_spawn_workers_metadata_carries_tool_call_id(self) -> None:
-        from opendatasci.tools import ToolName
+    def test_task_metadata_carries_tool_call_id(self) -> None:
+        from opendatasci.tools.factory import ToolName
 
         tc = {
-            "name": ToolName.SPAWN_WORKERS,
+            "name": ToolName.TASK,
             "args": {"subtasks": []},
             "id": "sw-abc",
         }
@@ -1133,20 +1134,20 @@ class TestSpawnWorkersToolCall:
         tool_call = next(e for e in results if e.type == "tool_call")
         assert tool_call.tool_call_id == "sw-abc"
 
-    def test_spawn_workers_no_summary_key_in_metadata(self) -> None:
-        """The spawn_workers branch returns early before the generic ``summary``
-        is computed — only ``worker_summaries`` should be present."""
-        from opendatasci.tools import ToolName
+    def test_task_no_summary_key_in_metadata(self) -> None:
+        """The task branch returns early before the generic ``summary``
+        is computed — only ``task_summaries`` should be present."""
+        from opendatasci.tools.factory import ToolName
 
         tc = {
-            "name": ToolName.SPAWN_WORKERS,
+            "name": ToolName.TASK,
             "args": {"subtasks": [{"summary": "A"}]},
             "id": "sw1",
         }
         results = self._proc().process_event(_chain_end_with_tool_calls([tc]))
         tool_call = next(e for e in results if e.type == "tool_call")
-        # spawn_workers uses worker_summaries, not summary
-        assert tool_call.summary == "" and tool_call.worker_summaries == ["A"]
+        # task uses task_summaries, not summary
+        assert tool_call.summary == "" and tool_call.task_summaries == ["A"]
 
 
 # ---------------------------------------------------------------------------
@@ -1393,18 +1394,10 @@ class TestAccumulateToolCallChunks:
     def test_communication_emitted_independently_for_parallel_calls(self) -> None:
         p = self._proc()
         out: list = []
-        p._accumulate_tool_call_chunks(
-            [{"name": "a", "id": "t1", "args": "", "index": 0}], out
-        )
-        p._accumulate_tool_call_chunks(
-            [{"name": "b", "id": "t2", "args": "", "index": 1}], out
-        )
-        p._accumulate_tool_call_chunks(
-            [{"args": '{"communication": "Alpha"}', "index": 0}], out
-        )
-        p._accumulate_tool_call_chunks(
-            [{"args": '{"communication": "Beta"}', "index": 1}], out
-        )
+        p._accumulate_tool_call_chunks([{"name": "a", "id": "t1", "args": "", "index": 0}], out)
+        p._accumulate_tool_call_chunks([{"name": "b", "id": "t2", "args": "", "index": 1}], out)
+        p._accumulate_tool_call_chunks([{"args": '{"communication": "Alpha"}', "index": 0}], out)
+        p._accumulate_tool_call_chunks([{"args": '{"communication": "Beta"}', "index": 1}], out)
         comm = {e.tool_call_id: e.content for e in out if e.type == "tool_communication"}
         assert comm == {"t1": "Alpha", "t2": "Beta"}
 

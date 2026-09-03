@@ -1,9 +1,14 @@
 """Unit tests for opendatasci._utils.message_utils."""
 
-
 from langchain_core.messages import SystemMessage, ToolMessage
 
-from opendatasci._utils.message_utils import get_thoughts, get_message_text_content, prepend_messages, render_turn
+from opendatasci._utils.message_utils import (
+    get_thoughts,
+    get_message_text_content,
+    prepend_messages,
+    render_turn,
+    to_text_content_blocks,
+)
 from opendatasci.memory.messages import AgentMessage, UserMessage, is_ongoing_turn
 
 
@@ -19,14 +24,14 @@ class TestPrependMessages:
         assert result == [msg]
 
     def test_prepends_before_non_system_messages(self) -> None:
-        human = UserMessage(content="q")
+        human = UserMessage(content=to_text_content_blocks("q"))
         sys = SystemMessage(content="sys")
         result = prepend_messages([human], [sys])
         assert result == [sys, human]
 
     def test_drops_existing_system_messages_from_history(self) -> None:
         old_sys = SystemMessage(content="old")
-        human = UserMessage(content="q")
+        human = UserMessage(content=to_text_content_blocks("q"))
         new_sys = SystemMessage(content="new")
         result = prepend_messages([old_sys, human], [new_sys])
         assert result == [new_sys, human]
@@ -34,19 +39,19 @@ class TestPrependMessages:
     def test_prepends_multiple_messages(self) -> None:
         s1 = SystemMessage(content="first")
         s2 = SystemMessage(content="second")
-        human = UserMessage(content="q")
+        human = UserMessage(content=to_text_content_blocks("q"))
         result = prepend_messages([human], [s1, s2])
         assert result == [s1, s2, human]
 
     def test_empty_prepend_strips_system_messages(self) -> None:
         old_sys = SystemMessage(content="old")
-        human = UserMessage(content="q")
+        human = UserMessage(content=to_text_content_blocks("q"))
         result = prepend_messages([old_sys, human], [])
         assert result == [human]
 
     def test_preserves_order_of_non_system_messages(self) -> None:
-        h1 = UserMessage(content="first")
-        h2 = UserMessage(content="second")
+        h1 = UserMessage(content=to_text_content_blocks("first"))
+        h2 = UserMessage(content=to_text_content_blocks("second"))
         sys = SystemMessage(content="sys")
         result = prepend_messages([h1, h2], [sys])
         assert result == [sys, h1, h2]
@@ -66,7 +71,7 @@ class TestIsOngoingTurn:
 
     def test_ends_with_tool_message_returns_true(self) -> None:
         turn = [
-            UserMessage(content="q"),
+            UserMessage(content=to_text_content_blocks("q")),
             AgentMessage(content="", tool_calls=[{"name": "t", "args": {}, "id": "1"}]),
             ToolMessage(content="result", tool_call_id="1"),
         ]
@@ -74,23 +79,23 @@ class TestIsOngoingTurn:
 
     def test_ends_with_ai_with_tool_calls_returns_true(self) -> None:
         turn = [
-            UserMessage(content="q"),
+            UserMessage(content=to_text_content_blocks("q")),
             AgentMessage(content="", tool_calls=[{"name": "t", "args": {}, "id": "1"}]),
         ]
         assert is_ongoing_turn(turn) is True
 
     def test_ends_with_ai_without_tool_calls_returns_false(self) -> None:
-        turn = [UserMessage(content="q"), AgentMessage(content="done")]
+        turn = [UserMessage(content=to_text_content_blocks("q")), AgentMessage(content="done")]
         assert is_ongoing_turn(turn) is False
 
     def test_ends_with_human_message_returns_false(self) -> None:
-        assert is_ongoing_turn([UserMessage(content="q")]) is False
+        assert is_ongoing_turn([UserMessage(content=to_text_content_blocks("q"))]) is False
 
     def test_ends_with_interrupt_reply_returns_true(self) -> None:
         turn = [
-            UserMessage(content="start"),
+            UserMessage(content=to_text_content_blocks("start")),
             AgentMessage(content="", tool_calls=[{"name": "ask", "args": {}, "id": "1"}]),
-            UserMessage(content="answer", is_input_on_interrupt=True),
+            UserMessage(content=to_text_content_blocks("answer"), is_input_on_interrupt=True),
         ]
         assert is_ongoing_turn(turn) is True
 
@@ -102,15 +107,21 @@ class TestIsOngoingTurn:
 
 class TestRenderTurnUserMessage:
     def test_plain_string_content(self) -> None:
-        result = render_turn([UserMessage(content="hello")])
+        result = render_turn([UserMessage(content=to_text_content_blocks("hello"))])
         assert result == "User: hello"
 
-    def test_list_content_cast_to_string(self) -> None:
-        result = render_turn([UserMessage(content=["part1", "part2"])])
+    def test_multiple_text_blocks_joined(self) -> None:
+        result = render_turn(
+            [
+                UserMessage(
+                    content=[{"type": "text", "text": "part1"}, {"type": "text", "text": "part2"}]
+                )
+            ]
+        )
         assert "User:" in result
 
     def test_whitespace_only_content_omitted(self) -> None:
-        result = render_turn([UserMessage(content="   ")])
+        result = render_turn([UserMessage(content=to_text_content_blocks("   "))])
         assert result == "(no messages)"
 
 
@@ -120,19 +131,23 @@ class TestRenderTurnAgentMessageNoToolCalls:
         assert result == "Agent: answer"
 
     def test_thinking_block_skipped(self) -> None:
-        msg = AgentMessage(content=[
-            {"type": "thinking", "thinking": "internal monologue"},
-            {"type": "text", "text": "final answer"},
-        ])
+        msg = AgentMessage(
+            content=[
+                {"type": "thinking", "thinking": "internal monologue"},
+                {"type": "text", "text": "final answer"},
+            ]
+        )
         result = render_turn([msg])
         assert "internal monologue" not in result
         assert result == "Agent: final answer"
 
     def test_multiple_text_blocks_joined(self) -> None:
-        msg = AgentMessage(content=[
-            {"type": "text", "text": "part one"},
-            {"type": "text", "text": "part two"},
-        ])
+        msg = AgentMessage(
+            content=[
+                {"type": "text", "text": "part one"},
+                {"type": "text", "text": "part two"},
+            ]
+        )
         result = render_turn([msg])
         assert "part one" in result
         assert "part two" in result
@@ -202,7 +217,7 @@ class TestRenderTurnComposite:
 
     def test_full_turn_ordering(self) -> None:
         turn = [
-            UserMessage(content="query"),
+            UserMessage(content=to_text_content_blocks("query")),
             AgentMessage(
                 content="",
                 tool_calls=[{"name": "search", "args": {"q": "x"}, "id": "1"}],
@@ -232,7 +247,7 @@ class TestRenderTurnComposite:
         assert "User:" not in result
 
     def test_parts_separated_by_double_newline(self) -> None:
-        turn = [UserMessage(content="q"), AgentMessage(content="a")]
+        turn = [UserMessage(content=to_text_content_blocks("q")), AgentMessage(content="a")]
         assert render_turn(turn) == "User: q\n\nAgent: a"
 
 
@@ -254,17 +269,21 @@ class TestExtractThinking:
         assert get_thoughts(msg) == ""
 
     def test_multiple_thinking_blocks_joined(self) -> None:
-        msg = AgentMessage(content=[
-            {"type": "thinking", "thinking": "part one"},
-            {"type": "thinking", "thinking": "part two"},
-        ])
+        msg = AgentMessage(
+            content=[
+                {"type": "thinking", "thinking": "part one"},
+                {"type": "thinking", "thinking": "part two"},
+            ]
+        )
         assert get_thoughts(msg) == "part one\npart two"
 
     def test_thinking_blocks_isolated_from_text_blocks(self) -> None:
-        msg = AgentMessage(content=[
-            {"type": "thinking", "thinking": "reasoning"},
-            {"type": "text", "text": "conclusion"},
-        ])
+        msg = AgentMessage(
+            content=[
+                {"type": "thinking", "thinking": "reasoning"},
+                {"type": "text", "text": "conclusion"},
+            ]
+        )
         assert get_thoughts(msg) == "reasoning"
         assert get_message_text_content(msg) == "conclusion"
 

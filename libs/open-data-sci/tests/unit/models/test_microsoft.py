@@ -1,5 +1,4 @@
-﻿"""Unit tests for opendatasci.models.microsoft factory functions."""
-
+"""Unit tests for opendatasci.models.microsoft factory functions."""
 
 import sys
 from unittest.mock import MagicMock

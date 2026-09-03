@@ -1,5 +1,4 @@
-﻿"""Unit tests for opendatasci._tui.app."""
-
+"""Unit tests for opendatasci._tui.app."""
 
 import importlib.metadata
 from pathlib import Path
@@ -157,9 +156,7 @@ class TestMainArgparse:
     def test_config_flag_cli_overrides_yaml(self, tmp_path: Path) -> None:
         yaml_file = tmp_path / "cfg.yaml"
         yaml_file.write_text("provider: openai\nmodel: gpt-4o\n")
-        cfg = self._agent_config(
-            ["data.csv", "--config", str(yaml_file), "--model", "gpt-5.5"]
-        )
+        cfg = self._agent_config(["data.csv", "--config", str(yaml_file), "--model", "gpt-5.5"])
         assert cfg.provider == "openai"
         assert cfg.model == "gpt-5.5"
 
@@ -347,6 +344,7 @@ class TestEscDuringTurn:
         controller.awaiting_choice = awaiting_choice
         controller.stop_agent = AsyncMock()
         app._run_agent = MagicMock()
+        app._resume_with_input = MagicMock()
         return app
 
     async def test_bare_esc_stops_running_turn(self) -> None:
@@ -385,5 +383,5 @@ class TestEscDuringTurn:
 
         await app.action_focus_input()
 
-        app._run_agent.assert_called_once_with("cancel")
+        app._resume_with_input.assert_called_once_with("cancel")
         app._controller.stop_agent.assert_not_awaited()

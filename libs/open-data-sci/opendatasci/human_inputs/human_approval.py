@@ -8,20 +8,17 @@ work), and resumes with the user's yes/no decision.
 
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import interrupt
 from pydantic import BaseModel, Field
 
+from opendatasci._utils.pydantic_utils import FrozenStrictBaseModel
+from opendatasci.agents.interrupts import InterruptKind
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.models.factory import create_secondary_model
 
 logger = logging.getLogger(__name__)
-
-APPROVAL_INTERRUPT_KIND = "command_approval"
-
-_APPROVAL_ANSWER_YES = "yes"
 
 _FALLBACK_HEADS_UP = (
     "I tried to assess what this command could do to your device or your active "
@@ -61,8 +58,7 @@ class _CommandImpactAssessment(BaseModel):
     )
 
 
-@dataclass(frozen=True)
-class CommandImpactAssessment:
+class CommandImpactAssessment(FrozenStrictBaseModel):
     """User-facing summary of a command the agent wants to execute.
 
     Attributes:
@@ -143,15 +139,15 @@ class HumanApprovalManager(HumanApprovalBaseManager):
                 description=f"The agent wants to run this command in your workspace: {command}",
                 heads_up=_FALLBACK_HEADS_UP,
             )
-        answer: str = interrupt(
+        consent: bool = interrupt(
             {
-                "kind": APPROVAL_INTERRUPT_KIND,
+                "kind": InterruptKind.APPROVAL_REQUIRED,
                 "command": command,
                 "description": assessment.description,
                 "heads_up": assessment.heads_up or "",
             }
         )
-        return str(answer).strip().lower() == _APPROVAL_ANSWER_YES
+        return consent
 
     async def _assess(self, command: str) -> CommandImpactAssessment:
         messages = [

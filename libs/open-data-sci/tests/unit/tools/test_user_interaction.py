@@ -4,9 +4,17 @@ from unittest.mock import patch
 
 import pytest
 
+from opendatasci.agents.interrupts import InterruptKind
 from opendatasci.tools.user_interaction import create_user_interaction_tools
 
-_ARGS = {"question": "Q?", "choice_a": "A", "choice_b": "B", "choice_c": "C", "summary": "s", "communication": "c"}
+_ARGS = {
+    "question": "Q?",
+    "choice_a": "A",
+    "choice_b": "B",
+    "choice_c": "C",
+    "summary": "s",
+    "communication": "c",
+}
 
 
 def _get_tool():
@@ -27,7 +35,13 @@ class TestAskUserMcq:
         tool = _get_tool()
         with patch("opendatasci.tools.user_interaction.interrupt", return_value="A") as mock_intr:
             await tool.ainvoke(_ARGS)
-        mock_intr.assert_called_once_with({"question": "Q?", "choices": ["A", "B", "C"]})
+        mock_intr.assert_called_once_with(
+            {
+                "kind": InterruptKind.INPUT_REQUIRED,
+                "question": "Q?",
+                "choices": ["A", "B", "C"],
+            }
+        )
 
     @pytest.mark.asyncio
     async def test_returns_interrupt_result(self) -> None:
@@ -71,7 +85,9 @@ class TestAskUserMcqCaching:
         tool = _get_tool()
         with patch("opendatasci.tools.user_interaction.interrupt", return_value="first"):
             await tool.ainvoke(_ARGS)
-        with patch("opendatasci.tools.user_interaction.interrupt", return_value="second") as mock_intr:
+        with patch(
+            "opendatasci.tools.user_interaction.interrupt", return_value="second"
+        ) as mock_intr:
             await tool.ainvoke({**_ARGS, "question": "Other?"})
         mock_intr.assert_called_once()
 
@@ -80,7 +96,9 @@ class TestAskUserMcqCaching:
         tool = _get_tool()
         with patch("opendatasci.tools.user_interaction.interrupt", return_value="ans1"):
             await tool.ainvoke(_ARGS)
-        with patch("opendatasci.tools.user_interaction.interrupt", return_value="ans2") as mock_intr:
+        with patch(
+            "opendatasci.tools.user_interaction.interrupt", return_value="ans2"
+        ) as mock_intr:
             await tool.ainvoke({**_ARGS, "choice_a": "Different"})
         mock_intr.assert_called_once()
 

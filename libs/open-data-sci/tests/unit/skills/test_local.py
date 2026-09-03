@@ -1,6 +1,5 @@
 """Unit tests for opendatasci.skills (LocalSkillStore)."""
 
-
 from pathlib import Path
 
 from opendatasci.skills import Skill, SkillDomain
@@ -81,6 +80,36 @@ _BUILTIN_QUANTITATIVE_ANALYSIS_SKILLS = {
     "quantitative_analysis::communicating_results",
 }
 
+_BUILTIN_KAGGLE_SKILLS = {
+    "kaggle.com::competitions",
+    "kaggle.com::datasets",
+    "kaggle.com::prior_editions_research",
+}
+
+_BUILTIN_ARXIV_SKILLS = {
+    "arxiv.org::searching",
+    "arxiv.org::reading_papers",
+    "arxiv.org::credibility",
+}
+
+_BUILTIN_HUGGINGFACE_SKILLS = {
+    "huggingface.co::leaderboards",
+}
+
+_BUILTIN_GITHUB_SKILLS = {
+    "github.com::repository_reconnaissance",
+    "github.com::issues_and_prs",
+    "github.com::code_and_repo_search",
+}
+
+_BUILTIN_PAPERSWITHCODE_SKILLS = {
+    "paperswithcode.com::sota_leaderboards",
+}
+
+_BUILTIN_FINANCE_YAHOO_SKILLS = {
+    "finance.yahoo.com::yfinance_basics",
+}
+
 _BUILTIN_DOMAIN_NAMES = {
     "competitive_data_science",
     "data_science",
@@ -88,6 +117,12 @@ _BUILTIN_DOMAIN_NAMES = {
     "deep_learning",
     "machine_learning",
     "quantitative_analysis",
+    "kaggle.com",
+    "arxiv.org",
+    "huggingface.co",
+    "github.com",
+    "paperswithcode.com",
+    "finance.yahoo.com",
 }
 
 
@@ -100,6 +135,12 @@ class TestBuiltinSkills:
             | _BUILTIN_DEEP_LEARNING_SKILLS
             | _BUILTIN_MACHINE_LEARNING_SKILLS
             | _BUILTIN_QUANTITATIVE_ANALYSIS_SKILLS
+            | _BUILTIN_KAGGLE_SKILLS
+            | _BUILTIN_ARXIV_SKILLS
+            | _BUILTIN_HUGGINGFACE_SKILLS
+            | _BUILTIN_GITHUB_SKILLS
+            | _BUILTIN_PAPERSWITHCODE_SKILLS
+            | _BUILTIN_FINANCE_YAHOO_SKILLS
         )
         assert set(LocalSkillStore().list_skills().keys()) == expected
 

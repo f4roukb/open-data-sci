@@ -15,16 +15,22 @@ Everything else has been extracted into focused sibling modules:
   - presenter.py  — _TurnPresenter (streaming event dispatch)
 """
 
+import asyncio
 import difflib
 import logging
 import string
+from collections import defaultdict
 from contextlib import AsyncExitStack
 from pathlib import Path
+from typing import AsyncIterator
+from uuid import UUID
 
 from rich.markup import escape as escape_markup
 
 from opendatasci._tui.service import OpenDataSciTuiService
 from opendatasci._tui.session import CLISessionInfo
+from opendatasci._utils.background_tasks_utils import merge_task_updates
+from opendatasci.agents.agents import Invocation
 from opendatasci.agents.agents_factory import create_agent
 from opendatasci.configs import (
     DEFAULT_MODEL,
@@ -32,8 +38,9 @@ from opendatasci.configs import (
     PROVIDER_KEY_FIELD,
     OpenDataSciConfig,
 )
+from opendatasci.memory.messages import MessageOrigin
 from opendatasci.models.providers import Provider
-from opendatasci.streaming import BaseAgentStreamEvent
+from opendatasci.streaming import AgentStreamEvent, BaseAgentStreamEvent
 from opendatasci.streaming.events import (
     ApprovalRequiredEvent,
     ErrorEvent,
@@ -41,13 +48,14 @@ from opendatasci.streaming.events import (
     ReasoningEvent,
     ResponseEvent,
     SubagentEvent,
+    TaskDoneEvent,
     TokenEvent,
     ToolCallEvent,
     ToolCommunicationEvent,
     ToolResultEvent,
     UsageEvent,
-    WorkerDoneEvent,
 )
+from opendatasci.tasks.base import BackgroundTaskStatus, BackgroundTaskUpdate
 from opendatasci.tools.mcp import load_mcp_servers
 
 from . import theme as _theme
@@ -85,6 +93,9 @@ logger = logging.getLogger(__name__)
 # a real (if synthetic) turn of conversation, not a control-flow sentinel.
 _CHOICE_CANCELLED_QUERY = "cancel"
 
+# How often the header's "running background tasks" line refreshes.
+_BACKGROUND_STATUS_POLL_SECONDS = 2
+
 
 class CLIController:
     """Owns application state and all non-Textual business logic for the TUI."""
@@ -113,6 +124,8 @@ class CLIController:
         self._agent_running: bool = False
         self._pending_queue = PendingMessageQueue()
         self._pending_handles: dict[int, PendingMessageHandle] = {}
+        self._background_watcher_task: asyncio.Task[None] | None = None
+        self._background_status_task: asyncio.Task[None] | None = None
         self._cfg: OpenDataSciConfig | None = None
         self._completion = (
             completion
@@ -159,6 +172,12 @@ class CLIController:
 
     async def close(self) -> None:
         """Release the agent sandbox and any other resources held by the controller."""
+        if self._background_watcher_task is not None:
+            self._background_watcher_task.cancel()
+            self._background_watcher_task = None
+        if self._background_status_task is not None:
+            self._background_status_task.cancel()
+            self._background_status_task = None
         if self._service is not None:
             await self._service.close()
         await self._exit_stack.aclose()
@@ -192,6 +211,8 @@ class CLIController:
 
             info = CLISessionInfo.from_path(self._workspace_path, workspace_path, cfg)
             ui.set_file_count(self._describe_data(info))
+            self._background_watcher_task = asyncio.create_task(self._watch_background_tasks())
+            self._background_status_task = asyncio.create_task(self._poll_background_task_status())
         except FileNotFoundError:
             hint = self._did_you_mean(self._workspace_path)
             await self._fail_boot(
@@ -299,7 +320,7 @@ class CLIController:
                 return (SubmitAction.QUIT if should_quit else SubmitAction.NONE), ""
             answer = await self._handle_user_choice(raw)
             if answer is not None:
-                return SubmitAction.RUN, answer
+                return SubmitAction.RESUME_INPUT, answer
             return SubmitAction.NONE, ""
 
         if self._awaiting_approval:
@@ -342,58 +363,181 @@ class CLIController:
         return SubmitAction.RUN, agent_query
 
     def _enqueue_pending(self, agent_query: str, display: str) -> None:
-        """Pin *display* in the UI and queue *agent_query* for when the agent is free."""
+        """Queue *agent_query* for when the agent is free, pinned in the UI as pending."""
         message = self._pending_queue.enqueue(agent_query, display)
         self._pending_handles[message.id] = self._ui.add_pending_message(display)
 
     # ── Agent run ─────────────────────────────────────────────────────────────
 
-    async def run_agent(self, query: str) -> None:
-        """Run *query*, then keep draining the pending-message queue.
+    async def _ensure_service_ready(self) -> bool:
+        """Show a status message and return False if there's no service to run against yet."""
+        if self._service is not None:
+            return True
+        if self._boot_failed:
+            await self._ui.add_message(
+                "agent",
+                "Startup failed, so queries can't run in this session. "
+                "Fix the problem shown above and restart the app "
+                "(type `/exit` to quit).",
+            ).finish()
+        else:
+            await self._ui.add_message(
+                "agent", "Still loading — please wait a moment and try again."
+            ).finish()
+        return False
 
-        Each queued message is run as its own turn, in submission order,
-        as long as the previous turn didn't end on a choice prompt (which
-        requires the user's input before anything else can proceed).
+    async def run_agent(self, query: str | list[Invocation]) -> None:
+        """Run *query* as a new turn, then keep draining the pending-message queue.
+
+        Once a turn finishes, every message queued in the meantime is sent
+        together as a single new turn, as long as the turn didn't end on a
+        choice prompt (which requires the user's input before anything else
+        can proceed).
         """
-        if self._service is None:
-            if self._boot_failed:
-                await self._ui.add_message(
-                    "agent",
-                    "Startup failed, so queries can't run in this session. "
-                    "Fix the problem shown above and restart the app "
-                    "(type `/exit` to quit).",
-                ).finish()
-            else:
-                await self._ui.add_message(
-                    "agent", "Still loading — please wait a moment and try again."
-                ).finish()
+        if not await self._ensure_service_ready():
+            return
+        assert self._service is not None
+        invocation = query if isinstance(query, list) else Invocation.from_text(query)
+        await self._run_turn(self._service.astream(invocation))
+        await self._drain_loop()
+
+    async def resume_with_input(self, answer: str) -> None:
+        """Resume a pending question/choice prompt with *answer*, then drain the pending queue."""
+        if not await self._ensure_service_ready():
+            return
+        assert self._service is not None
+        await self._run_turn(self._service.resume_with_input(answer))
+        await self._drain_loop()
+
+    async def resume_with_approval(self, approved: bool) -> None:
+        """Resolve a pending approval prompt with the user's Yes/No decision, then drain the pending queue."""
+        self._awaiting_approval = False
+        self._ui.set_input_placeholder("Ask a question about your data…")
+        await self._ui.add_message("user", "Yes" if approved else "No").finish()
+        if not await self._ensure_service_ready():
+            return
+        assert self._service is not None
+        await self._run_turn(self._service.resume_with_approval(approved))
+        await self._drain_loop()
+
+    async def _drain_task_updates_batch(self) -> list[Invocation]:
+        """Drain the task manager's own buffer and tag each record for the model.
+
+        Non-blocking, and may return ``[]`` — e.g. if the agent's own mid-turn
+        draining already picked up everything since the last
+        ``has_task_updates()``/``listen_task_updates()`` check.
+        """
+        assert self._service is not None
+        updates = await self._service.task_manager.pull_task_updates()
+        if not updates:
+            return []
+        grouped: dict[UUID, list[BackgroundTaskUpdate]] = defaultdict(list)
+        for update in updates:
+            grouped[update.task_id].append(update)
+        return [
+            Invocation(
+                content=(msg := merge_task_updates(group)).content,
+                created_at=msg.created_at,
+                origin=MessageOrigin.TASK,
+            )
+            for group in grouped.values()
+        ]
+
+    async def _drain_loop(self) -> None:
+        """Keep starting new turns until nothing is left to send or a prompt opens.
+
+        Drains both the user-message queue and any task-manager content the
+        agent hasn't picked up yet, so neither has to wait for an unrelated
+        future event to surface.
+        """
+        assert self._service is not None
+        while not (
+            self._awaiting_choice
+            or self._awaiting_approval
+            or self._service.is_user_input_required()
+        ):
+            if not self._pending_queue.is_empty():
+                batch = self._drain_pending_batch()
+                await self._run_turn(self._service.astream(batch))
+                continue
+            if self._service.task_manager.has_task_updates():
+                batch = await self._drain_task_updates_batch()
+                if not batch:
+                    return
+                self._active_turn_status = self._ui.add_turn_status_bar()
+                await self._run_turn(self._service.astream(batch))
+                continue
             return
 
-        while True:
-            await self._run_turn(query)
-            if self._awaiting_choice or self._awaiting_approval or self._pending_queue.is_empty():
-                return
-            query = self._dequeue_pending()
+    async def _watch_background_tasks(self) -> None:
+        """Proactively start a turn when a background task finishes while the agent is idle.
 
-    def _dequeue_pending(self) -> str:
-        """Pop the next queued message, surface it as a normal user turn, return its query."""
-        message = self._pending_queue.pop_next()
-        assert message is not None  # caller already checked the queue is non-empty
-        handle = self._pending_handles.pop(message.id, None)
-        if handle is not None:
-            handle.remove()
-        self._ui.add_message("user", message.display)
-        self._active_turn_status = self._ui.add_turn_status_bar()
-        return message.agent_query
+        Runs for the lifetime of the session (started in ``boot``, cancelled
+        in ``close``). ``listen_task_updates`` blocks until the next terminal
+        task, so this stays idle between completions rather than polling.
 
-    async def _run_turn(self, query: str) -> None:
+        The raw completion is never shown as a chat message. This drains the
+        task manager's own content buffer and feeds it to the agent as a new
+        turn — the agent no longer drains this on its own at turn start, so
+        an idle agent relies on this watcher to surface a finished task
+        instead of waiting on the next unrelated user message.
+        """
         assert self._service is not None
+        async for _event in self._service.task_manager.listen_task_updates():
+            if self._agent_running or self._service.is_user_input_required():
+                continue
+            batch = await self._drain_task_updates_batch()
+            if not batch:
+                continue
+            self._active_turn_status = self._ui.add_turn_status_bar()
+            await self.run_agent(batch)
+
+    async def _poll_background_task_status(self) -> None:
+        """Refresh the header's "running background tasks" line every few seconds.
+
+        Purely a status display of already-in-memory state — not the
+        completion-delivery mechanism (``_watch_background_tasks`` is).
+        """
+        assert self._service is not None
+        while True:
+            await asyncio.sleep(_BACKGROUND_STATUS_POLL_SECONDS)
+            records = await self._service.task_manager.list_tasks()
+            running = [r for r in records if r.status == BackgroundTaskStatus.RUNNING]
+            if not running:
+                self._ui.set_background_tasks("")
+                continue
+            self._ui.set_background_tasks("; ".join(r.summary for r in running))
+
+    def _drain_pending_batch(self) -> list[Invocation]:
+        """Drain every queued user message, surface each in the UI, and return the batch.
+
+        Messages are shown in the order they arrived.
+        """
+        messages = self._pending_queue.drain_all()
+        assert messages  # caller already checked the queue is non-empty
+        batch: list[Invocation] = []
+        for message in messages:
+            handle = self._pending_handles.pop(message.id, None)
+            if handle is not None:
+                handle.remove()
+            self._ui.add_message("user", message.display)
+            batch.append(
+                Invocation.from_text(
+                    message.content,
+                    origin=MessageOrigin.USER,
+                    created_at=message.created_at,
+                )
+            )
+        self._active_turn_status = self._ui.add_turn_status_bar()
+        return batch
+
+    async def _run_turn(self, stream: AsyncIterator[AgentStreamEvent]) -> None:
         self._agent_running = True
         presenter = _TurnPresenter(self._ui)
         try:
-            async for event in self._service.astream(query):
+            async for event in stream:
                 if not isinstance(event, BaseAgentStreamEvent):
-                    logger.warning("astream() yielded unexpected type %r; skipping", type(event))
+                    logger.warning("agent stream yielded unexpected type %r; skipping", type(event))
                     continue
                 await self._dispatch_stream_event(event, presenter)
                 if isinstance(event, (ResponseEvent, ErrorEvent)):
@@ -422,8 +566,8 @@ class CLIController:
             presenter.handle_tool_communication(event)
         elif isinstance(event, ToolCallEvent):
             await presenter.handle_tool_call(event)
-        elif isinstance(event, WorkerDoneEvent):
-            presenter.handle_worker_done(event)
+        elif isinstance(event, TaskDoneEvent):
+            presenter.handle_task_done(event)
         elif isinstance(event, SubagentEvent):
             presenter.handle_subagent_event(event)
         elif isinstance(event, ToolResultEvent):
@@ -545,17 +689,6 @@ class CLIController:
         self._ui.show_approval_prompt(event.description, event.heads_up)
         self._awaiting_approval = True
         self._ui.set_input_placeholder("↑/↓ to select Yes or No, Enter to confirm, Esc to decline…")
-
-    async def resolve_approval(self, approved: bool) -> str:
-        """Record the user's approval decision and return the resume input.
-
-        The caller must pass the returned value to ``run_agent`` so the paused
-        graph resumes with the user's answer.
-        """
-        self._awaiting_approval = False
-        self._ui.set_input_placeholder("Ask a question about your data…")
-        await self._ui.add_message("user", "Yes" if approved else "No").finish()
-        return "yes" if approved else "no"
 
     # ── Slash command dispatch ────────────────────────────────────────────────
 

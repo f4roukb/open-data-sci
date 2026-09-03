@@ -12,10 +12,11 @@ Each test exercises a long code path:
 The LLM is the lowest-level boundary mock; everything above is real.
 """
 
-
 import asyncio
 
 from langchain_core.messages import AIMessage
+
+from opendatasci.agents.agents import Invocation
 
 
 def _ai_with_tool_call(name: str, args: dict, call_id: str = "call_1") -> AIMessage:
@@ -37,7 +38,7 @@ class TestSingleTurnTextOnly:
     async def test_single_turn_emits_full_event_set(self, loaded_scripted_service):
         svc = await loaded_scripted_service([AIMessage(content="Hello, world.")])
 
-        events = [e async for e in svc.astream("hi")]
+        events = [e async for e in svc.astream(Invocation.from_text("hi"))]
         await asyncio.sleep(0)  # drain background summarizer task
 
         types = [e.type for e in events]
@@ -69,7 +70,7 @@ class TestToolCallCycle:
                 AIMessage(content="There is one CSV file."),
             ]
         )
-        events = [e async for e in svc.astream("what files exist?")]
+        events = [e async for e in svc.astream(Invocation.from_text("what files exist?"))]
         await asyncio.sleep(0)
 
         types = [e.type for e in events]
@@ -98,7 +99,7 @@ class TestStreamingErrorPath:
         # by the framework when invoked.
         svc = await loaded_scripted_service([])
 
-        events = [e async for e in svc.astream("trigger failure")]
+        events = [e async for e in svc.astream(Invocation.from_text("trigger failure"))]
         await asyncio.sleep(0)
 
         types = [e.type for e in events]

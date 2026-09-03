@@ -6,7 +6,7 @@ The agent resolves skills at runtime via a `BaseSkillStore`. The default impleme
 
 ## Built-in skills
 
-The library ships with built-in skills and skill domains covering data science, machine learning, deep learning, competitive data science, quantitative analysis, and data science education. They are loaded automatically; no configuration is needed.
+The library ships with built-in skills and skill domains covering data science, machine learning, deep learning, competitive data science, quantitative analysis, data science education, and curated entry points into specific external sites (`kaggle.com`, `arxiv.org`, `huggingface.co`, `github.com`, `paperswithcode.com`, `finance.yahoo.com`). They are loaded automatically; no configuration is needed.
 
 ## Custom skills
 

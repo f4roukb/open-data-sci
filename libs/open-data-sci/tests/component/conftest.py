@@ -6,7 +6,6 @@ lightweight stubs.  The agent is wrapped in the production
 ``OpenDataSciTuiService`` exactly as the controller wires it at boot.
 """
 
-
 # ---------------------------------------------------------------------------
 # Stub unavailable native modules BEFORE any opendatasci imports
 # ---------------------------------------------------------------------------
@@ -65,7 +64,7 @@ from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.local import LocalContextStore
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory, SandboxExecResult
 from opendatasci.skills.local import LocalSkillStore
-from opendatasci.tools import create_agent_tools
+from opendatasci.tools.factory import create_execution_mode_tools
 from opendatasci.workspace.local import LocalWorkspace
 from opendatasci._tui.service import OpenDataSciTuiService
 
@@ -247,15 +246,18 @@ async def _build_entered_service(
 
     with (
         patch("opendatasci.tools.coding.create_model", return_value=coding_llm),
-        patch("opendatasci.human_inputs.human_approval.create_secondary_model", return_value=coding_llm),
+        patch(
+            "opendatasci.human_inputs.human_approval.create_secondary_model",
+            return_value=coding_llm,
+        ),
     ):
-        tools = create_agent_tools(
+        tools = create_execution_mode_tools(
             workspace,
             sandbox,
             context_store,
             sandbox_factory=factory,
             session_id=session_id,
-            store=skill_store,
+            skill_store=skill_store,
             datasci_config=config,
         )
 
@@ -306,9 +308,7 @@ async def make_scripted_service(mock_sandbox, datasci_config):
 
     async def _build(scripted_messages: Iterable[AIMessage], path: str) -> OpenDataSciTuiService:
         llm = _ScriptedChatModel(messages=iter(list(scripted_messages)))
-        service, agent = await _build_entered_service(
-            llm, mock_sandbox, path, datasci_config
-        )
+        service, agent = await _build_entered_service(llm, mock_sandbox, path, datasci_config)
         agents.append(agent)
         return service
 

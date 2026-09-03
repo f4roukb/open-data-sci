@@ -1,6 +1,5 @@
 """Unit tests for opendatasci.agents.agents."""
 
-
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -10,12 +9,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from opendatasci.memory.messages import AgentMessage, UserMessage
+from opendatasci._utils.message_utils import to_text_content_blocks
+from opendatasci.memory.messages import AgentMessage, MessageOrigin, TaskMessage, UserMessage
 from langchain_core.tools import BaseTool, StructuredTool
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel, ConfigDict
 
-from opendatasci.agents.agents import Agent, ConcurrentWorkerAgent, SUBAGENT_TAG
+from opendatasci.agents.agents import Agent, Invocation
+from opendatasci.agents.workers import SUBAGENT_TAG, WorkerAgent
 from opendatasci.agents.states import AgentState
 from opendatasci.agents.chat_history import ChatHistoryBuilder
 from opendatasci.memory.chat_memory import ChatTurnSummary
@@ -118,7 +119,7 @@ async def _make_agent_ctx(
 
     with (
         patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x),
-        patch("opendatasci.agents.agents.create_agent_tools", return_value=[]),
+        patch("opendatasci.agents.agents.create_execution_mode_tools", return_value=[]),
         patch("opendatasci.agents.agents.create_model", return_value=mock_llm),
         patch("opendatasci.agents.agents.create_secondary_model", return_value=mock_llm),
     ):
@@ -146,14 +147,16 @@ async def _agent_with_overrides_ctx(**kwargs: object) -> AsyncIterator[Agent]:
 
     with (
         patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x),
-        patch("opendatasci.agents.agents.create_agent_tools", return_value=[]),
+        patch("opendatasci.agents.agents.create_execution_mode_tools", return_value=[]),
         patch("opendatasci.agents.agents.create_model", return_value=mock_llm),
         patch("opendatasci.agents.agents.create_secondary_model", return_value=mock_llm),
     ):
         agent = Agent(
             workspace=workspace,
             sandbox_factory=kwargs.pop("sandbox_factory", factory),
-            context_store=kwargs.pop("context_store", LocalContextStore(Path("/tmp/fake_workspace"))),
+            context_store=kwargs.pop(
+                "context_store", LocalContextStore(Path("/tmp/fake_workspace"))
+            ),
             skill_store=kwargs.pop("skill_store", MagicMock(spec=BaseSkillStore)),
             session_manager=kwargs.pop("session_manager", _InMemorySessionManager()),  # type: ignore[arg-type]
             config=OpenDataSciConfig(),
@@ -178,6 +181,20 @@ class TestAgentInit:
         async with _make_agent_ctx() as agent:
             assert _get_messages(agent) == []
 
+    async def test_task_manager_property_exposes_shared_manager(self) -> None:
+        from opendatasci.tasks.base import BackgroundTaskManagerBase
+
+        async with _make_agent_ctx() as agent:
+            assert isinstance(agent.task_manager, BackgroundTaskManagerBase)
+            assert agent.task_manager is agent._background_task_manager
+
+    async def test_task_manager_property_returns_explicit_override(self) -> None:
+        from opendatasci.tasks.local import BackgroundTaskManager
+
+        explicit_manager = BackgroundTaskManager()
+        async with _agent_with_overrides_ctx(background_task_manager=explicit_manager) as agent:
+            assert agent.task_manager is explicit_manager
+
 
 # ---------------------------------------------------------------------------
 # Conversation management
@@ -187,7 +204,10 @@ class TestAgentInit:
 class TestAgentConversation:
     async def test_clear_chat_history_removes_all_messages(self) -> None:
         async with _make_agent_ctx() as agent:
-            _seed_messages(agent, [UserMessage(content="hello"), AgentMessage(content="hi")])
+            _seed_messages(
+                agent,
+                [UserMessage(content=to_text_content_blocks("hello")), AgentMessage(content="hi")],
+            )
             await agent.clear_chat_history()
             assert _get_messages(agent) == []
 
@@ -198,11 +218,22 @@ class TestAgentConversation:
 
     async def test_clear_chat_history_empties_memory(self) -> None:
         from datetime import timezone
+
         _dt = datetime(2024, 1, 1, tzinfo=timezone.utc)
         async with _make_agent_ctx() as agent:
             agent.graph.update_state(
                 agent._graph_config,
-                {"turn_summaries": [ChatTurnSummary(turn_start_timestamp=_dt, turn_end_timestamp=_dt, user_message_summary="q", actions_summary="", agent_response_summary="a")]},
+                {
+                    "turn_summaries": [
+                        ChatTurnSummary(
+                            turn_start_timestamp=_dt,
+                            turn_end_timestamp=_dt,
+                            user_message="q",
+                            step_batches=[],
+                            agent_response="a",
+                        )
+                    ]
+                },
             )
             await agent.clear_chat_history()
             assert _get_state_value(agent, "turn_summaries", []) == []
@@ -219,7 +250,7 @@ class TestAgentConversation:
             builder = agent._chat_history_builder
             builder._summarizer.summarize_turn = _hang_forever  # type: ignore[method-assign]
             builder.schedule_turn_summarization(
-                [UserMessage(content="q"), AgentMessage(content="a")]
+                [UserMessage(content=to_text_content_blocks("q")), AgentMessage(content="a")]
             )
             pending_task = builder._pending_task
             assert pending_task is not None and not pending_task.done()
@@ -236,7 +267,10 @@ class TestAgentConversation:
         async with _make_agent_ctx() as agent:
             assert agent._session_manager is not None
             old_thread_id = agent._session_manager.get_or_create_thread()
-            _seed_messages(agent, [UserMessage(content="hello"), AgentMessage(content="hi")])
+            _seed_messages(
+                agent,
+                [UserMessage(content=to_text_content_blocks("hello")), AgentMessage(content="hi")],
+            )
             await agent.clear_chat_history()
             assert agent._session_manager.get_current_thread() != old_thread_id
             assert _get_messages(agent) == []
@@ -269,25 +303,43 @@ class TestAgentConversation:
             result = await agent.compact_chat_history()
             assert "no conversation" in result.lower()
 
-    async def test_compact_chat_history_returns_placeholder_when_only_ongoing_turn_present(self) -> None:
+    async def test_compact_chat_history_returns_placeholder_when_only_ongoing_turn_present(
+        self,
+    ) -> None:
         async with _make_agent_ctx() as agent:
-            _seed_messages(agent, [
-                UserMessage(content="q"),
-                AgentMessage(content="", tool_calls=[{"name": "t", "args": {}, "id": "1"}]),
-            ])
+            _seed_messages(
+                agent,
+                [
+                    UserMessage(content=to_text_content_blocks("q")),
+                    AgentMessage(content="", tool_calls=[{"name": "t", "args": {}, "id": "1"}]),
+                ],
+            )
             result = await agent.compact_chat_history()
             assert "no conversation" in result.lower()
 
     async def test_compact_chat_history_folds_turn_summaries_into_one_record(self) -> None:
         from datetime import timezone
+
         _dt = datetime(2024, 1, 1, tzinfo=timezone.utc)
         async with _make_agent_ctx() as agent:
             agent.graph.update_state(
                 agent._graph_config,
                 {
                     "turn_summaries": [
-                        ChatTurnSummary(turn_start_timestamp=_dt, turn_end_timestamp=_dt, user_message_summary="question one", actions_summary="", agent_response_summary="answer one"),
-                        ChatTurnSummary(turn_start_timestamp=_dt, turn_end_timestamp=_dt, user_message_summary="question two", actions_summary="", agent_response_summary="answer two"),
+                        ChatTurnSummary(
+                            turn_start_timestamp=_dt,
+                            turn_end_timestamp=_dt,
+                            user_message="question one",
+                            step_batches=[],
+                            agent_response="answer one",
+                        ),
+                        ChatTurnSummary(
+                            turn_start_timestamp=_dt,
+                            turn_end_timestamp=_dt,
+                            user_message="question two",
+                            step_batches=[],
+                            agent_response="answer two",
+                        ),
                     ]
                 },
             )
@@ -301,12 +353,25 @@ class TestAgentConversation:
 
     async def test_compact_chat_history_wipes_ongoing_turn_messages(self) -> None:
         from datetime import timezone
+
         _dt = datetime(2024, 1, 1, tzinfo=timezone.utc)
         async with _make_agent_ctx() as agent:
-            _seed_messages(agent, [UserMessage(content="q"), AgentMessage(content="a")])
+            _seed_messages(
+                agent, [UserMessage(content=to_text_content_blocks("q")), AgentMessage(content="a")]
+            )
             agent.graph.update_state(
                 agent._graph_config,
-                {"turn_summaries": [ChatTurnSummary(turn_start_timestamp=_dt, turn_end_timestamp=_dt, user_message_summary="old", actions_summary="", agent_response_summary="ans")]},
+                {
+                    "turn_summaries": [
+                        ChatTurnSummary(
+                            turn_start_timestamp=_dt,
+                            turn_end_timestamp=_dt,
+                            user_message="old",
+                            step_batches=[],
+                            agent_response="ans",
+                        )
+                    ]
+                },
             )
             agent._llm.ainvoke = AsyncMock(return_value=AIMessage(content="summary"))
             await agent.compact_chat_history()
@@ -315,14 +380,27 @@ class TestAgentConversation:
 
     async def test_compact_chat_history_folds_existing_compaction_summary_too(self) -> None:
         from datetime import timezone
+
         _dt = datetime(2024, 1, 1, tzinfo=timezone.utc)
         async with _make_agent_ctx() as agent:
             agent.graph.update_state(
                 agent._graph_config,
                 {
                     "turn_summaries": [
-                        ChatTurnSummary(turn_start_timestamp=_dt, turn_end_timestamp=_dt, user_message_summary="", actions_summary="", agent_response_summary="earlier summary"),
-                        ChatTurnSummary(turn_start_timestamp=_dt, turn_end_timestamp=_dt, user_message_summary="q2", actions_summary="", agent_response_summary="a2"),
+                        ChatTurnSummary(
+                            turn_start_timestamp=_dt,
+                            turn_end_timestamp=_dt,
+                            user_message="",
+                            step_batches=[],
+                            agent_response="earlier summary",
+                        ),
+                        ChatTurnSummary(
+                            turn_start_timestamp=_dt,
+                            turn_end_timestamp=_dt,
+                            user_message="q2",
+                            step_batches=[],
+                            agent_response="a2",
+                        ),
                     ],
                 },
             )
@@ -342,7 +420,7 @@ class TestAgentConversation:
         """
         async with _make_agent_ctx() as agent:
             agent._llm_with_tools.ainvoke = AsyncMock(return_value=AIMessage(content="answer"))
-            events = [event async for event in agent.astream("hello")]
+            events = [event async for event in agent.astream(Invocation.from_text("hello"))]
             assert any(type(event).__name__ == "ResponseEvent" for event in events)
 
             agent._llm.ainvoke = AsyncMock(return_value=AIMessage(content="compact summary"))
@@ -358,7 +436,7 @@ class TestAgentConversation:
         the whole completed turn empties ``messages`` before the router runs."""
         async with _make_agent_ctx() as agent:
             agent._llm_with_tools.ainvoke = AsyncMock(return_value=AIMessage(content="answer"))
-            events = [event async for event in agent.astream("hello")]
+            events = [event async for event in agent.astream(Invocation.from_text("hello"))]
             assert any(type(event).__name__ == "ResponseEvent" for event in events)
 
             await agent.rewind_turn()
@@ -368,7 +446,13 @@ class TestAgentConversation:
 
     async def test_rewind_turn_removes_incomplete_turn(self) -> None:
         async with _make_agent_ctx() as agent:
-            _seed_messages(agent, [AgentMessage(content="prev"), UserMessage(content="interrupted")])
+            _seed_messages(
+                agent,
+                [
+                    AgentMessage(content="prev"),
+                    UserMessage(content=to_text_content_blocks("interrupted")),
+                ],
+            )
             await agent.rewind_turn()
             remaining = _get_messages(agent)
             assert len(remaining) == 1
@@ -381,43 +465,33 @@ class TestAgentConversation:
 
     async def test_rewind_turn_removes_completed_turn(self) -> None:
         async with _make_agent_ctx() as agent:
-            _seed_messages(agent, [UserMessage(content="q"), AgentMessage(content="a")])
+            _seed_messages(
+                agent, [UserMessage(content=to_text_content_blocks("q")), AgentMessage(content="a")]
+            )
             await agent.rewind_turn()
             assert _get_messages(agent) == []
 
     async def test_rewind_turn_single_human_message_empties_history(self) -> None:
         async with _make_agent_ctx() as agent:
-            _seed_messages(agent, [UserMessage(content="only message")])
+            _seed_messages(agent, [UserMessage(content=to_text_content_blocks("only message"))])
             await agent.rewind_turn()
             assert _get_messages(agent) == []
 
     async def test_rewind_turn_preserves_earlier_turns(self) -> None:
         async with _make_agent_ctx() as agent:
-            _seed_messages(agent, [
-                UserMessage(content="q1"),
-                AgentMessage(content="a1"),
-                UserMessage(content="interrupted"),
-            ])
+            _seed_messages(
+                agent,
+                [
+                    UserMessage(content=to_text_content_blocks("q1")),
+                    AgentMessage(content="a1"),
+                    UserMessage(content=to_text_content_blocks("interrupted")),
+                ],
+            )
             await agent.rewind_turn()
             remaining = _get_messages(agent)
             assert len(remaining) == 2
-            assert remaining[0].content == "q1"
+            assert remaining[0].content == to_text_content_blocks("q1")
             assert remaining[1].content == "a1"
-
-
-# ---------------------------------------------------------------------------
-# Callbacks
-# ---------------------------------------------------------------------------
-
-
-class TestAgentInterruptState:
-    async def test_prepare_user_message_records_query_and_timestamp_in_metadata(self) -> None:
-        async with _make_agent_ctx() as agent:
-            msg = agent._prepare_user_message("hello")
-            assert msg.content == "hello"
-            assert msg.created_at is not None
-            assert isinstance(msg, UserMessage)
-            assert msg.is_input_on_interrupt is False
 
 
 # ---------------------------------------------------------------------------
@@ -462,35 +536,12 @@ class TestActiveLlmWithToolsDispatch:
 
     async def test_self_review_mode_takes_priority_over_plan_mode(self) -> None:
         async with _make_agent_ctx() as agent:
-            assert agent._get_active_llm_with_tools(
-                AgentState(is_plan_mode=True, is_self_review_mode=True)
-            ) is agent._llm_with_tools_self_review
-
-
-# ---------------------------------------------------------------------------
-# _prepare_user_message
-# ---------------------------------------------------------------------------
-
-
-class TestPrepareUserMessage:
-    async def test_prepare_user_message_records_timestamp_in_metadata(self) -> None:
-        async with _make_agent_ctx() as agent:
-            msg = agent._prepare_user_message("a query")
-            assert msg.created_at is not None
-
-    async def test_prepare_user_message_returns_user_message_marked_not_interrupt(self) -> None:
-        async with _make_agent_ctx() as agent:
-            msg = agent._prepare_user_message("hello")
-            assert isinstance(msg, UserMessage)
-            assert msg.content == "hello"
-            assert msg.is_input_on_interrupt is False
-
-    async def test_prepare_user_message_uses_session_id_not_per_turn_uuid(self) -> None:
-        async with _make_agent_ctx() as agent:
-            session_id = agent._session_id
-            agent._prepare_user_message("first")
-            agent._prepare_user_message("second")
-            assert agent._session_id == session_id
+            assert (
+                agent._get_active_llm_with_tools(
+                    AgentState(is_plan_mode=True, is_self_review_mode=True)
+                )
+                is agent._llm_with_tools_self_review
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -522,29 +573,34 @@ class TestAgentAstream:
 
         # Capture kwargs so the session_id test can inspect them
         captured: list[dict] = []
+        captured_inputs: list = []
 
         async def fake_astream_events(state, **kwargs):
             captured.append(kwargs)
+            captured_inputs.append(state)
             # Persist the turn's messages so the final AIMessage (read from the
             # checkpointed state at finalization) can be recovered.
             agent.graph.update_state(
                 agent._graph_config,
-                {"messages": [UserMessage(content="q"), final_ai]},
+                {"messages": [UserMessage(content=to_text_content_blocks("q")), final_ai]},
             )
             for _ in events_to_produce:
                 yield {}
 
         agent.graph.astream_events = fake_astream_events  # type: ignore[attr-defined]
         agent._astream_captured = captured  # expose for tests
+        agent._astream_inputs_captured = captured_inputs  # expose graph_input for tests
 
         mock_processor = MagicMock()
-        mock_processor.process_event.side_effect = (
-            lambda _: [event_queue.pop(0)] if event_queue else []
+        mock_processor.process_event.side_effect = lambda _: (
+            [event_queue.pop(0)] if event_queue else []
         )
 
         agent._context_store.prune = MagicMock()
 
-        return patch("opendatasci.agents.agents.AgentTurnStreamProcessor", return_value=mock_processor)
+        return patch(
+            "opendatasci.agents.agents.AgentTurnStreamProcessor", return_value=mock_processor
+        )
 
     async def test_astream_emits_response_event_at_end(self) -> None:
         from opendatasci.streaming.events import TokenEvent
@@ -552,7 +608,7 @@ class TestAgentAstream:
         upstream = [TokenEvent(content="hi")]
         async with _make_agent_ctx() as agent:
             with self._wire_astream_mocks(agent, upstream):
-                events = [ev async for ev in agent.astream("hello")]
+                events = [ev async for ev in agent.astream(Invocation.from_text("hello"))]
         assert events[-1].type == "response"
         assert events[-1].content == "final-explanation"
 
@@ -565,7 +621,7 @@ class TestAgentAstream:
         ]
         async with _make_agent_ctx() as agent:
             with self._wire_astream_mocks(agent, upstream):
-                events = [ev async for ev in agent.astream("q")]
+                events = [ev async for ev in agent.astream(Invocation.from_text("q"))]
         prefix = [(e.type, e.content) for e in events[:-1]]
         assert prefix == [("token", "a"), ("token", "b")]
 
@@ -575,7 +631,7 @@ class TestAgentAstream:
         upstream = [TokenEvent(content="x")]
         async with _make_agent_ctx() as agent:
             with self._wire_astream_mocks(agent, upstream):
-                [ev async for ev in agent.astream("q")]
+                [ev async for ev in agent.astream(Invocation.from_text("q"))]
             assert agent._session_manager is not None
             thread_id = agent._session_manager.get_current_thread()
 
@@ -593,15 +649,262 @@ class TestAgentAstream:
                 lambda messages: scheduled.append(messages)
             )
             with self._wire_astream_mocks(agent, upstream):
-                async for _ in agent.astream("q"):
+                async for _ in agent.astream(Invocation.from_text("q")):
                     pass
 
         assert len(scheduled) == 1
         assert any(isinstance(m, HumanMessage) for m in scheduled[0])
 
 
+# ---------------------------------------------------------------------------
+# is_user_input_required() / astream() / resume_with_input() / resume_with_approval()
+# ---------------------------------------------------------------------------
+
+
+def _fake_state_snapshot(intr_value: object | None) -> MagicMock:
+    """Build a fake ``StateSnapshot`` carrying at most one pending interrupt."""
+    snapshot = MagicMock()
+    if intr_value is None:
+        snapshot.tasks = []
+        return snapshot
+    interrupt_obj = MagicMock()
+    interrupt_obj.value = intr_value
+    task = MagicMock()
+    task.interrupts = [interrupt_obj]
+    snapshot.tasks = [task]
+    return snapshot
+
+
+def _input_interrupt_value() -> dict:
+    from opendatasci.agents.interrupts import InterruptKind
+
+    return {
+        "kind": InterruptKind.INPUT_REQUIRED,
+        "question": "Pick one?",
+        "choices": ["a", "b"],
+    }
+
+
+_INPUT_INTERRUPT_VALUE = _input_interrupt_value()
+
+
+def _approval_interrupt_value() -> dict:
+    from opendatasci.agents.interrupts import InterruptKind
+
+    return {
+        "kind": InterruptKind.APPROVAL_REQUIRED,
+        "command": "rm -rf /tmp/x",
+        "description": "Deletes a temp file.",
+        "heads_up": "",
+    }
+
+
+class TestAgentIsUserInputRequired:
+    async def test_false_when_idle(self) -> None:
+        async with _make_agent_ctx() as agent:
+            agent.graph.get_state = MagicMock(return_value=_fake_state_snapshot(None))
+            assert agent.is_user_input_required() is False
+
+    async def test_true_when_input_interrupt_pending(self) -> None:
+        async with _make_agent_ctx() as agent:
+            agent.graph.get_state = MagicMock(
+                return_value=_fake_state_snapshot(_INPUT_INTERRUPT_VALUE)
+            )
+            assert agent.is_user_input_required() is True
+
+    async def test_true_when_approval_interrupt_pending(self) -> None:
+        async with _make_agent_ctx() as agent:
+            agent.graph.get_state = MagicMock(
+                return_value=_fake_state_snapshot(_approval_interrupt_value())
+            )
+            assert agent.is_user_input_required() is True
+
+
+class TestAgentAstreamRaisesOnInterrupt:
+    async def test_astream_raises_when_input_interrupt_pending(self) -> None:
+        async with _make_agent_ctx() as agent:
+            agent.graph.get_state = MagicMock(
+                return_value=_fake_state_snapshot(_INPUT_INTERRUPT_VALUE)
+            )
+            with pytest.raises(RuntimeError):
+                async for _ in agent.astream(Invocation.from_text("hello")):
+                    pass
+
+    async def test_astream_raises_when_approval_interrupt_pending(self) -> None:
+        async with _make_agent_ctx() as agent:
+            agent.graph.get_state = MagicMock(
+                return_value=_fake_state_snapshot(_approval_interrupt_value())
+            )
+            with pytest.raises(RuntimeError):
+                async for _ in agent.astream(Invocation.from_text("hello")):
+                    pass
+
+
+class TestAgentResumeMethods:
+    async def test_resume_with_input_raises_when_nothing_pending(self) -> None:
+        async with _make_agent_ctx() as agent:
+            agent.graph.get_state = MagicMock(return_value=_fake_state_snapshot(None))
+            with pytest.raises(RuntimeError):
+                async for _ in agent.resume_with_input("answer"):
+                    pass
+
+    async def test_resume_with_approval_raises_when_nothing_pending(self) -> None:
+        async with _make_agent_ctx() as agent:
+            agent.graph.get_state = MagicMock(return_value=_fake_state_snapshot(None))
+            with pytest.raises(RuntimeError):
+                async for _ in agent.resume_with_approval(True):
+                    pass
+
+    async def test_resume_with_input_raises_when_approval_pending(self) -> None:
+        """Calling the free-text resume while an approval is pending must fail loud."""
+        async with _make_agent_ctx() as agent:
+            agent.graph.get_state = MagicMock(
+                return_value=_fake_state_snapshot(_approval_interrupt_value())
+            )
+            with pytest.raises(RuntimeError):
+                async for _ in agent.resume_with_input("yes"):
+                    pass
+
+    async def test_resume_with_approval_raises_when_input_pending(self) -> None:
+        """Calling the approval resume while a free-text question is pending must fail loud."""
+        async with _make_agent_ctx() as agent:
+            agent.graph.get_state = MagicMock(
+                return_value=_fake_state_snapshot(_INPUT_INTERRUPT_VALUE)
+            )
+            with pytest.raises(RuntimeError):
+                async for _ in agent.resume_with_approval(True):
+                    pass
+
+
+# ---------------------------------------------------------------------------
+# Task-manager-owned context injection (turn-start + mid-turn)
+# ---------------------------------------------------------------------------
+
+
+class TestPrepareBatchMessages:
+    def test_task_origin_item_renders_as_task_message(self) -> None:
+        item = Invocation.from_text("externally drained", origin=MessageOrigin.TASK)
+        messages = Agent._prepare_batch_messages([item])
+        assert len(messages) == 1
+        assert isinstance(messages[0], TaskMessage)
+
+    def test_user_origin_item_renders_as_user_message(self) -> None:
+        item = Invocation.from_text("hi", origin=MessageOrigin.USER)
+        messages = Agent._prepare_batch_messages([item])
+        assert len(messages) == 1
+        assert isinstance(messages[0], UserMessage)
+
+    def test_items_render_in_the_order_given(self) -> None:
+        items = [
+            Invocation.from_text("task result", origin=MessageOrigin.TASK),
+            Invocation.from_text("user text", origin=MessageOrigin.USER),
+        ]
+        messages = Agent._prepare_batch_messages(items)
+        assert [type(m) for m in messages] == [TaskMessage, UserMessage]
+
+    def test_empty_list_yields_no_messages(self) -> None:
+        assert Agent._prepare_batch_messages([]) == []
+
+    def test_unrecognized_origin_raises(self) -> None:
+        item = Invocation.from_text("x", origin=MessageOrigin.AGENT)
+        with pytest.raises(ValueError):
+            Agent._prepare_batch_messages([item])
+
+
+class TestAstreamDoesNotAutoDrainTaskManagerAtTurnStart:
+    """Turn-start delivery is now entirely the caller's responsibility (via a
+    TASK-origin Invocation) — astream() itself never touches task_manager, so
+    the only internal draining left is the mid-turn SynchronizationNode."""
+
+    async def test_pending_task_updates_are_left_untouched(self) -> None:
+        from opendatasci.streaming.events import TokenEvent
+        from opendatasci.tasks.base import BackgroundTaskStatus, BackgroundTaskUpdateKind
+        from opendatasci.tasks.local import BackgroundTaskManager
+
+        manager = BackgroundTaskManager()
+        await manager.record_task_update(
+            uuid.uuid4(),
+            BackgroundTaskUpdateKind.COMPLETED,
+            summary="background work",
+            status=BackgroundTaskStatus.COMPLETED,
+            result="r",
+        )
+
+        upstream = [TokenEvent(content="x")]
+        async with _agent_with_overrides_ctx(background_task_manager=manager) as agent:
+            with TestAgentAstream()._wire_astream_mocks(agent, upstream):
+                async for _ in agent.astream(Invocation.from_text("hello")):
+                    pass
+
+            graph_input = agent._astream_inputs_captured[0]
+            messages = graph_input["messages"]
+            assert len(messages) == 1
+            assert isinstance(messages[0], UserMessage)
+            # Nothing was drained — still sitting in the manager's own buffer.
+            assert manager.has_task_updates() is True
+
+    async def test_no_finished_tasks_yields_only_user_message(self) -> None:
+        from opendatasci.streaming.events import TokenEvent
+
+        upstream = [TokenEvent(content="x")]
+        async with _make_agent_ctx() as agent:
+            with TestAgentAstream()._wire_astream_mocks(agent, upstream):
+                async for _ in agent.astream(Invocation.from_text("hello")):
+                    pass
+
+            graph_input = agent._astream_inputs_captured[0]
+            messages = graph_input["messages"]
+            assert len(messages) == 1
+            assert isinstance(messages[0], UserMessage)
+
+
+class TestAstreamOriginTaggedInvocations:
+    """A caller that already drained its own task manager (e.g. one backed by
+    an external queue/broker, where draining is a real network round trip)
+    can build ``Invocation``s tagged ``origin=MessageOrigin.TASK`` itself and
+    pass them straight into astream() through the normal *invocation*
+    parameter, instead of the agent having to expose a second channel."""
+
+    async def test_task_origin_invocation_renders_as_task_message(self) -> None:
+        from opendatasci.streaming.events import TokenEvent
+
+        upstream = [TokenEvent(content="x")]
+        async with _make_agent_ctx() as agent:
+            with TestAgentAstream()._wire_astream_mocks(agent, upstream):
+                task_item = Invocation.from_text(
+                    "externally drained work", origin=MessageOrigin.TASK
+                )
+                async for _ in agent.astream(task_item):
+                    pass
+
+            graph_input = agent._astream_inputs_captured[0]
+            messages = graph_input["messages"]
+            assert len(messages) == 1
+            assert isinstance(messages[0], TaskMessage)
+            assert "externally drained work" in messages[0].content[0]["text"]
+
+    async def test_task_origin_and_user_origin_items_both_render_correctly(self) -> None:
+        from opendatasci.streaming.events import TokenEvent
+
+        upstream = [TokenEvent(content="x")]
+        async with _make_agent_ctx() as agent:
+            with TestAgentAstream()._wire_astream_mocks(agent, upstream):
+                items = [
+                    Invocation.from_text("externally drained work", origin=MessageOrigin.TASK),
+                    Invocation.from_text("hello", origin=MessageOrigin.USER),
+                ]
+                async for _ in agent.astream(items):
+                    pass
+
+            graph_input = agent._astream_inputs_captured[0]
+            messages = graph_input["messages"]
+            assert len(messages) == 2
+            assert isinstance(messages[0], TaskMessage)
+            assert isinstance(messages[1], UserMessage)
+
+
 # ===========================================================================
-# ConcurrentWorkerAgent (opendatasci.agents.agents.ConcurrentWorkerAgent)
+# WorkerAgent (opendatasci.agents.agents.WorkerAgent)
 # ===========================================================================
 
 
@@ -646,16 +949,14 @@ def _make_real_tool(name: str, return_value: str = "ok result") -> StructuredToo
     async def _arun(**_: object) -> str:
         return return_value
 
-    return StructuredTool(
-        name=name, description="test tool", args_schema=_AnyArgs, coroutine=_arun
-    )
+    return StructuredTool(name=name, description="test tool", args_schema=_AnyArgs, coroutine=_arun)
 
 
 def _make_agent(
     tools: list | None = None,
     llm_responses: list | None = None,
-) -> tuple[ConcurrentWorkerAgent, AsyncMock]:
-    """Create a ConcurrentWorkerAgent with a mocked LLM."""
+) -> tuple[WorkerAgent, AsyncMock]:
+    """Create a WorkerAgent with a mocked LLM."""
     if tools is None:
         tools = []
     mock_llm = MagicMock()
@@ -667,7 +968,7 @@ def _make_agent(
     mock_llm.bind_tools.return_value = mock_bound
 
     with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-        agent = ConcurrentWorkerAgent(tools=tools, llm=mock_llm)
+        agent = WorkerAgent(tools=tools, llm=mock_llm)
 
     return agent, mock_bound
 
@@ -717,7 +1018,7 @@ class TestWorkerAgentRun:
         mock_llm.bind_tools.return_value = mock_bound
 
         with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-            agent = ConcurrentWorkerAgent(tools=[tool], llm=mock_llm)
+            agent = WorkerAgent(tools=[tool], llm=mock_llm)
 
         result = await agent.ainvoke("task", "system")
         assert result == "final after tool"
@@ -755,7 +1056,7 @@ class TestWorkerAgentRun:
         mock_llm.bind_tools.return_value = mock_bound
 
         with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-            agent = ConcurrentWorkerAgent(tools=[tool], llm=mock_llm)
+            agent = WorkerAgent(tools=[tool], llm=mock_llm)
 
         result = await agent.ainvoke("task", "system")
         assert result == "recovered from failure"
@@ -775,7 +1076,7 @@ class TestWorkerAgentRun:
         mock_llm.bind_tools.return_value = mock_bound
 
         with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-            agent = ConcurrentWorkerAgent(tools=[tool], llm=mock_llm)
+            agent = WorkerAgent(tools=[tool], llm=mock_llm)
 
         await agent.ainvoke("task", "system")
         # Second call to ainvoke should receive the ToolMessage
@@ -799,7 +1100,7 @@ class TestWorkerAgentRun:
         mock_llm.bind_tools.return_value = mock_bound
 
         with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-            agent = ConcurrentWorkerAgent(tools=[tool], llm=mock_llm)
+            agent = WorkerAgent(tools=[tool], llm=mock_llm)
 
         # GraphRecursionError subclasses RecursionError -> RuntimeError.
         with pytest.raises(RuntimeError):
@@ -822,7 +1123,7 @@ class TestWorkerAgentCallbacks:
         mock_llm.bind_tools.return_value = mock_bound
 
         with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-            agent = ConcurrentWorkerAgent(tools=[tool], llm=mock_llm)
+            agent = WorkerAgent(tools=[tool], llm=mock_llm)
 
         events: list[tuple] = []
 
@@ -832,8 +1133,8 @@ class TestWorkerAgentCallbacks:
         await agent.ainvoke("task", "system", on_event=on_event)
 
         event_types = [e[0] for e in events]
-        assert "worker_tool_call" in event_types
-        assert "worker_tool_result" in event_types
+        assert "task_tool_call" in event_types
+        assert "task_tool_result" in event_types
 
     async def test_on_event_tool_call_includes_args_preview(self) -> None:
         tool = _make_real_tool("my_tool")
@@ -850,12 +1151,12 @@ class TestWorkerAgentCallbacks:
         mock_llm.bind_tools.return_value = mock_bound
 
         with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-            agent = ConcurrentWorkerAgent(tools=[tool], llm=mock_llm)
+            agent = WorkerAgent(tools=[tool], llm=mock_llm)
 
         events: list[tuple] = []
         await agent.ainvoke("task", "system", on_event=lambda t, c, m: events.append((t, c, m)))
 
-        tool_call_event = next(e for e in events if e[0] == "worker_tool_call")
+        tool_call_event = next(e for e in events if e[0] == "task_tool_call")
         assert "args_preview" in tool_call_event[2]
 
     async def test_on_event_tool_result_success_flag(self) -> None:
@@ -873,12 +1174,12 @@ class TestWorkerAgentCallbacks:
         mock_llm.bind_tools.return_value = mock_bound
 
         with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-            agent = ConcurrentWorkerAgent(tools=[tool], llm=mock_llm)
+            agent = WorkerAgent(tools=[tool], llm=mock_llm)
 
         events: list[tuple] = []
         await agent.ainvoke("task", "system", on_event=lambda t, c, m: events.append((t, c, m)))
 
-        result_event = next(e for e in events if e[0] == "worker_tool_result")
+        result_event = next(e for e in events if e[0] == "task_tool_result")
         assert result_event[2]["success"] is True
 
     async def test_on_event_not_called_without_tool_calls(self) -> None:
@@ -902,7 +1203,7 @@ class TestWorkerAgentCallbacks:
         mock_llm.bind_tools.return_value = mock_bound
 
         with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-            agent = ConcurrentWorkerAgent(tools=[tool], llm=mock_llm)
+            agent = WorkerAgent(tools=[tool], llm=mock_llm)
 
         result = await agent.ainvoke("task", "system")
         assert result == "done"
@@ -944,7 +1245,7 @@ class TestWorkerAgentSubagentTagging:
         mock_llm.bind_tools.return_value = mock_bound
 
         with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-            agent = ConcurrentWorkerAgent(tools=[tool], llm=mock_llm)
+            agent = WorkerAgent(tools=[tool], llm=mock_llm)
 
         await agent.ainvoke("task", "system")
         assert mock_bound.ainvoke.call_count == 2
@@ -966,7 +1267,7 @@ class TestWorkerAgentSubagentTagging:
         mock_llm.bind_tools.return_value = mock_bound
 
         with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-            agent = ConcurrentWorkerAgent(tools=[tool], llm=mock_llm)
+            agent = WorkerAgent(tools=[tool], llm=mock_llm)
 
         await agent.ainvoke("task", "system")
         tool.ainvoke.assert_called_once()
@@ -1006,8 +1307,8 @@ def _extract_text(content: object) -> str:
 def _make_agent_with_provider(
     provider: str,
     llm_responses: list | None = None,
-) -> tuple[ConcurrentWorkerAgent, AsyncMock]:
-    """Build a ConcurrentWorkerAgent wired to a specific provider config, with a mocked LLM."""
+) -> tuple[WorkerAgent, AsyncMock]:
+    """Build a WorkerAgent wired to a specific provider config, with a mocked LLM."""
     if llm_responses is None:
         llm_responses = [AIMessage(content="done")]
     mock_llm = MagicMock()
@@ -1016,7 +1317,7 @@ def _make_agent_with_provider(
     mock_llm.bind_tools.return_value = mock_bound
     config = OpenDataSciConfig(provider=provider)  # type: ignore[arg-type]
     with patch("opendatasci.agents.agents.with_retry", side_effect=lambda x: x):
-        agent = ConcurrentWorkerAgent(tools=[], config=config, llm=mock_llm)
+        agent = WorkerAgent(tools=[], config=config, llm=mock_llm)
     return agent, mock_bound
 
 

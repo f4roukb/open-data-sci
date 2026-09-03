@@ -4,13 +4,13 @@ import re
 import shlex
 from abc import ABC, abstractmethod
 from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from opendatasci._utils.pydantic_utils import MutableStrictBaseModel
 
-@dataclass
-class SandboxExecResult:
+
+class SandboxExecResult(MutableStrictBaseModel):
     """Result of a single Python or TUI execution in the sandbox."""
 
     success: bool
@@ -67,6 +67,13 @@ ALLOWED_CLI_COMMANDS: frozenset[str] = frozenset(
         "unzip",
         "tar",
         "zip",
+        # GitHub CLI — network scoped to GitHub's hosts only (see
+        # SRTSandbox._make_cli_config); intended for read-oriented subcommands
+        # (view/list/diff/search/api GET). Only the binary name is checked
+        # here, so this trusts callers to stick to that contract rather than
+        # write subcommands (create/merge/delete), same as the existing trust
+        # placed in e.g. `tar`/`zip` being used for inspection only.
+        "gh",
     }
 )
 

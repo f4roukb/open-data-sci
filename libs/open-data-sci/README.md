@@ -49,6 +49,24 @@ sudo pacman -S --noconfirm bubblewrap socat ripgrep
 
 If you've cloned the repository, `make install-system-dependencies` runs the right command for your platform automatically.
 
+Additionally, install the [GitHub CLI](https://cli.github.com) (`gh`) to use the built-in **`github.com`** skill (`execute_cli_command` shells out to it for read-oriented GitHub lookups):
+
+```bash
+# macOS
+brew install gh
+
+# Linux (Debian/Ubuntu)
+sudo apt install gh
+
+# Linux (Fedora)
+sudo dnf install gh
+
+# Linux (Arch)
+sudo pacman -S github-cli
+```
+
+`gh` runs unauthenticated inside the sandbox (the sandbox denies read access to `~/.config/gh`, so it can't inherit a host `gh auth login` session) — fine for public read-only lookups, subject to GitHub's unauthenticated rate limits.
+
 ### Provider extras
 
 Install optional extras to unlock additional LLM providers:
@@ -64,15 +82,18 @@ pip install "open-data-sci[ollama]"    # Ollama (local models)
 ### Capability extras
 
 ```bash
-pip install "open-data-sci[jax]"       # Deep learning — JAX, Flax, Optax
+pip install "open-data-sci[deep-learning]" # Deep learning on the host — PyTorch, JAX, Transformers, Sentence-Transformers
+pip install "open-data-sci[finance]" # Finance data — yfinance
 ```
 
-The `[jax]` extra is required to use the **Deep Learning** skill. Without it, the agent's sandboxed Python environment has no training framework available.
+The `[deep-learning]` extra — deep learning directly on the host, for machines with a GPU or NPU — is required to use the **Deep Learning** skill; without it, the agent's sandboxed Python environment has no training framework available. The `[finance]` extra is required to use the **`finance.yahoo.com`** skill.
+
+> **GPU access inside the sandbox is opt-in, and it's a real host-kernel exposure.** When a `[deep-learning]` package (`torch`, `jax`, `transformers`, `sentence-transformers`) is installed, the sandbox bind-mounts the host's GPU compute device nodes (`/dev/nvidia*`, `/dev/dri/renderD*` on Linux) so those frameworks can actually use the GPU — otherwise sandboxed code has no path to accelerator hardware at all. This is a materially different risk than the sandbox's filesystem/network isolation: it hands sandboxed code direct `ioctl` access to the host kernel's GPU driver (GPU driver ioctl surfaces have a real CVE history), and there's no GPU-equivalent of the CPU/memory resource limits the sandbox otherwise enforces. A warning is logged whenever this activates. See the module docstring in `opendatasci/sandbox/srt.py` for the full detail. macOS/Metal passthrough and NPU passthrough are not verified — see that docstring for current status. Uninstall the `[deep-learning]` packages to disable this entirely.
 
 Multiple extras can be combined:
 
 ```bash
-pip install "open-data-sci[aws,gemini,jax]"
+pip install "open-data-sci[aws,gemini,deep-learning,finance]"
 ```
 
 ---
@@ -124,10 +145,11 @@ Annotated config files for every supported provider are available in [`examples/
 ### Python SDK
 
 ```python
-from opendatasci import create_agent
+from opendatasci import create_agent, Invocation
 
 async with create_agent("data.csv") as agent:
-    async for event in agent.astream("Summarise this dataset and train a model on the target column."):
+    invocation = Invocation.from_text("Summarise this dataset and train a model on the target column.")
+    async for event in agent.astream(invocation):
         print(event)
 ```
 
@@ -213,6 +235,8 @@ Type `/` in the input box to trigger autocomplete. All commands are available at
 Switching model or provider mid-session rebuilds the agent in the background; if the new provider/model fails to start (e.g. a missing API key), the error is reported and your current session keeps running untouched. Tab-completion for `/theme`, `/model`, and `/provider` (and their `/secondary-*` counterparts) suggests valid names as you type — model suggestions are scoped to whichever provider (primary or secondary) is currently active.
 
 Sending a message while the agent is still working doesn't reject it — it's pinned above the input box as a queued message and run automatically, in order, once the agent finishes (unless the agent is waiting on your answer to a question). Use `/cancel-message` or `/cancel-all-messages` to discard queued messages instead of waiting for them to run.
+
+When the agent schedules work in the background (e.g. concurrent worker agents running an ensemble sweep), a **Background** line in the header shows which tasks are still running and their latest self-reported progress. You don't need to check back manually — as soon as a background task finishes, the agent picks it up and continues on its own.
 
 ---
 
@@ -309,8 +333,6 @@ async with create_agent("data.parquet", config=config) as agent:
 | `temperature` | Sampling temperature — not sent to Claude 4.6+ / Sonnet 5 models, which use adaptive thinking (env: `TEMPERATURE`) |
 | `name` | Display name for the agent — defaults to `"Sai"` (env: `NAME`) |
 | `mcp_servers` | List of MCP server URLs the agent may connect to (env: `MCP_SERVERS`) |
-| `extra_web_domains` | Additional hostnames the `fetch_url` tool may retrieve, on top of the built-in allowlist (env: `EXTRA_FETCH_DOMAINS`) |
-| `override_web_domains` | When set, replaces the built-in domain allowlist entirely — `extra_web_domains` is still applied on top |
 | `skills_directory` | Path to a directory of custom skill files loaded in addition to built-ins (env: `SKILLS_DIRECTORY`) |
 | `builtin_skills_directory` | Path to the built-in skills directory — override only to replace defaults entirely (env: `BUILTIN_SKILLS_DIRECTORY`) |
 | `worker_timeout_seconds` | Max seconds to wait for spawned workers to finish — `null` disables the timeout, default `300` (env: `WORKER_TIMEOUT_SECONDS`) |

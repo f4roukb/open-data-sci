@@ -7,9 +7,10 @@ import logging
 from pathlib import Path
 from typing import Any, AsyncIterator
 
-from opendatasci.agents.agents import BaseOpenDataSciAgent
+from opendatasci.agents.agents import BaseOpenDataSciAgent, Invocation
 from opendatasci.sandbox.base import BaseSandbox
 from opendatasci.streaming import AgentStreamEvent
+from opendatasci.tasks.base import BackgroundTaskManagerBase
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +42,31 @@ class OpenDataSciTuiService:
         """Release sandbox resources (e.g. stop Docker containers)."""
         await self._sandbox.close()
 
-    async def astream(self, query: str) -> AsyncIterator[AgentStreamEvent]:
-        """Stream events for *query* with token-level output."""
-        async for event in self._agent.astream(query):
+    @property
+    def task_manager(self) -> BackgroundTaskManagerBase:
+        """The agent's background-task manager (see ``listen_task_updates``)."""
+        return self._agent.task_manager
+
+    async def astream(
+        self, invocation: Invocation | list[Invocation]
+    ) -> AsyncIterator[AgentStreamEvent]:
+        """Stream events for *invocation* with token-level output."""
+        async for event in self._agent.astream(invocation):
             yield event
+
+    async def resume_with_input(self, answer: str) -> AsyncIterator[AgentStreamEvent]:
+        """Resume a pending question/choice prompt with the user's *answer*."""
+        async for event in self._agent.resume_with_input(answer):
+            yield event
+
+    async def resume_with_approval(self, approved: bool) -> AsyncIterator[AgentStreamEvent]:
+        """Resume a pending command-approval prompt with the user's decision."""
+        async for event in self._agent.resume_with_approval(approved):
+            yield event
+
+    def is_user_input_required(self) -> bool:
+        """True iff the agent is paused awaiting the user's answer to a pending question or approval request."""
+        return self._agent.is_user_input_required()
 
     async def reset_session(self) -> None:
         """Reset the execution session and clear agent conversation."""

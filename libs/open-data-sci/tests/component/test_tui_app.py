@@ -56,6 +56,8 @@ def _make_controller_stub(workspace_path: str) -> MagicMock:
     stub.clear_conv = AsyncMock()
     stub.compact = AsyncMock()
     stub.run_agent = AsyncMock()
+    stub.resume_with_input = AsyncMock()
+    stub.resume_with_approval = AsyncMock()
     stub.on_submit = AsyncMock(return_value=(SubmitAction.NONE, ""))
     stub.cycle_completion = MagicMock(return_value=False)
     stub.cancel_choice = AsyncMock(return_value=None)
@@ -99,7 +101,7 @@ class TestAppShell:
         assert isinstance(app.add_turn_status_bar(), TurnStatusBar)
         assert isinstance(app.add_pending_message("queued"), PendingMessageBubble)
         assert isinstance(app.add_ephemeral_block("", "tool", "summary"), ToolCallBlock)
-        assert isinstance(app.add_worker_block("", ["w1"]), ToolCallBlock)
+        assert isinstance(app.add_task_block("", ["w1"]), ToolCallBlock)
         assert isinstance(app.add_thinking_block(), ThinkingBlock)
         await pilot.pause()
 
@@ -181,14 +183,12 @@ class TestAppShell:
 
     async def test_approval_decision_resumes_agent(self, running_app) -> None:
         app, pilot, stub = running_app
-        stub.resolve_approval = AsyncMock(return_value="resume-query")
         app.query_one(ChatPane).show_approval_prompt("Do it?", "")
         await pilot.pause()
         await pilot.press("enter")
         await pilot.pause()
 
-        stub.resolve_approval.assert_called_once_with(True)
-        stub.run_agent.assert_awaited_once_with("resume-query")
+        stub.resume_with_approval.assert_awaited_once_with(True)
         assert app.focused is app.query_one("#user-input", Input)
 
 
@@ -269,7 +269,7 @@ class TestKeyRouting:
         await pilot.press("escape")
         await pilot.pause()
         stub.cancel_choice.assert_called_once()
-        stub.run_agent.assert_awaited_once_with("resume-input")
+        stub.resume_with_input.assert_awaited_once_with("resume-input")
 
     async def test_escape_stops_running_agent(self, running_app) -> None:
         app, pilot, stub = running_app
@@ -371,9 +371,7 @@ class TestMainArgParsing:
         assert config.secondary_provider == Provider.ANTHROPIC
         app_cls_stub.return_value.run.assert_called_once()
 
-    def test_explicit_provider_model_and_api_key(
-        self, monkeypatch, app_cls_stub, tmp_path
-    ) -> None:
+    def test_explicit_provider_model_and_api_key(self, monkeypatch, app_cls_stub, tmp_path) -> None:
         data = tmp_path / "d.csv"
         data.write_text("a\n1\n")
         _run_main(
@@ -419,9 +417,7 @@ class TestMainArgParsing:
             _run_main(monkeypatch)
         app_cls_stub.assert_not_called()
 
-    def test_list_providers_prints_table_and_exits(
-        self, monkeypatch, app_cls_stub, capsys
-    ) -> None:
+    def test_list_providers_prints_table_and_exits(self, monkeypatch, app_cls_stub, capsys) -> None:
         _run_main(monkeypatch, "--list-providers")
         out = capsys.readouterr().out
         assert "anthropic" in out

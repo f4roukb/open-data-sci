@@ -1,12 +1,22 @@
 """Unit tests for opendatasci.agents.graph."""
 
-
+from typing import Any, Optional
 from unittest.mock import MagicMock
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
 from opendatasci.agents.graphs import AgentGraphFactory
+from opendatasci.agents.nodes import BaseNode
+from opendatasci.agents.states import AgentState
+
+
+class _StubSynchronizationNode(BaseNode):
+    async def ainvoke(
+        self, state: AgentState, config: Optional[RunnableConfig] = None
+    ) -> dict[str, Any]:
+        return {}
 
 
 def _make_builder(**kwargs) -> AgentGraphFactory:
@@ -15,6 +25,9 @@ def _make_builder(**kwargs) -> AgentGraphFactory:
         "get_llm_with_tools": lambda state: _default_llm,
         "tools": [],
         "build_system_context": lambda state: [],
+        "chat_history_builder": None,
+        "checkpointer": None,
+        "synchronization_node": None,
     }
     defaults.update(kwargs)
     return AgentGraphFactory(**defaults)
@@ -54,3 +67,19 @@ class TestAgentGraphFactory:
 
         graph = _make_builder(build_system_context=build_system_context).build()
         assert graph is not None
+
+    def test_no_sync_task_updates_node_when_not_supplied(self) -> None:
+        graph = _make_builder().build()
+        assert "sync_task_updates" not in graph.nodes
+
+    def test_sync_task_updates_node_added_when_supplied(self) -> None:
+        graph = _make_builder(synchronization_node=_StubSynchronizationNode()).build()
+        assert "sync_task_updates" in graph.nodes
+
+    def test_sync_task_updates_sits_between_tools_and_agent(self) -> None:
+        graph = _make_builder(synchronization_node=_StubSynchronizationNode()).build()
+        graph_repr = graph.get_graph()
+        edges = {(e.source, e.target) for e in graph_repr.edges}
+        assert ("tools", "sync_task_updates") in edges
+        assert ("sync_task_updates", "agent") in edges
+        assert ("tools", "agent") not in edges

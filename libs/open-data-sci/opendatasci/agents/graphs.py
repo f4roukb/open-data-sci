@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, Callable
+from typing import Any, Callable
 
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -7,12 +7,10 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
 
 from opendatasci._utils.message_utils import is_final_ai_message
-from opendatasci.agents.nodes import AgentNode, BuildSystemContext
+from opendatasci.agents.chat_history import ChatHistoryBuilder
+from opendatasci.agents.nodes import AgentNode, BaseNode, BuildSystemContext
 from opendatasci.agents.states import AgentState
 from opendatasci.models.factory import _RetryRunnable
-
-if TYPE_CHECKING:
-    from opendatasci.agents.chat_history import ChatHistoryBuilder
 
 AgentCompiledGraph = CompiledStateGraph[AgentState, Any, AgentState, AgentState]
 
@@ -33,15 +31,17 @@ class AgentGraphFactory:
         *,
         get_llm_with_tools: Callable[[AgentState], _RetryRunnable],
         tools: list[BaseTool],
+        synchronization_node: BaseNode | None,
         build_system_context: BuildSystemContext,
-        chat_history_builder: "ChatHistoryBuilder | None" = None,
-        checkpointer: "BaseCheckpointSaver[Any] | None" = None,
+        chat_history_builder: ChatHistoryBuilder | None,
+        checkpointer: BaseCheckpointSaver[Any] | None,
     ) -> None:
         self._get_llm_with_tools = get_llm_with_tools
         self._tools = tools
         self._build_system_context = build_system_context
         self._chat_history_builder = chat_history_builder
         self._checkpointer = checkpointer
+        self._synchronization_node = synchronization_node
 
     def build(self) -> AgentCompiledGraph:
         """Compile and return the graph, ready to run."""
@@ -56,7 +56,12 @@ class AgentGraphFactory:
         graph.add_node("tools", ToolNode(self._tools, handle_tool_errors=True))
         graph.add_edge(START, "agent")
         graph.add_conditional_edges("agent", _route_after_llm_call, {"tools": "tools", "end": END})
-        graph.add_edge("tools", "agent")
+        if self._synchronization_node is not None:
+            graph.add_node("sync_task_updates", self._synchronization_node.to_async_callable())
+            graph.add_edge("tools", "sync_task_updates")
+            graph.add_edge("sync_task_updates", "agent")
+        else:
+            graph.add_edge("tools", "agent")
         return graph.compile(checkpointer=self._checkpointer)
 
 
@@ -79,6 +84,7 @@ class WorkerGraphFactory:
         agent_node = AgentNode(
             get_llm_with_tools=lambda state: self._llm_with_tools,
             build_system_context=self._build_system_context,
+            chat_history_builder=None,
         )
 
         graph = StateGraph(AgentState)

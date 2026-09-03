@@ -140,6 +140,7 @@ class TestBuildAgentQuery:
         result = _build_agent_query("", refs)
         # path attribute must be an absolute path
         import re
+
         m = re.search(r'path="([^"]+)"', result)
         assert m is not None
         path_val = m.group(1)

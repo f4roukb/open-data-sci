@@ -1,20 +1,17 @@
-from __future__ import annotations
+from typing import ClassVar
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, ClassVar
+from langchain_core.messages import BaseMessage
+from pydantic import Field
 
-if TYPE_CHECKING:
-    from langchain_core.messages import BaseMessage
+from opendatasci._utils.pydantic_utils import MutableStrictBaseModel
 
 
-@dataclass
-class BaseAgentStreamEvent:
+class BaseAgentStreamEvent(MutableStrictBaseModel):
     """Base class for all streaming agent events."""
 
     type: ClassVar[str] = ""
 
 
-@dataclass
 class ReasoningEvent(BaseAgentStreamEvent):
     """Extended-thinking / reasoning token(s)."""
 
@@ -22,7 +19,6 @@ class ReasoningEvent(BaseAgentStreamEvent):
     content: str = ""
 
 
-@dataclass
 class TokenEvent(BaseAgentStreamEvent):
     """Regular response text token."""
 
@@ -30,11 +26,10 @@ class TokenEvent(BaseAgentStreamEvent):
     content: str = ""
 
 
-@dataclass
 class ToolCallEvent(BaseAgentStreamEvent):
     """The agent is invoking a tool.
 
-    ``worker_summaries`` is populated only for ``spawn_workers`` tool calls;
+    ``task_summaries`` is populated only for ``task`` tool calls;
     ``summary`` carries the agent-provided summary argument for all other calls.
     """
 
@@ -43,10 +38,9 @@ class ToolCallEvent(BaseAgentStreamEvent):
     tool: str = ""
     tool_call_id: str | None = None
     summary: str = ""
-    worker_summaries: list[str] = field(default_factory=list)
+    task_summaries: list[str] = Field(default_factory=list)
 
 
-@dataclass
 class ToolCommunicationEvent(BaseAgentStreamEvent):
     """A progress message emitted by a tool before it returns."""
 
@@ -56,7 +50,6 @@ class ToolCommunicationEvent(BaseAgentStreamEvent):
     tool_name: str = ""
 
 
-@dataclass
 class ToolResultEvent(BaseAgentStreamEvent):
     """A tool returned a result."""
 
@@ -66,7 +59,6 @@ class ToolResultEvent(BaseAgentStreamEvent):
     is_error: bool = False
 
 
-@dataclass
 class MessageEvent(BaseAgentStreamEvent):
     """A completed ``BaseMessage`` for callers that own conversation-history accumulation."""
 
@@ -74,52 +66,46 @@ class MessageEvent(BaseAgentStreamEvent):
     message: BaseMessage | None = None
 
 
-@dataclass
-class WorkerDoneEvent(BaseAgentStreamEvent):
+class TaskDoneEvent(BaseAgentStreamEvent):
     """A single concurrent worker finished."""
 
-    type: ClassVar[str] = "worker_done"
-    worker_idx: int | None = None
+    type: ClassVar[str] = "task_done"
+    task_idx: int | None = None
     success: bool = True
 
 
-@dataclass
 class SubagentEvent(BaseAgentStreamEvent):
     """Lifecycle event from inside a running worker.
 
-    ``event_type`` is one of ``"worker_tool_call"`` or ``"worker_tool_result"``.
-    ``content`` carries the tool name for ``worker_tool_call`` events.
+    ``event_type`` is one of ``"task_tool_call"`` or ``"task_tool_result"``.
+    ``content`` carries the tool name for ``task_tool_call`` events.
     """
 
     type: ClassVar[str] = "subagent_event"
     content: str = ""
-    worker_idx: int | None = None
+    task_idx: int | None = None
     event_type: str = ""
     success: bool = True
     summary: str = ""
 
 
-@dataclass
 class InputRequiredEvent(BaseAgentStreamEvent):
     """The agent is paused at an interrupt and needs input from the user.
 
-    ``content`` is the question.  Call ``astream`` again with the user's
-    answer to resume.
+    ``content`` is the question.  Resume with ``resume_with_input(answer)``.
     """
 
     type: ClassVar[str] = "input_required"
     content: str = ""
-    choices: list[str] = field(default_factory=list)
+    choices: list[str] = Field(default_factory=list)
 
 
-@dataclass
 class ApprovalRequiredEvent(BaseAgentStreamEvent):
     """The agent is paused waiting for the user to approve a command.
 
     ``description`` is an LLM-generated plain-language summary of what the
     command does; ``heads_up`` warns about potential negative impact and is
-    empty when none was identified.  Call ``astream`` again with ``"yes"`` or
-    ``"no"`` to resume.
+    empty when none was identified.  Resume with ``resume_with_approval(approved)``.
     """
 
     type: ClassVar[str] = "approval_required"
@@ -128,7 +114,6 @@ class ApprovalRequiredEvent(BaseAgentStreamEvent):
     heads_up: str = ""
 
 
-@dataclass
 class UsageEvent(BaseAgentStreamEvent):
     """Per-call token usage.
 
@@ -143,7 +128,6 @@ class UsageEvent(BaseAgentStreamEvent):
     cache_creation_tokens: int | None = None
 
 
-@dataclass
 class ResponseEvent(BaseAgentStreamEvent):
     """Final assembled response for this turn (end-of-turn marker)."""
 
@@ -151,7 +135,6 @@ class ResponseEvent(BaseAgentStreamEvent):
     content: str = ""
 
 
-@dataclass
 class ErrorEvent(BaseAgentStreamEvent):
     """An unrecoverable error occurred."""
 
@@ -166,7 +149,7 @@ AgentStreamEvent = (
     | ToolCommunicationEvent
     | ToolResultEvent
     | MessageEvent
-    | WorkerDoneEvent
+    | TaskDoneEvent
     | SubagentEvent
     | InputRequiredEvent
     | ApprovalRequiredEvent

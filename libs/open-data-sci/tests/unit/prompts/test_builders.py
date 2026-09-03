@@ -6,7 +6,6 @@ are recalled by ChatHistoryBuilder and rendered as standalone HumanMessages
 selection, provider caching markers, and skills only.
 """
 
-
 from functools import partial
 
 import pytest
@@ -49,7 +48,9 @@ class TestSystemPromptBuilderBuild:
         config = OpenDataSciConfig(provider=provider)
         builder = SystemPromptBuilder(config=config)
         active_skills = _make_active_skills(skill_prompt)
-        builder.build = partial(builder.build, active_skills=active_skills, is_plan_mode=is_plan_mode)
+        builder.build = partial(
+            builder.build, active_skills=active_skills, is_plan_mode=is_plan_mode
+        )
         return builder
 
     # --- Prompt selection ---

@@ -4,13 +4,13 @@ from abc import ABC, abstractmethod
 from contextlib import AsyncExitStack
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, AsyncIterator, Callable
+from typing import Any, AsyncIterator, override
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
+    BaseMessage,
     RemoveMessage,
     SystemMessage,
-    ToolMessage,
 )
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
@@ -23,17 +23,20 @@ from opendatasci._utils.message_utils import (
     get_final_ai_message,
     get_message_text_content,
     is_final_ai_message,
+    to_text_content_blocks,
 )
+from opendatasci._utils.pydantic_utils import FrozenStrictBaseModel
 from opendatasci._utils.streaming_utils import format_stream_error
 from opendatasci.agents.chat_history import ChatHistoryBuilder
-from opendatasci.agents.graphs import AgentCompiledGraph, AgentGraphFactory, WorkerGraphFactory
+from opendatasci.agents.graphs import AgentCompiledGraph, AgentGraphFactory
+from opendatasci.agents.interrupts import InterruptKind
+from opendatasci.agents.nodes import SynchronizationNode
 from opendatasci.agents.states import AgentState
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.base import BaseContextStore
 from opendatasci.context.local import LocalContextStore
-from opendatasci.human_inputs.human_approval import APPROVAL_INTERRUPT_KIND
 from opendatasci.memory.chat_memory import ChatHistoryCompactor
-from opendatasci.memory.messages import AgentToAgentMessage, MessageOrigin, UserMessage
+from opendatasci.memory.messages import MessageOrigin, TaskMessage, UserMessage
 from opendatasci.memory.turn_memory import TurnRewinder
 from opendatasci.models.factory import (
     _RetryRunnable,
@@ -42,12 +45,10 @@ from opendatasci.models.factory import (
     with_retry,
 )
 from opendatasci.prompts.builders import SystemContextBuilder
-from opendatasci.prompts.caching import cached_system_prompt
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory
 from opendatasci.sandbox.srt import SRTSandboxFactory
 from opendatasci.session import BaseSessionManager, LocalSessionManager
 from opendatasci.skills import BaseSkillStore, LocalSkillStore
-from opendatasci.skills.base import Skill, SkillDomain
 from opendatasci.streaming import (
     AgentStreamEvent,
     AgentTurnStreamProcessor,
@@ -57,9 +58,12 @@ from opendatasci.streaming import (
     MessageEvent,
     ResponseEvent,
 )
-from opendatasci.tools import (
-    ToolName,
-    create_agent_tools,
+from opendatasci.tasks.base import BackgroundTaskManagerBase
+from opendatasci.tasks.local import BackgroundTaskManager
+from opendatasci.tools.factory import (
+    create_execution_mode_tools,
+    create_plan_mode_tools,
+    create_self_review_mode_tools,
 )
 from opendatasci.workspace.base import BaseWorkspace
 
@@ -67,18 +71,52 @@ logger = logging.getLogger(__name__)
 
 AGENT_RECURSION_LIMIT: int = 1000
 
-SUBAGENT_TAG: str = "opendatasci:subagent"
-WORKER_MAX_STEPS: int = 50
 
-# Signature: (event_type, content, metadata | None) -> None
-OnEventCallback = Callable[[str, str, "dict[str, Any] | None"], None]
+class Invocation(FrozenStrictBaseModel):
+    """One message to fold into a single turn, alongside others.
 
-_ARGS_PREVIEW_LEN = 80
+    ``origin`` marks whether this is a background task's output
+    (:attr:`MessageOrigin.TASK`) or user-typed text (:attr:`MessageOrigin.USER`);
+    the two are rendered as different message types so the model can tell
+    them apart. ``content`` follows the same content-block shape as
+    :attr:`~langchain_core.messages.BaseMessage.content` (a list of
+    ``{"type": ..., ...}`` blocks), not a plain string.
+    """
+
+    content: list[dict[str, Any]]
+    created_at: datetime
+    origin: MessageOrigin = MessageOrigin.USER
+
+    @classmethod
+    def from_text(
+        cls,
+        text: str,
+        *,
+        origin: MessageOrigin = MessageOrigin.USER,
+        created_at: datetime | None = None,
+    ) -> "Invocation":
+        """Build an Invocation from plain text."""
+        return cls(
+            content=to_text_content_blocks(text),
+            created_at=created_at if created_at is not None else datetime.now(timezone.utc),
+            origin=origin,
+        )
 
 
 class BaseOpenDataSciAgent(ABC):
     @abstractmethod
-    def astream(self, query: str) -> AsyncIterator[AgentStreamEvent]: ...
+    def astream(
+        self, invocation: Invocation | list[Invocation]
+    ) -> AsyncIterator[AgentStreamEvent]: ...
+
+    @abstractmethod
+    def resume_with_input(self, answer: str) -> AsyncIterator[AgentStreamEvent]: ...
+
+    @abstractmethod
+    def resume_with_approval(self, approved: bool) -> AsyncIterator[AgentStreamEvent]: ...
+
+    @abstractmethod
+    def is_user_input_required(self) -> bool: ...
 
     @abstractmethod
     async def rewind_turn(self) -> None: ...
@@ -88,6 +126,10 @@ class BaseOpenDataSciAgent(ABC):
 
     @abstractmethod
     async def compact_chat_history(self) -> str: ...
+
+    @property
+    @abstractmethod
+    def task_manager(self) -> BackgroundTaskManagerBase: ...
 
 
 class Agent(BaseOpenDataSciAgent):
@@ -112,6 +154,8 @@ class Agent(BaseOpenDataSciAgent):
             local file-based store is created when omitted.
         skill_store: Registry that the agent queries to resolve named skills
             at runtime.  Defaults to the built-in :class:`LocalSkillStore`.
+        background_task_manager: Tracks background tasks spawned via the ``task``
+            tool.  Defaults to a file-backed :class:`BackgroundTaskManager`.
         session_manager: Tracks the session's conversation threads in the
             graph checkpointer; clearing the conversation creates a new
             thread.  Defaults to a file-backed :class:`LocalSessionManager`.
@@ -132,6 +176,7 @@ class Agent(BaseOpenDataSciAgent):
         workspace: BaseWorkspace,
         context_store: BaseContextStore | None = None,
         skill_store: BaseSkillStore | None = None,
+        background_task_manager: BackgroundTaskManagerBase | None = None,
         sandbox_factory: BaseSandboxFactory | None = None,
         checkpointer: BaseCheckpointSaver[Any] | None = None,
         tools: list[BaseTool] | None = None,
@@ -145,6 +190,7 @@ class Agent(BaseOpenDataSciAgent):
         self._tools = tools
         self._sandbox_factory = sandbox_factory
         self._skill_store = skill_store
+        self._background_task_manager = background_task_manager
         self._context_store = context_store
         self._session_manager = session_manager
         self._checkpointer = checkpointer
@@ -161,6 +207,9 @@ class Agent(BaseOpenDataSciAgent):
         if self._context_store is None:
             workspace_path = Path(self._workspace.get_reference())
             self._context_store = LocalContextStore(workspace_path=workspace_path)
+        if self._background_task_manager is None:
+            output_root = Path(self._context_store.root) / "workers" / "outputs"
+            self._background_task_manager = BackgroundTaskManager(output_root=output_root)
         if self._session_manager is None:
             self._session_manager = LocalSessionManager(
                 workspace_path=Path(self._workspace.get_reference()),
@@ -176,19 +225,19 @@ class Agent(BaseOpenDataSciAgent):
         )
 
         if self._tools is None:
-            self._tools = create_agent_tools(
+            self._tools = create_execution_mode_tools(
                 self._workspace,
                 self._sandbox,
                 self._context_store,
                 self._sandbox_factory,
                 session_id=self._session_id,
-                store=self._skill_store,
+                skill_store=self._skill_store,
                 datasci_config=self._config,
+                background_task_manager=self._background_task_manager,
             )
 
-        tools_restricted = [t for t in self._tools if t.name != ToolName.SPAWN_WORKERS]
-        self._tools_in_plan_mode: list[BaseTool] = tools_restricted
-        self._tools_in_self_review_mode: list[BaseTool] = tools_restricted
+        self._tools_in_plan_mode: list[BaseTool] = create_plan_mode_tools(self._tools)
+        self._tools_in_self_review_mode: list[BaseTool] = create_self_review_mode_tools(self._tools)
 
         self._llm_with_tools: _RetryRunnable = with_retry(self._llm.bind_tools(self._tools))
         self._llm_with_tools_plan: _RetryRunnable = with_retry(
@@ -206,12 +255,25 @@ class Agent(BaseOpenDataSciAgent):
             context_store=self._context_store,
             session_id=self._session_id,
         )
+        self._synchronization_node = SynchronizationNode(
+            background_task_manager=self._background_task_manager,
+        )
 
         self._graph: AgentCompiledGraph = self._build_graph(checkpointer)
         return self
 
     async def __aexit__(self, *exc_info: Any) -> None:
         await self._exit_stack.aclose()
+
+    @property
+    def task_manager(self) -> BackgroundTaskManagerBase:
+        """The task manager tracking this agent's background (``task``, ``run_mode="background"``) work.
+
+        Exposed so a caller driving this agent (the TUI, or a hosted-service
+        equivalent) can watch for background-task completions via
+        :meth:`BackgroundTaskManagerBase.listen_task_updates`.
+        """
+        return self._background_task_manager  # type: ignore[return-value]
 
     @property
     def _graph_config(self) -> RunnableConfig:
@@ -246,42 +308,139 @@ class Agent(BaseOpenDataSciAgent):
             build_system_context=self._build_system_context,
             chat_history_builder=self._chat_history_builder,
             checkpointer=checkpointer,
+            synchronization_node=self._synchronization_node,
         ).build()
 
     @classmethod
-    def _prepare_user_message(cls, query: str) -> UserMessage:
-        return UserMessage(content=query, created_at=datetime.now(timezone.utc))
+    def _message_from_invocation(cls, item: Invocation) -> BaseMessage:
+        match item.origin:
+            case MessageOrigin.USER:
+                return UserMessage(content=item.content, created_at=item.created_at)
+            case MessageOrigin.TASK:
+                return TaskMessage(content=item.content, created_at=item.created_at)
+            case _:
+                raise ValueError(f"Invocation.origin={item.origin!r} is not valid for astream()")
+
+    @classmethod
+    def _prepare_batch_messages(cls, items: list[Invocation]) -> list[BaseMessage]:
+        return [cls._message_from_invocation(item) for item in items]
+
+    def _thread_config(self, thread_id: Any) -> RunnableConfig:
+        return {
+            "recursion_limit": AGENT_RECURSION_LIMIT,
+            "configurable": {"thread_id": str(thread_id)},
+        }
+
+    @classmethod
+    def _pending_interrupt_value(cls, graph_state: Any) -> dict[str, Any] | None:
+        if not is_interrupt_state_snapshot(graph_state):
+            return None
+        return graph_state.tasks[0].interrupts[0].value  # type: ignore[no-any-return]
+
+    @classmethod
+    def _is_approval_interrupt(cls, intr_value: dict[str, Any]) -> bool:
+        return (
+            isinstance(intr_value, dict)
+            and intr_value.get("kind") == InterruptKind.APPROVAL_REQUIRED
+        )
+
+    def _require_pending_interrupt(self, *, approval: bool) -> None:
+        intr_value = self._pending_interrupt_value(self._graph.get_state(self._graph_config))
+        if intr_value is None:
+            raise RuntimeError(
+                "no interrupt is currently pending; call astream() to run a turn instead"
+            )
+        is_approval = self._is_approval_interrupt(intr_value)
+        if is_approval != approval:
+            expected = "resume_with_approval()" if is_approval else "resume_with_input()"
+            raise RuntimeError(f"a different kind of input is pending; call {expected} instead")
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    async def astream(self, user_input: str) -> AsyncIterator[AgentStreamEvent]:
-        """Stream a response to *user_input*, yielding :class:`AgentStreamEvent` objects.
+    @override
+    async def astream(
+        self, invocation: Invocation | list[Invocation]
+    ) -> AsyncIterator[AgentStreamEvent]:
+        """Stream a response to *invocation*, yielding :class:`AgentStreamEvent` objects.
 
-        If the previous call ended with an :class:`~opendatasci.streaming.InputRequiredEvent`,
-        pass the user's answer here to resume; otherwise *user_input* starts a new turn.
+        Starts (or continues) a turn. A list of :class:`Invocation` is **not**
+        several separate requests — it is one request whose items are all folded
+        into a single turn, producing exactly one response.
+
+        Each item's :attr:`~Invocation.origin` decides how it's rendered:
+        :attr:`MessageOrigin.TASK` becomes a :class:`TaskMessage`,
+        :attr:`MessageOrigin.USER` (the default) becomes a :class:`UserMessage`.
+        A caller that already drained its own task manager (e.g. one backed by
+        an external queue/broker) can build ``Invocation``s with
+        ``origin=MessageOrigin.TASK`` itself and pass them in here directly,
+        ahead of any user text — the same channel user input travels through,
+        just tagged differently. This method does not drain :attr:`task_manager`
+        on its own at turn start — a background task's result reaches the
+        model either through a caller-supplied item like this, or through the
+        agent's own mid-turn draining once a tool call returns, never both.
+
+        Raises :class:`RuntimeError` if the agent is currently paused awaiting a
+        response to an :class:`~opendatasci.streaming.InputRequiredEvent` or
+        :class:`~opendatasci.streaming.ApprovalRequiredEvent` — resume it with
+        :meth:`resume_with_input` or :meth:`resume_with_approval` instead.
         """
+        if self.is_user_input_required():
+            raise RuntimeError(
+                "the agent is awaiting a response to a pending question or approval "
+                "request; call resume_with_input() or resume_with_approval() instead"
+            )
         thread_id = self._session_manager.get_or_create_thread()  # type: ignore[union-attr]
-        config: RunnableConfig = {
-            "recursion_limit": AGENT_RECURSION_LIMIT,
-            "configurable": {"thread_id": str(thread_id)},
+        config = self._thread_config(thread_id)
+        items = invocation if isinstance(invocation, list) else [invocation]
+
+        self._context_store.prune()  # type: ignore[union-attr]
+        graph_input: Any = {
+            "messages": type(self)._prepare_batch_messages(items),
+            "active_skills": [],
+            "active_skill_domains": [],
+            "is_plan_mode": False,
+            "is_self_review_mode": False,
         }
 
-        graph_state = self._graph.get_state(config)
-        if is_interrupt_state_snapshot(graph_state):
-            graph_input: Any = Command(resume=user_input)
-        else:
-            self._context_store.prune()  # type: ignore[union-attr]
-            user_msg = type(self)._prepare_user_message(user_input)
-            graph_input = {
-                "messages": [user_msg],
-                "active_skills": [],
-                "active_skill_domains": [],
-                "is_plan_mode": False,
-                "is_self_review_mode": False,
-            }
+        async for event in self._stream_turn(graph_input, thread_id, config):
+            yield event
 
+    @override
+    async def resume_with_input(self, answer: str) -> AsyncIterator[AgentStreamEvent]:
+        """Answer a pending :class:`~opendatasci.streaming.InputRequiredEvent` with *answer*.
+
+        Raises :class:`RuntimeError` if the agent isn't currently paused on a
+        free-text/choice question.
+        """
+        self._require_pending_interrupt(approval=False)
+        thread_id = self._session_manager.get_or_create_thread()  # type: ignore[union-attr]
+        config = self._thread_config(thread_id)
+        async for event in self._stream_turn(Command(resume=answer), thread_id, config):
+            yield event
+
+    @override
+    async def resume_with_approval(self, approved: bool) -> AsyncIterator[AgentStreamEvent]:
+        """Answer a pending :class:`~opendatasci.streaming.ApprovalRequiredEvent` with *approved*.
+
+        Raises :class:`RuntimeError` if the agent isn't currently paused on a
+        command-approval request.
+        """
+        self._require_pending_interrupt(approval=True)
+        thread_id = self._session_manager.get_or_create_thread()  # type: ignore[union-attr]
+        config = self._thread_config(thread_id)
+        async for event in self._stream_turn(Command(resume=approved), thread_id, config):
+            yield event
+
+    @override
+    def is_user_input_required(self) -> bool:
+        """True iff the agent is paused awaiting the user's answer to a pending question or approval request."""
+        return is_interrupt_state_snapshot(self._graph.get_state(self._graph_config))
+
+    async def _stream_turn(
+        self, graph_input: Any, thread_id: Any, config: RunnableConfig
+    ) -> AsyncIterator[AgentStreamEvent]:
         processor = AgentTurnStreamProcessor()
 
         try:
@@ -294,9 +453,9 @@ class Agent(BaseOpenDataSciAgent):
             return
 
         graph_state = self._graph.get_state(config)
-        if is_interrupt_state_snapshot(graph_state):
-            intr_value = graph_state.tasks[0].interrupts[0].value
-            if isinstance(intr_value, dict) and intr_value.get("kind") == APPROVAL_INTERRUPT_KIND:
+        intr_value = self._pending_interrupt_value(graph_state)
+        if intr_value is not None:
+            if self._is_approval_interrupt(intr_value):
                 yield ApprovalRequiredEvent(
                     command=intr_value["command"],
                     description=intr_value["description"],
@@ -320,6 +479,7 @@ class Agent(BaseOpenDataSciAgent):
 
         yield ResponseEvent(content=final_response)
 
+    @override
     async def rewind_turn(self) -> None:
         """Remove the last turn from the conversation history."""
         snapshot = await self._graph.aget_state(self._graph_config)
@@ -336,6 +496,7 @@ class Agent(BaseOpenDataSciAgent):
                 {"messages": [RemoveMessage(id=msg.id) for msg in removed]},
             )
 
+    @override
     async def clear_chat_history(self) -> None:
         """Clear all conversation context (preserves session state such as the sandbox).
 
@@ -349,6 +510,7 @@ class Agent(BaseOpenDataSciAgent):
         if self._context_store is not None:
             self._context_store.clear_plans(self._session_id)
 
+    @override
     async def compact_chat_history(self) -> str:
         """Fold the rolling turn summaries into a single compaction summary.
 
@@ -390,124 +552,3 @@ class Agent(BaseOpenDataSciAgent):
             updates["messages"] = [RemoveMessage(id=msg.id) for msg in completed_messages]
         self._graph.update_state(self._graph_config, updates)
         return compaction_summary.content
-
-
-class ConcurrentWorkerAgent:
-    """One-shot worker agent that executes a single delegated subtask to completion."""
-
-    def __init__(
-        self,
-        tools: list[BaseTool],
-        config: OpenDataSciConfig | None = None,
-        llm: BaseChatModel | None = None,
-    ) -> None:
-        self._config = config or OpenDataSciConfig()
-        _llm = llm if llm is not None else create_model(self._config)
-        _llm_with_tools = with_retry(_llm.bind_tools(tools))
-        self._current_system_prompt: str = ""
-
-        self._graph = WorkerGraphFactory(
-            llm_with_tools=_llm_with_tools,
-            tools=tools,
-            build_system_context=self._build_system_context,
-        ).build()
-
-    def _build_system_context(self, state: AgentState) -> list[SystemMessage]:
-        messages: list[SystemMessage] = [
-            SystemMessage(
-                content=cached_system_prompt(self._current_system_prompt, self._config.provider)  # type: ignore[arg-type]
-            )
-        ]
-        if state.active_skill_domains:
-            messages.append(
-                SystemMessage(
-                    content=cached_system_prompt(
-                        state.active_skill_domains[0].content, self._config.provider
-                    )  # type: ignore[arg-type]
-                )
-            )
-        for skill in state.active_skills:
-            messages.append(
-                SystemMessage(
-                    content=cached_system_prompt(skill.content, self._config.provider)  # type: ignore[arg-type]
-                )
-            )
-        return messages
-
-    async def ainvoke(
-        self,
-        task: str,
-        system_prompt: str,
-        on_event: OnEventCallback | None = None,
-        messages_out: "list[Any] | None" = None,
-        initial_active_skills: "list[Skill] | None" = None,
-        initial_active_skill_domains: "list[SkillDomain] | None" = None,
-    ) -> str:
-        """Execute *task* to completion and return the final text response."""
-        self._current_system_prompt = system_prompt
-        initial_state = AgentState(
-            messages=[AgentToAgentMessage(content=task, origin=MessageOrigin.AGENT)],
-            active_skills=list(initial_active_skills or []),
-            active_skill_domains=list(initial_active_skill_domains or []),
-        )
-        invoke_config: RunnableConfig = {
-            "tags": [SUBAGENT_TAG],
-            "recursion_limit": WORKER_MAX_STEPS * 2 + 1,
-        }
-
-        final_state: dict[str, Any] | None = None
-
-        if on_event is not None:
-            async for event in self._graph.astream_events(
-                initial_state, version="v2", config=invoke_config
-            ):
-                kind = event["event"]
-                if kind == "on_tool_start":
-                    tool_name = event["name"]
-                    args = event["data"].get("input") or {}
-                    args_preview = str(args)[:_ARGS_PREVIEW_LEN]
-                    summary = args.get("summary", "") if isinstance(args, dict) else ""
-                    on_event(
-                        "worker_tool_call",
-                        tool_name,
-                        {"args_preview": args_preview, "summary": summary},
-                    )
-                elif kind == "on_tool_end":
-                    tool_name = event["name"]
-                    output = event["data"].get("output")
-                    if isinstance(output, ToolMessage):
-                        content = output.content
-                    elif isinstance(output, str):
-                        content = output
-                    else:
-                        content = ""
-                    is_error = isinstance(content, str) and content.startswith("Error")
-                    on_event("worker_tool_result", tool_name, {"success": not is_error})
-                elif kind == "on_chain_end" and event.get("name") == "LangGraph":
-                    final_state = event["data"].get("output")
-        else:
-            final_state = await self._graph.ainvoke(initial_state, config=invoke_config)
-
-        if messages_out is not None and final_state is not None:
-            final_messages = final_state.get("messages", [])
-            final_active_skills: list[Skill] = final_state.get("active_skills", [])
-            final_active_skill_domains: list[SkillDomain] = final_state.get(
-                "active_skill_domains", []
-            )
-            dummy_state = AgentState(
-                messages=[],
-                active_skills=final_active_skills,
-                active_skill_domains=final_active_skill_domains,
-            )
-            sys_messages = self._build_system_context(dummy_state)
-            messages_out.extend([*sys_messages, *final_messages])
-
-        if final_state is None:
-            raise RuntimeError("Worker graph ended without producing output")
-
-        messages = final_state.get("messages", [])
-        if not messages:
-            raise RuntimeError("Worker graph ended with no messages")
-
-        last = messages[-1]
-        return get_message_text_content(last).strip()

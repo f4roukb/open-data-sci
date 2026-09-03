@@ -1,5 +1,4 @@
-﻿"""Unit tests for opendatasci.models.openai factory functions."""
-
+"""Unit tests for opendatasci.models.openai factory functions."""
 
 import sys
 from unittest.mock import MagicMock, patch

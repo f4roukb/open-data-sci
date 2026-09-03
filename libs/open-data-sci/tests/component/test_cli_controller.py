@@ -1,4 +1,4 @@
-﻿"""Component tests: CLIController with a stub UIAdapter and stub service.
+"""Component tests: CLIController with a stub UIAdapter and stub service.
 
 CLIController is a 442-line orchestrator that mediates between the Textual UI
 (``UIAdapter``) and ``OpenDataSciTuiService``. These tests mock at the
@@ -15,23 +15,9 @@ controller through every public entry point:
 The result: one test per pathway covers a long slice of controller code.
 """
 
-
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
-from opendatasci.streaming.events import (
-    ErrorEvent,
-    InputRequiredEvent,
-    ReasoningEvent,
-    ResponseEvent,
-    SubagentEvent,
-    TokenEvent,
-    ToolCallEvent,
-    ToolCommunicationEvent,
-    ToolResultEvent,
-    UsageEvent,
-    WorkerDoneEvent,
-)
 from opendatasci._tui.adapter import (
     EphemeralHandle,
     MessageHandle,
@@ -42,6 +28,20 @@ from opendatasci._tui.adapter import (
 )
 from opendatasci._tui.controller import CLIController
 from opendatasci._tui.service import OpenDataSciTuiService
+from opendatasci.streaming.events import (
+    ApprovalRequiredEvent,
+    ErrorEvent,
+    InputRequiredEvent,
+    ReasoningEvent,
+    ResponseEvent,
+    SubagentEvent,
+    TaskDoneEvent,
+    TokenEvent,
+    ToolCallEvent,
+    ToolCommunicationEvent,
+    ToolResultEvent,
+    UsageEvent,
+)
 
 # ---------------------------------------------------------------------------
 # Stub UIAdapter
@@ -75,7 +75,7 @@ class _RecordingEphemeral(EphemeralHandle):
         self.dismissed = False
         self.communication: str | None = None
         self.upgraded: tuple[str, str] | None = None
-        self.worker_done_indices: list[int] = []
+        self.task_done_indices: list[int] = []
 
     def dismiss(self) -> None:
         self.dismissed = True
@@ -89,13 +89,13 @@ class _RecordingEphemeral(EphemeralHandle):
     def is_running(self) -> bool:
         return not (self.done or self.error or self.dismissed)
 
-    def mark_worker_done(self, idx: int) -> None:
-        self.worker_done_indices.append(idx)
+    def mark_task_done(self, idx: int) -> None:
+        self.task_done_indices.append(idx)
 
-    def mark_worker_error(self, idx: int) -> None:
+    def mark_task_error(self, idx: int) -> None:
         pass
 
-    def update_worker_activity(self, idx: int, activity: str) -> None:
+    def update_task_activity(self, idx: int, activity: str) -> None:
         pass
 
     def set_communication(self, text: str | None) -> None:
@@ -179,7 +179,7 @@ class _RecordingUI(UIAdapter):
         self.ephemerals.append(h)
         return h
 
-    def add_worker_block(self, communication: str, worker_summaries: list[str]) -> EphemeralHandle:
+    def add_task_block(self, communication: str, task_summaries: list[str]) -> EphemeralHandle:
         h = _RecordingEphemeral()
         self.ephemerals.append(h)
         return h
@@ -258,11 +258,26 @@ def _make_service_stub(
         svc.compact_chat_history = AsyncMock(return_value=compact_summary)
     svc.rewind_turn = AsyncMock()
 
-    async def _astream(_query: str):
+    # Mirrors the real agent: paused (is_user_input_required() == True) once a
+    # choice/approval event is yielded, until a resume method clears it.
+    state = {"input_required": False}
+
+    async def _astream(_query):
         for ev in astream_events or []:
+            state["input_required"] = isinstance(ev, (InputRequiredEvent, ApprovalRequiredEvent))
             yield ev
 
+    async def _resume(_answer):
+        state["input_required"] = False
+        return
+        yield  # make it a generator
+
     svc.astream = _astream
+    svc.resume_with_input = _resume
+    svc.resume_with_approval = _resume
+    svc.is_user_input_required = MagicMock(side_effect=lambda: state["input_required"])
+    svc.task_manager = MagicMock()
+    svc.task_manager.has_task_updates = MagicMock(return_value=False)
     return svc
 
 
@@ -410,12 +425,12 @@ class TestChoicePrompt:
         assert ctrl.awaiting_choice is True
         assert "awaiting-choice" in ui.input_classes
 
-    async def test_letter_answer_returns_run_action(self):
+    async def test_letter_answer_returns_resume_input_action(self):
         svc = _make_service_stub()
         ctrl, _ = _make_controller(service=svc)
         await ctrl._show_choice_prompt("Pick one", ["red", "blue"])
         action, payload = await ctrl.on_submit("B")
-        assert action == "run"
+        assert action == "resume_input"
         assert payload == "blue"
         assert ctrl.awaiting_choice is False
 
@@ -429,7 +444,7 @@ class TestChoicePrompt:
         assert action == ""
         assert ctrl.awaiting_choice is True
         action, payload = await ctrl.on_submit("custom answer")
-        assert action == "run"
+        assert action == "resume_input"
         assert payload == "custom answer"
 
     async def test_cancel_choice_returns_cancel_string(self):
@@ -533,7 +548,7 @@ class TestStreamingAllEventTypes:
     """Single end-to-end run that exercises every _TurnPresenter handler.
 
     A wide-coverage test: it feeds reasoning, tokens, tool_communication,
-    tool_call, tool_result, worker_done, subagent_event, usage, and error
+    tool_call, tool_result, task_done, subagent_event, usage, and error
     events in one stream so every dispatch branch in run_agent + presenter
     fires together.
     """
@@ -555,19 +570,19 @@ class TestStreamingAllEventTypes:
             ToolResultEvent(content="files: a.csv", tool_call_id="tc1", is_error=False),
             ToolCallEvent(
                 content="{}",
-                tool="spawn_workers",
+                tool="task",
                 tool_call_id="tc2",
-                worker_summaries=["w1", "w2"],
+                task_summaries=["w1", "w2"],
             ),
             SubagentEvent(
                 content="execute_python_code",
-                worker_idx=0,
-                event_type="worker_tool_call",
+                task_idx=0,
+                event_type="task_tool_call",
                 summary="compute mean",
             ),
-            SubagentEvent(content="", worker_idx=0, event_type="worker_tool_result"),
-            WorkerDoneEvent(worker_idx=0, success=True),
-            WorkerDoneEvent(worker_idx=1, success=False),
+            SubagentEvent(content="", task_idx=0, event_type="task_tool_result"),
+            TaskDoneEvent(task_idx=0, success=True),
+            TaskDoneEvent(task_idx=1, success=False),
             ToolResultEvent(content="ok", tool_call_id="tc2", is_error=False),
             UsageEvent(
                 input_tokens=100,

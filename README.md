@@ -60,13 +60,13 @@ Most "AI for data" tools turn you into the bottleneck. Every experiment starts w
 | **Real code execution** | Full Python in a native OS sandbox |
 | **Built-in DS methodology** | Leakage prevention, proper evaluation, causality awareness |
 | **Self-review** | Every significant step is reviewed and revised before moving forward |
-| **Parallel experimentation** | Up to 3 concurrent worker agents for ensemble runs, hyperparameter sweeps, strategy comparisons |
+| **Parallel experimentation** | Up to 3 concurrent worker agents for ensemble runs, hyperparameter sweeps, strategy comparisons — run in the background with live progress and no blocking on long ones |
 | **Persistent project memory** | Data schema, profiles, and notes accumulate across sessions |
 | **Safe by default** | Sandboxed execution: everything runs safely inside your workspace |
 | **Human-in-the-loop** | At genuine decision forks that impact your intended goal, it pauses and asks, then gets on with it |
 | **Specialized Skills** | Data Science, Machine Learning, Deep Learning, Quantitative Analysis, Competitive DS, Education |
 | **Extensible** | Drop Markdown skill files into `.opendatasci/skills/` to inject your own domain knowledge |
-| **Web access** | Searches for papers, docs, and library changelogs mid-analysis |
+| **Web access** | Searches for papers, docs, and library changelogs mid-analysis, with curated navigation know-how for Kaggle, arXiv, Hugging Face, GitHub, Papers with Code, and Yahoo Finance |
 | **MCP-ready** | Connect any MCP-compatible tool server: internal databases, custom APIs, proprietary sources |
 
 ---
@@ -109,6 +109,7 @@ No setup friction. OpenDataSci ships with the complete stack a practitioner woul
 | File formats | Excel/Parquet/Feather (via Pandas), XML (lxml) |
 | Numerics | NumPy, SciPy |
 | Classical ML | scikit-learn, LightGBM, CatBoost, XGBoost, statsmodels |
+| Deep learning *(optional)* | PyTorch, JAX, Flax, Optax, Transformers, Sentence-Transformers |
 | AutoML / tuning | Optuna |
 | Forecasting | Prophet |
 | Interpretability | SHAP |

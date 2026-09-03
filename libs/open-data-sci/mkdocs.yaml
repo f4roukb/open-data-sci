@@ -68,6 +68,7 @@ nav:
       - Memory: api/memory.md
       - Workspace: api/workbench.md
       - Sandbox & Execution: api/session.md
+      - Background Tasks: api/tasks.md
       - Events & Types: api/types.md
 
 markdown_extensions:

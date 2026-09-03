@@ -1,8 +1,9 @@
-﻿"""Unit tests for opendatasci._tui.controller."""
+"""Unit tests for opendatasci._tui.controller."""
 
-
+import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 import pytest
 
@@ -16,7 +17,7 @@ from opendatasci.streaming import (
     ToolCallEvent,
     ToolResultEvent,
     UsageEvent,
-    WorkerDoneEvent,
+    TaskDoneEvent,
 )
 from opendatasci._tui import theme as _theme
 from opendatasci._tui.controller import CLIController
@@ -32,6 +33,7 @@ from opendatasci._tui.file_refs import (
     _split_existing_file_refs,
 )
 from opendatasci.configs import OpenDataSciConfig
+from opendatasci.memory.messages import MessageOrigin
 
 # ---------------------------------------------------------------------------
 # Pure parsing helpers
@@ -583,7 +585,7 @@ class TestOnSubmit:
         action, _ = await controller.on_submit("/exit")
         assert action == "quit"
 
-    async def test_awaiting_choice_routes_answer_as_run(
+    async def test_awaiting_choice_routes_answer_as_resume_input(
         self, controller: CLIController, mock_service: MagicMock
     ) -> None:
         controller._service = mock_service
@@ -591,7 +593,7 @@ class TestOnSubmit:
         controller._pending_choices = ["yes", "no"]
         controller._other_choice_label = None
         action, payload = await controller.on_submit("A")
-        assert action == "run"
+        assert action == "resume_input"
         assert payload == "yes"
 
 
@@ -616,21 +618,21 @@ class TestApprovalFlow:
         )
         assert controller.awaiting_approval is True
 
-    async def test_resolve_approval_yes_returns_yes(
+    async def test_resume_with_approval_yes_shows_yes(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         await self._dispatch(controller)
-        assert await controller.resolve_approval(True) == "yes"
+        await controller.resume_with_approval(True)
         assert controller.awaiting_approval is False
-        mock_ui.add_message.assert_called_with("user", "Yes")
+        mock_ui.add_message.assert_any_call("user", "Yes")
 
-    async def test_resolve_approval_no_returns_no(
+    async def test_resume_with_approval_no_shows_no(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         await self._dispatch(controller)
-        assert await controller.resolve_approval(False) == "no"
+        await controller.resume_with_approval(False)
         assert controller.awaiting_approval is False
-        mock_ui.add_message.assert_called_with("user", "No")
+        mock_ui.add_message.assert_any_call("user", "No")
 
     async def test_typed_input_is_ignored_while_awaiting_approval(
         self, controller: CLIController
@@ -646,9 +648,7 @@ class TestApprovalFlow:
         action, _ = await controller.on_submit("/exit")
         assert action == "quit"
 
-    async def test_reset_clears_awaiting_approval(
-        self, loaded_controller: CLIController
-    ) -> None:
+    async def test_reset_clears_awaiting_approval(self, loaded_controller: CLIController) -> None:
         loaded_controller._awaiting_approval = True
         await loaded_controller.reset()
         assert loaded_controller.awaiting_approval is False
@@ -888,9 +888,7 @@ class TestChoiceHandling:
         assert controller._awaiting_choice is False
         assert result == "cancel"
 
-    async def test_cancel_choice_no_op_when_not_awaiting(
-        self, controller: CLIController
-    ) -> None:
+    async def test_cancel_choice_no_op_when_not_awaiting(self, controller: CLIController) -> None:
         controller._awaiting_choice = False
         result = await controller.cancel_choice()
         assert result is None
@@ -904,6 +902,164 @@ class TestChoiceHandling:
 async def _aiter(*events: AgentStreamEvent):
     for e in events:
         yield e
+
+
+def _make_task_update(summary: str = "s", result: object = "done"):
+    from opendatasci.tasks.base import (
+        BackgroundTaskStatus,
+        BackgroundTaskUpdate,
+        BackgroundTaskUpdateKind,
+    )
+
+    task_id = uuid4()
+    return BackgroundTaskUpdate(
+        update_id=uuid4(),
+        task_id=task_id,
+        kind=BackgroundTaskUpdateKind.COMPLETED,
+        summary=summary,
+        status=BackgroundTaskStatus.COMPLETED,
+        result=result,
+    )
+
+
+class TestBackgroundTaskWatcher:
+    @staticmethod
+    def _doorbell(*updates):
+        from opendatasci.tasks.base import BackgroundTaskUpdateEvent
+
+        async def _gen():
+            for u in updates:
+                yield BackgroundTaskUpdateEvent(task_id=u.task_id, update_id=u.update_id)
+
+        return _gen()
+
+    async def test_kicks_new_turn_when_idle(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        update = _make_task_update()
+        mock_service.task_manager.listen_task_updates = MagicMock(
+            return_value=self._doorbell(update)
+        )
+        mock_service.task_manager.pull_task_updates = AsyncMock(return_value=[update])
+        mock_service.astream.return_value = _aiter()
+        loaded_controller._agent_running = False
+
+        await loaded_controller._watch_background_tasks()
+
+        assert mock_service.astream.called
+        # The watcher drains the task manager itself and hands the agent a
+        # real TASK-origin batch — astream() is never called with nothing to
+        # inject, since the agent no longer auto-drains at turn start.
+        batch = mock_service.astream.call_args[0][0]
+        assert len(batch) == 1
+        assert batch[0].origin is MessageOrigin.TASK
+        assert "done" in batch[0].content[0]["text"]
+
+    async def test_no_chat_message_shown_for_raw_completion(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        """The raw completion is never surfaced as a chat bubble — only the agent's own response is."""
+        update = _make_task_update()
+        mock_service.task_manager.listen_task_updates = MagicMock(
+            return_value=self._doorbell(update)
+        )
+        mock_service.task_manager.pull_task_updates = AsyncMock(return_value=[update])
+        mock_service.astream.return_value = _aiter()
+        loaded_controller._agent_running = False
+
+        await loaded_controller._watch_background_tasks()
+
+        mock_ui.add_message.assert_not_called()
+
+    async def test_no_new_turn_when_drain_finds_nothing(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        """A race with another consumer (e.g. the mid-turn node) can leave the
+        drain empty even after a completion notification — no turn should
+        start over nothing to inject."""
+        update = _make_task_update()
+        mock_service.task_manager.listen_task_updates = MagicMock(
+            return_value=self._doorbell(update)
+        )
+        mock_service.task_manager.pull_task_updates = AsyncMock(return_value=[])
+        loaded_controller._agent_running = False
+
+        await loaded_controller._watch_background_tasks()
+
+        assert not mock_service.astream.called
+
+    async def test_no_new_turn_when_turn_in_progress(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        update = _make_task_update()
+        mock_service.task_manager.listen_task_updates = MagicMock(
+            return_value=self._doorbell(update)
+        )
+        loaded_controller._agent_running = True
+
+        await loaded_controller._watch_background_tasks()
+
+        # Nothing is queued anymore — the running turn's own mid-turn node
+        # (or the next turn's start) will pick the result up on its own.
+        assert loaded_controller._pending_queue.is_empty()
+        assert not mock_service.astream.called
+        mock_ui.add_message.assert_not_called()
+
+    async def test_no_new_turn_while_interrupted(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        update = _make_task_update()
+        mock_service.task_manager.listen_task_updates = MagicMock(
+            return_value=self._doorbell(update)
+        )
+        mock_service.is_user_input_required = MagicMock(return_value=True)
+        loaded_controller._agent_running = False
+
+        await loaded_controller._watch_background_tasks()
+
+        assert loaded_controller._pending_queue.is_empty()
+        assert not mock_service.astream.called
+
+
+class TestBackgroundTaskStatusPoll:
+    async def test_running_tasks_shown_in_header(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
+
+        running = BackgroundTaskRecord(
+            task_id=uuid4(), summary="crunching numbers", status=BackgroundTaskStatus.RUNNING
+        )
+        mock_service.task_manager = MagicMock()
+        mock_service.task_manager.list_tasks = AsyncMock(return_value=[running])
+
+        with patch("opendatasci._tui.controller._BACKGROUND_STATUS_POLL_SECONDS", 0):
+            task = asyncio.create_task(loaded_controller._poll_background_task_status())
+            await asyncio.sleep(0.01)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        mock_ui.set_background_tasks.assert_any_call("crunching numbers")
+
+    async def test_no_running_tasks_clears_header(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        mock_service.task_manager = MagicMock()
+        mock_service.task_manager.list_tasks = AsyncMock(return_value=[])
+
+        with patch("opendatasci._tui.controller._BACKGROUND_STATUS_POLL_SECONDS", 0):
+            task = asyncio.create_task(loaded_controller._poll_background_task_status())
+            await asyncio.sleep(0.01)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        mock_ui.set_background_tasks.assert_any_call("")
 
 
 class TestRunAgent:
@@ -1019,62 +1175,133 @@ class TestRunAgent:
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
         """Worker block turns green (set_done) when task tool_result arrives."""
-        wb = mock_ui.add_worker_block.return_value
+        wb = mock_ui.add_task_block.return_value
         events = [
-            ToolCallEvent(tool="spawn_workers", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
-            WorkerDoneEvent(worker_idx=0, success=True),
-            WorkerDoneEvent(worker_idx=1, success=True),
+            ToolCallEvent(tool="task", tool_call_id="sw1", task_summaries=["Task A", "Task B"]),
+            TaskDoneEvent(task_idx=0, success=True),
+            TaskDoneEvent(task_idx=1, success=True),
             ToolResultEvent(content="done", tool_call_id="sw1"),
         ]
         mock_service.astream.return_value = _aiter(*events)
         await loaded_controller.run_agent("q")
         wb.set_done.assert_called()
 
-    async def test_run_agent_task_worker_done_updates_block(
+    async def test_run_agent_task_task_done_updates_block(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
-        """Each worker_done event calls mark_worker_done on the worker block."""
-        wb = mock_ui.add_worker_block.return_value
+        """Each task_done event calls mark_task_done on the worker block."""
+        wb = mock_ui.add_task_block.return_value
         events = [
-            ToolCallEvent(tool="spawn_workers", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
-            WorkerDoneEvent(worker_idx=0, success=True),
-            WorkerDoneEvent(worker_idx=1, success=True),
+            ToolCallEvent(tool="task", tool_call_id="sw1", task_summaries=["Task A", "Task B"]),
+            TaskDoneEvent(task_idx=0, success=True),
+            TaskDoneEvent(task_idx=1, success=True),
             ToolResultEvent(content="done", tool_call_id="sw1"),
         ]
         mock_service.astream.return_value = _aiter(*events)
         await loaded_controller.run_agent("q")
-        wb.mark_worker_done.assert_any_call(0)
-        wb.mark_worker_done.assert_any_call(1)
+        wb.mark_task_done.assert_any_call(0)
+        wb.mark_task_done.assert_any_call(1)
 
-    async def test_run_agent_task_worker_done_not_lost_when_parallel_tool_result_fires_first(
+    async def test_run_agent_task_task_done_not_lost_when_parallel_tool_result_fires_first(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
-        """Regression: when a parallel tool's tool_result fires before worker_done events,
-        the worker block must still receive mark_worker_done for each completing worker.
+        """Regression: when a parallel tool's tool_result fires before task_done events,
+        the worker block must still receive mark_task_done for each completing worker.
 
-        Without the fix, the tool_result handler reset _worker_block to None, causing
-        subsequent worker_done events to be silently dropped — leaving the block blue.
+        Without the fix, the tool_result handler reset _task_block to None, causing
+        subsequent task_done events to be silently dropped — leaving the block blue.
         """
-        wb = mock_ui.add_worker_block.return_value
+        wb = mock_ui.add_task_block.return_value
         # Simulate: Tool A and task called in parallel.
-        # Tool A's tool_result arrives BEFORE the worker_done events (Tool A was faster).
+        # Tool A's tool_result arrives BEFORE the task_done events (Tool A was faster).
         events = [
             ToolCallEvent(tool="execute_python_code", tool_call_id="tc_a"),
-            ToolCallEvent(tool="spawn_workers", tool_call_id="sw1", worker_summaries=["Task A", "Task B"]),
-            # Tool A finishes first — its tool_result arrives before worker_done
+            ToolCallEvent(tool="task", tool_call_id="sw1", task_summaries=["Task A", "Task B"]),
+            # Tool A finishes first — its tool_result arrives before task_done
             ToolResultEvent(content="result", tool_call_id="tc_a"),
             # Workers complete after Tool A's result
-            WorkerDoneEvent(worker_idx=0, success=True),
-            WorkerDoneEvent(worker_idx=1, success=True),
+            TaskDoneEvent(task_idx=0, success=True),
+            TaskDoneEvent(task_idx=1, success=True),
             ToolResultEvent(content="done", tool_call_id="sw1"),
         ]
         mock_service.astream.return_value = _aiter(*events)
         await loaded_controller.run_agent("q")
         # Both workers must be individually marked done despite Tool A's result firing first
-        wb.mark_worker_done.assert_any_call(0)
-        wb.mark_worker_done.assert_any_call(1)
+        wb.mark_task_done.assert_any_call(0)
+        wb.mark_task_done.assert_any_call(1)
         # And the block itself must be set done
         wb.set_done.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# CLIController — resume_with_input / resume_with_approval
+# ---------------------------------------------------------------------------
+
+
+class TestResumeMethods:
+    async def test_resume_with_input_calls_service_resume_not_astream(
+        self, loaded_controller: CLIController, mock_service: MagicMock
+    ) -> None:
+        await loaded_controller.resume_with_input("blue")
+        mock_service.resume_with_input.assert_called_once_with("blue")
+        mock_service.astream.assert_not_called()
+
+    async def test_resume_with_approval_calls_service_resume_not_astream(
+        self, loaded_controller: CLIController, mock_service: MagicMock
+    ) -> None:
+        await loaded_controller.resume_with_approval(True)
+        mock_service.resume_with_approval.assert_called_once_with(True)
+        mock_service.astream.assert_not_called()
+
+    async def test_resume_with_input_no_service_shows_warning(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await controller.resume_with_input("blue")
+        call = mock_ui.add_message.call_args
+        assert "Still loading" in call[0][1]
+
+    async def test_resume_with_input_drains_pending_queue_afterward(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        loaded_controller._enqueue_pending("queued query", "queued display")
+        mock_service.resume_with_input.return_value = _aiter()
+        mock_service.astream.return_value = _aiter()
+        await loaded_controller.resume_with_input("blue")
+        mock_service.astream.assert_called_once()
+
+    async def test_resume_with_approval_resets_awaiting_flag(
+        self, loaded_controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        loaded_controller._awaiting_approval = True
+        await loaded_controller.resume_with_approval(False)
+        assert loaded_controller.awaiting_approval is False
+
+    async def test_drain_loop_triggers_empty_turn_for_undrained_task_updates(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        """A task result missed by the mid-turn node still gets surfaced right after the turn."""
+        update = _make_task_update()
+        mock_service.astream.return_value = _aiter()
+        mock_service.task_manager.has_task_updates = MagicMock(side_effect=[True, False])
+        mock_service.task_manager.pull_task_updates = AsyncMock(return_value=[update])
+
+        await loaded_controller.run_agent("query")
+
+        assert mock_service.astream.call_count == 2
+        batch = mock_service.astream.call_args_list[-1][0][0]
+        assert len(batch) == 1
+        assert batch[0].origin is MessageOrigin.TASK
+
+    async def test_drain_loop_stops_while_interrupted_even_with_task_updates(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        mock_service.astream.return_value = _aiter()
+        mock_service.is_user_input_required = MagicMock(return_value=True)
+        mock_service.task_manager.has_task_updates = MagicMock(return_value=True)
+
+        await loaded_controller.run_agent("query")
+
+        mock_service.astream.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -1183,7 +1410,9 @@ class TestSessionId:
         )
         assert ctrl._session_id == "deadbeef"
 
-    async def test_boot_wires_agent_from_create_agent_into_service(self, mock_ui: MagicMock) -> None:
+    async def test_boot_wires_agent_from_create_agent_into_service(
+        self, mock_ui: MagicMock
+    ) -> None:
         # boot() now delegates agent construction (including the session context
         # store) to create_agent(), enters it as an async context manager, and
         # wraps the agent + its sandbox in the TUI service.
@@ -1333,7 +1562,7 @@ class TestBootFailures:
         assert "/fake/data.csv" in content
 
     async def test_llm_provider_error_shows_api_key_guidance(self, mock_ui: MagicMock) -> None:
-        
+
         ctrl = _make_boot_ctrl(mock_ui)
         with (
             patch("pathlib.Path.is_file", return_value=True),
@@ -1624,9 +1853,7 @@ class TestControllerStateProperties:
     def test_has_paste_attachment_false_initially(self, controller: CLIController) -> None:
         assert controller.has_paste_attachment is False
 
-    def test_has_paste_attachment_tracks_paste_lifecycle(
-        self, controller: CLIController
-    ) -> None:
+    def test_has_paste_attachment_tracks_paste_lifecycle(self, controller: CLIController) -> None:
         controller.on_paste("line1\nline2")
         assert controller.has_paste_attachment is True
         controller.clear_paste_attachment()

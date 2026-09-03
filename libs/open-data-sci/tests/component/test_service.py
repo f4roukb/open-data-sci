@@ -10,7 +10,6 @@ service method end-to-end through a real ``Agent``:
 * ``RuntimeError`` guard on compact
 """
 
-
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -23,22 +22,38 @@ from opendatasci.memory.chat_memory import ChatTurnSummary
 class TestCompactConversation:
     """Compact folds the rolling turn summaries into a single compaction summary."""
 
-    async def test_compact_with_nothing_to_compact_returns_placeholder(self, loaded_opendatasci_service):
+    async def test_compact_with_nothing_to_compact_returns_placeholder(
+        self, loaded_opendatasci_service
+    ):
         result = await loaded_opendatasci_service.compact_chat_history()
         assert "no conversation" in result.lower()
 
-    async def test_compact_summarizes_via_llm(
-        self, loaded_opendatasci_service, mock_llm
-    ):
+    async def test_compact_summarizes_via_llm(self, loaded_opendatasci_service, mock_llm):
         from datetime import datetime, timezone
+
         _dt = datetime(2024, 1, 1, tzinfo=timezone.utc)
         agent = loaded_opendatasci_service._agent
-        agent.graph.update_state(agent._graph_config, {
-            "turn_summaries": [
-                ChatTurnSummary(turn_start_timestamp=_dt, turn_end_timestamp=_dt, user_message_summary="What are the trends?", actions_summary="", agent_response_summary="Upward."),
-                ChatTurnSummary(turn_start_timestamp=_dt, turn_end_timestamp=_dt, user_message_summary="Confirm?", actions_summary="", agent_response_summary="Confirmed."),
-            ],
-        })
+        agent.graph.update_state(
+            agent._graph_config,
+            {
+                "turn_summaries": [
+                    ChatTurnSummary(
+                        turn_start_timestamp=_dt,
+                        turn_end_timestamp=_dt,
+                        user_message="What are the trends?",
+                        step_batches=[],
+                        agent_response="Upward.",
+                    ),
+                    ChatTurnSummary(
+                        turn_start_timestamp=_dt,
+                        turn_end_timestamp=_dt,
+                        user_message="Confirm?",
+                        step_batches=[],
+                        agent_response="Confirmed.",
+                    ),
+                ],
+            },
+        )
 
         mock_llm.ainvoke = AsyncMock(return_value=AIMessage(content="They chatted briefly."))
 

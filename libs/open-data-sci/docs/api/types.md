@@ -13,7 +13,7 @@ from opendatasci.streaming import (
     ToolCallEvent,
     ToolCommunicationEvent,
     ToolResultEvent,
-    WorkerDoneEvent,
+    TaskDoneEvent,
     SubagentEvent,
     InputRequiredEvent,
     ApprovalRequiredEvent,
@@ -33,13 +33,13 @@ existing `event.type == "token"` comparisons continue to work alongside
 |-------|--------|------------|-------------|
 | `ReasoningEvent` | `"reasoning"` | `content` | Thinking token (Anthropic / Bedrock only) |
 | `TokenEvent` | `"token"` | `content` | Incremental response text |
-| `ToolCallEvent` | `"tool_call"` | `content`, `tool`, `tool_call_id`, `summary`, `worker_summaries` | Agent is invoking a tool |
+| `ToolCallEvent` | `"tool_call"` | `content`, `tool`, `tool_call_id`, `summary`, `task_summaries` | Agent is invoking a tool |
 | `ToolCommunicationEvent` | `"tool_communication"` | `content`, `tool_call_id`, `tool_name` | In-progress status from a long-running tool |
 | `ToolResultEvent` | `"tool_result"` | `content`, `tool_call_id`, `is_error` | Tool returned its result |
-| `WorkerDoneEvent` | `"worker_done"` | `worker_idx`, `success` | A concurrent worker finished |
-| `SubagentEvent` | `"subagent_event"` | `content`, `worker_idx`, `event_type`, `success`, `summary` | Lifecycle event from inside a running worker |
-| `InputRequiredEvent` | `"input_required"` | `content`, `choices` | Agent paused at a free-text interrupt; call `astream(answer)` to resume |
-| `ApprovalRequiredEvent` | `"approval_required"` | `command`, `description`, `heads_up` | Agent paused waiting for command approval; call `astream("yes")` or `astream("no")` to resume |
+| `TaskDoneEvent` | `"task_done"` | `task_idx`, `success` | A concurrent worker finished |
+| `SubagentEvent` | `"subagent_event"` | `content`, `task_idx`, `event_type`, `success`, `summary` | Lifecycle event from inside a running worker |
+| `InputRequiredEvent` | `"input_required"` | `content`, `choices` | Agent paused at a free-text/choice interrupt; call `agent.resume_with_input(answer)` to resume |
+| `ApprovalRequiredEvent` | `"approval_required"` | `command`, `description`, `heads_up` | Agent paused waiting for command approval; call `agent.resume_with_approval(True)` or `agent.resume_with_approval(False)` to resume |
 | `UsageEvent` | `"usage"` | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_creation_tokens` | Token usage update (fields are `int \| None`) |
 | `ResponseEvent` | `"response"` | `content` | End-of-turn marker with the full assembled response |
 | `ErrorEvent` | `"error"` | `content` | Unrecoverable error |
@@ -50,25 +50,26 @@ use in type annotations.
 ### Handling each event type
 
 ```python
+from opendatasci import Invocation
 from opendatasci.streaming import (
     ApprovalRequiredEvent, InputRequiredEvent, ResponseEvent, TokenEvent,
-    ToolCallEvent, UsageEvent, WorkerDoneEvent, ErrorEvent,
+    ToolCallEvent, UsageEvent, TaskDoneEvent, ErrorEvent,
 )
 
-async for event in agent.astream("Analyse this dataset"):
+async for event in agent.astream(Invocation.from_text("Analyse this dataset")):
     if isinstance(event, TokenEvent):
         print(event.content, end="", flush=True)
 
     elif isinstance(event, ToolCallEvent):
         print(f"\n→ {event.tool} …")
 
-    elif isinstance(event, WorkerDoneEvent):
+    elif isinstance(event, TaskDoneEvent):
         status = "done" if event.success else "failed"
-        print(f"\n[worker {event.worker_idx}] {status}")
+        print(f"\n[worker {event.task_idx}] {status}")
 
     elif isinstance(event, InputRequiredEvent):
         ans = input(f"{event.content} ({'/'.join(event.choices)}): ")
-        async for follow_up in agent.astream(ans):
+        async for follow_up in agent.resume_with_input(ans):
             ...
 
     elif isinstance(event, ApprovalRequiredEvent):
@@ -76,7 +77,7 @@ async for event in agent.astream("Analyse this dataset"):
         if event.heads_up:
             print(f"Warning: {event.heads_up}")
         answer = input("Allow? (yes/no): ")
-        async for follow_up in agent.astream(answer):
+        async for follow_up in agent.resume_with_approval(answer.strip().lower().startswith("y")):
             ...
 
     elif isinstance(event, UsageEvent):
@@ -102,7 +103,7 @@ async for event in agent.astream("Analyse this dataset"):
         - ToolCallEvent
         - ToolCommunicationEvent
         - ToolResultEvent
-        - WorkerDoneEvent
+        - TaskDoneEvent
         - SubagentEvent
         - InputRequiredEvent
         - ApprovalRequiredEvent

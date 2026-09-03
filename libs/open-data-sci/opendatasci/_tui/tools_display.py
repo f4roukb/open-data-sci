@@ -13,11 +13,11 @@ Usage::
 """
 
 import types
-from dataclasses import dataclass
+
+from opendatasci._utils.pydantic_utils import FrozenStrictBaseModel
 
 
-@dataclass(frozen=True)
-class ToolDisplay:
+class ToolDisplay(FrozenStrictBaseModel):
     """Display metadata for a single tool.
 
     Attributes:
@@ -61,8 +61,8 @@ register(
     ToolDisplay(label="Checking available libraries", summary_arg="summary"),
 )
 register(
-    "enter_plan_mode",
-    ToolDisplay(label="Planning the next steps", summary_arg="summary"),
+    "switch_agentic_mode",
+    ToolDisplay(label="Switching mode", summary_arg="summary"),
 )
 register("exit_plan_mode", ToolDisplay(label="Planning complete", summary_arg="summary"))
 register("load_skill", ToolDisplay(label="Loading skill", summary_arg="summary"))
@@ -70,7 +70,20 @@ register(
     "list_skills",
     ToolDisplay(label="Checking available skills", summary_arg="summary"),
 )
-register("spawn_workers", ToolDisplay(label="Spawning workers", summary_arg="summary"))
+register("task", ToolDisplay(label="Spawning workers", summary_arg="summary"))
+register(
+    "check_task",
+    ToolDisplay(label="Checking task status", summary_arg="summary"),
+)
+register(
+    "list_tasks",
+    ToolDisplay(label="Listing background tasks", summary_arg="summary"),
+)
+register("stop_task", ToolDisplay(label="Stopping task", summary_arg="summary"))
+register(
+    "monitor_task",
+    ToolDisplay(label="Monitoring task", summary_arg="summary"),
+)
 register(
     "read_dataset_info",
     ToolDisplay(
@@ -101,10 +114,6 @@ register(
 register(
     "ask_user_mcq",
     ToolDisplay(label="Question", summary_arg="summary", display_status=False),
-)
-register(
-    "enter_self_review_mode",
-    ToolDisplay(label="Reviewing progress so far", summary_arg="summary"),
 )
 register(
     "exit_self_review_mode",

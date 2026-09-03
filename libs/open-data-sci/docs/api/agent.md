@@ -7,10 +7,10 @@
 The agent must be used as an async context manager. The sandbox is created on entry and closed on exit:
 
 ```python
-from opendatasci import create_agent
+from opendatasci import Invocation, create_agent
 
 async with create_agent("data.csv") as agent:
-    async for event in agent.astream("Describe this dataset"):
+    async for event in agent.astream(Invocation.from_text("Describe this dataset")):
         print(event)
 ```
 
@@ -19,30 +19,34 @@ For advanced use cases where you need to control each dependency explicitly, con
 ```python
 from opendatasci.agents.agents import Agent
 from opendatasci.workspace.local import LocalWorkspace
-from opendatasci import OpenDataSciConfig
+from opendatasci import Invocation, OpenDataSciConfig
 
 workspace = LocalWorkspace("./data/")
 config = OpenDataSciConfig(provider="anthropic")
 
 async with Agent(workspace=workspace, config=config) as agent:
-    async for event in agent.astream("Analyse sales trends"):
+    async for event in agent.astream(Invocation.from_text("Analyse sales trends")):
         ...
 ```
 
 ## Streaming events
 
-`agent.astream()` is an async generator that yields [`AgentStreamEvent`](types.md) objects as the agent works. See the [Events & Types](types.md) page for the full event taxonomy.
+`agent.astream()` takes a single `Invocation` or a `list[Invocation]` and is an async generator that yields [`AgentStreamEvent`](types.md) objects as the agent works. A list is not multiple separate requests — every item is folded into one turn, producing exactly one response. See the [Events & Types](types.md) page for the full event taxonomy.
 
 ### Handling an interrupt
 
-Some tools pause the agent and ask the user to pick an option (for example, to confirm a destructive operation). When this happens an `AgentStreamEvent` with `type="input_required"` is yielded. Resume the agent by calling `astream()` again with the user's answer:
+Some tools pause the agent and ask the user something before continuing — a free-text or multiple-choice question, or a yes/no command-approval request. While paused, `astream()` cannot be used to start a new turn; resume with the dedicated method matching the event you received instead:
 
 ```python
-async for event in agent.astream(query):
+async for event in agent.astream(invocation):
     if event.type == "input_required":
-        choice = input(f"{event.content} [{', '.join(event.metadata['choices'])}]: ")
-        async for follow_up in agent.astream(choice):
+        choice = input(f"{event.content} [{', '.join(event.choices)}]: ")
+        async for follow_up in agent.resume_with_input(choice):
             # process follow_up events as usual
+            ...
+    elif event.type == "approval_required":
+        answer = input(f"{event.content} Allow? (y/n): ")
+        async for follow_up in agent.resume_with_approval(answer.strip().lower().startswith("y")):
             ...
     elif event.type == "token":
         print(event.content, end="", flush=True)
@@ -72,6 +76,9 @@ print("Compacted:", summary)
       show_source: false
       members:
         - astream
+        - resume_with_input
+        - resume_with_approval
+        - is_user_input_required
         - rewind_turn
         - clear_chat_history
         - compact_chat_history
@@ -118,11 +125,17 @@ async with Agent(
 
 ---
 
-## ConcurrentWorkerAgent
+## WorkerAgent
 
-`ConcurrentWorkerAgent` is the sub-agent spawned internally when the orchestrator delegates subtasks to concurrent workers. You do not normally construct this directly.
+`WorkerAgent` is the sub-agent spawned internally when OpenDataSci delegates subtasks to concurrent workers. You do not normally construct this directly.
 
-::: opendatasci.agents.agents.ConcurrentWorkerAgent
+Workers run concurrently by design, each in its own sandbox, so their code and CLI-command executions each spawn a dedicated subprocess — the compute-bound work itself is genuinely parallelized across simultaneous executions, not just interleaved.
+
+A subtask can run in one of two modes. In the foreground, it runs to completion and returns its result immediately, blocking the conversation until it's done — the right choice when OpenDataSci needs the result before it can proceed. In the background, it's scheduled instead: the tool call returns right away with a task ID, and OpenDataSci keeps the conversation moving while the work continues — the right choice for long-running work like heavy training runs or large-scale processing. `agent.task_manager` exposes the full task-tracking API for background subtasks, including `listen_task_updates()` for learning about completions without polling — see [Background Tasks](tasks.md).
+
+A background task's result reaches the model automatically if it finishes while the agent is already working on something else. If it finishes while the agent is idle, delivering it is up to whoever is driving the agent — the bundled TUI does this for you — see [Background Tasks](tasks.md) for how.
+
+::: opendatasci.agents.workers.WorkerAgent
     options:
       show_root_heading: true
       show_source: false

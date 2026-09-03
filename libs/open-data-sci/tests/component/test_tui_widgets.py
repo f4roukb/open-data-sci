@@ -151,9 +151,7 @@ class TestMessageBubble:
         assert _plain(bubble._inner) == "hello world"
         assert bubble.has_class("user")
 
-    async def test_question_message_with_invalid_markup_falls_back_to_plain(
-        self, harness
-    ) -> None:
+    async def test_question_message_with_invalid_markup_falls_back_to_plain(self, harness) -> None:
         app, pilot, pane = harness
         bubble = pane.add_message("question", "closing tag [/] without open")
         await pilot.pause()
@@ -319,7 +317,7 @@ class TestTurnStatusBar:
 
 
 # ---------------------------------------------------------------------------
-# ToolCallBlock via ChatPane.add_ephemeral_block / add_worker_block
+# ToolCallBlock via ChatPane.add_ephemeral_block / add_task_block
 # ---------------------------------------------------------------------------
 
 
@@ -387,7 +385,7 @@ class TestToolCallBlock:
 class TestWorkerBlock:
     async def test_worker_rows_and_parallelizing_header(self, harness) -> None:
         app, pilot, pane = harness
-        block = pane.add_worker_block("Fanning out", ["Clean data", "Fit model"])
+        block = pane.add_task_block("Fanning out", ["Clean data", "Fit model"])
         await pilot.pause()
         text = _plain(block)
         assert "Fanning out" in text
@@ -397,22 +395,22 @@ class TestWorkerBlock:
 
     async def test_activity_shown_while_running_and_cleared_when_done(self, harness) -> None:
         app, pilot, pane = harness
-        block = pane.add_worker_block("", ["Clean data", "Fit model"])
+        block = pane.add_task_block("", ["Clean data", "Fit model"])
         await pilot.pause()
-        block.update_worker_activity(0, "run_python")
+        block.update_task_activity(0, "run_python")
         assert "Worker 1: run_python" in _plain(block)
 
-        block.mark_worker_done(0)
+        block.mark_task_done(0)
         text = _plain(block)
         assert "Worker 1: Clean data" in text  # activity replaced by summary again
         assert block.is_running() is True  # worker 2 still running
 
     async def test_all_workers_terminal_stops_spinner_and_marks_done(self, harness) -> None:
         app, pilot, pane = harness
-        block = pane.add_worker_block("", ["a", "b"])
+        block = pane.add_task_block("", ["a", "b"])
         await pilot.pause()
-        block.mark_worker_done(0)
-        block.mark_worker_error(1)
+        block.mark_task_done(0)
+        block.mark_task_error(1)
         assert block.is_running() is False
         assert block._spin_timer is None
         text = _plain(block)
@@ -420,18 +418,18 @@ class TestWorkerBlock:
 
     async def test_out_of_range_worker_indices_are_ignored(self, harness) -> None:
         app, pilot, pane = harness
-        block = pane.add_worker_block("", ["a"])
+        block = pane.add_task_block("", ["a"])
         await pilot.pause()
-        block.mark_worker_done(5)
-        block.mark_worker_error(-1)
-        block.update_worker_activity(5, "x")
-        assert block._worker_statuses == ["running"]
+        block.mark_task_done(5)
+        block.mark_task_error(-1)
+        block.update_task_activity(5, "x")
+        assert block._task_statuses == ["running"]
 
     async def test_force_done_promotes_running_rows(self, harness) -> None:
         app, pilot, pane = harness
-        block = pane.add_worker_block("", ["a", "b"])
+        block = pane.add_task_block("", ["a", "b"])
         await pilot.pause()
-        block.mark_worker_done(0)
+        block.mark_task_done(0)
         block.set_done()  # e.g. turn ended while worker 2 still running
         text = _plain(block)
         assert "Worker 1: a" in text

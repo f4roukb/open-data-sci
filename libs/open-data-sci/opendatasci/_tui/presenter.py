@@ -13,14 +13,14 @@ from opendatasci.streaming.events import (
     ReasoningEvent,
     ResponseEvent,
     SubagentEvent,
+    TaskDoneEvent,
     TokenEvent,
     ToolCallEvent,
     ToolCommunicationEvent,
     ToolResultEvent,
     UsageEvent,
-    WorkerDoneEvent,
 )
-from opendatasci.tools import ToolName
+from opendatasci.tools.factory import ToolName
 
 from .adapter import EphemeralHandle, MessageHandle, ThinkingHandle, TurnStatusHandle, UIAdapter
 from .tools_display import REGISTRY, ToolDisplay
@@ -70,7 +70,7 @@ class _TurnPresenter:
         self._ephemerals_by_id: dict[str, EphemeralHandle] = {}
         # Ephemerals created from leading tool_communication before tool_call fires
         self._pending_ephemerals: dict[str, EphemeralHandle] = {}
-        self._worker_block: EphemeralHandle | None = None
+        self._task_block: EphemeralHandle | None = None
         # tool_call_id → latest communication text (buffered until block is ready)
         self._comm_buffers: dict[str, str] = {}
         # tool_call_ids for tools with display_status=False — no UI created, result silently ignored
@@ -179,13 +179,13 @@ class _TurnPresenter:
         buffered_comm = self._comm_buffers.pop(tool_call_id, "")
         comm = "" if has_narration else buffered_comm
 
-        if str(event.tool) == ToolName.SPAWN_WORKERS:
+        if str(event.tool) == ToolName.TASK:
             if existing is not None:
                 existing.dismiss()
                 self._ephemerals = [e for e in self._ephemerals if e is not existing]
                 self._ephemerals_by_id.pop(tool_call_id, None)
-            block = self._ui.add_worker_block(comm, list(event.worker_summaries))
-            self._worker_block = block
+            block = self._ui.add_task_block(comm, list(event.task_summaries))
+            self._task_block = block
             self._ephemerals.append(block)
             if tool_call_id:
                 self._ephemerals_by_id[tool_call_id] = block
@@ -203,27 +203,27 @@ class _TurnPresenter:
             if tool_call_id:
                 self._ephemerals_by_id[tool_call_id] = block
 
-    def handle_worker_done(self, event: WorkerDoneEvent) -> None:
-        if self._worker_block is not None and event.worker_idx is not None:
+    def handle_task_done(self, event: TaskDoneEvent) -> None:
+        if self._task_block is not None and event.task_idx is not None:
             if event.success:
-                self._worker_block.mark_worker_done(event.worker_idx)
+                self._task_block.mark_task_done(event.task_idx)
             else:
-                self._worker_block.mark_worker_error(event.worker_idx)
+                self._task_block.mark_task_error(event.task_idx)
 
     def handle_subagent_event(self, event: SubagentEvent) -> None:
-        if self._worker_block is None or event.worker_idx is None:
+        if self._task_block is None or event.task_idx is None:
             return
-        if event.event_type == "worker_tool_call":
+        if event.event_type == "task_tool_call":
             tool_name = event.content
             tool_display = REGISTRY.get(tool_name)
             activity = event.summary
             if not activity:
                 activity = tool_display.label if tool_display else tool_name
-            self._worker_block.update_worker_activity(event.worker_idx, activity)
-        elif event.event_type == "worker_tool_result":
+            self._task_block.update_task_activity(event.task_idx, activity)
+        elif event.event_type == "task_tool_result":
             # Tool finished — drop the inline activity so the row reverts to the
             # worker's subtask summary while the LLM decides on the next step.
-            self._worker_block.update_worker_activity(event.worker_idx, "")
+            self._task_block.update_task_activity(event.task_idx, "")
 
     def handle_tool_result(self, event: ToolResultEvent) -> None:
         tool_call_id = event.tool_call_id

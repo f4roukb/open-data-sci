@@ -29,6 +29,28 @@ sudo dnf install -y bubblewrap socat ripgrep
 sudo pacman -S --noconfirm bubblewrap socat ripgrep
 ```
 
+Additionally, install the [GitHub CLI](https://cli.github.com) (`gh`) to use the built-in **`github.com`** skill (`execute_cli_command` shells out to it for read-oriented GitHub lookups):
+
+```bash
+# macOS
+brew install gh
+
+# Linux (Debian/Ubuntu)
+sudo apt install gh
+
+# Linux (Fedora)
+sudo dnf install gh
+
+# Linux (Arch)
+sudo pacman -S github-cli
+```
+
+`gh` runs unauthenticated inside the sandbox (the sandbox denies read access to `~/.config/gh`, so it can't inherit a host `gh auth login` session) — fine for public read-only lookups, subject to GitHub's unauthenticated rate limits.
+
+### Sandbox filesystem access
+
+Sandboxed code can write only inside the active workspace. For reads, the sandbox denies every top-level dotfile/dotdir directly under your home directory (`~/.ssh`, `~/.aws`, `~/.config`, `~/.netrc`, `~/.config/gh`, etc.) by naming convention, plus a few macOS-specific credential stores (Keychain, browser/WebKit cookie jars) — not an exhaustive hand-picked list, so it also catches locations that weren't explicitly enumerated. It's a heuristic, not a guarantee: don't rely on it as the sole protection for anything you can't afford to leak. If your Python toolchain (pyenv/uv/rye) happens to live under one of those directories, only the minimal path down to the interpreter itself is left readable — everything else nearby (e.g. a Linux credential keyring next to a `uv`-managed interpreter) stays denied.
+
 ### Provider extras
 
 The default installation includes the Anthropic and OpenAI clients. Install additional extras to unlock other providers:
@@ -44,13 +66,16 @@ The default installation includes the Anthropic and OpenAI clients. Install addi
 ### Capability extras
 
 ```bash
-pip install "open-data-sci[jax]"   # Deep learning — JAX, Flax, Optax
+pip install "open-data-sci[deep-learning]" # Deep learning on the host — PyTorch, JAX, Transformers, Sentence-Transformers
+pip install "open-data-sci[finance]" # Finance data — yfinance
 ```
 
-The `[jax]` extra is required for the built-in **Deep Learning** skill. Combine extras freely:
+The `[deep-learning]` extra — deep learning directly on the host, for machines with a GPU or NPU — is required for the built-in **Deep Learning** skill; `[finance]` for the built-in **`finance.yahoo.com`** skill. Combine extras freely:
+
+> **GPU access inside the sandbox is opt-in.** Installing a `[deep-learning]` package makes the sandbox bind-mount the host's GPU device nodes so `torch`/`jax` can actually use the GPU — this exposes the host kernel's GPU driver to sandboxed code, a real change to the sandbox's risk profile. See `opendatasci/sandbox/srt.py`'s module docstring for details and current platform coverage.
 
 ```bash
-pip install "open-data-sci[aws,gemini,jax]"
+pip install "open-data-sci[aws,gemini,deep-learning,finance]"
 ```
 
 ---
@@ -188,11 +213,12 @@ The Python API is async-first. Every public method that touches the network is a
 
 ```python
 import asyncio
-from opendatasci import create_agent
+from opendatasci import create_agent, Invocation
 
 async def main() -> None:
     async with create_agent("sales.csv") as agent:
-        async for event in agent.astream("What is the average revenue by region?"):
+        invocation = Invocation.from_text("What is the average revenue by region?")
+        async for event in agent.astream(invocation):
             if event.type == "token":
                 print(event.content, end="", flush=True)
             elif event.type == "response":
@@ -204,7 +230,7 @@ asyncio.run(main())
 ### With a custom provider
 
 ```python
-from opendatasci import create_agent, OpenDataSciConfig
+from opendatasci import create_agent, Invocation, OpenDataSciConfig
 
 config = OpenDataSciConfig(
     provider="openai",
@@ -214,16 +240,16 @@ config = OpenDataSciConfig(
 )
 
 async with create_agent("data.parquet", config=config) as agent:
-    async for event in agent.astream("Train a gradient-boosting model on the target column."):
+    async for event in agent.astream(Invocation.from_text("Train a gradient-boosting model on the target column.")):
         ...
 ```
 
 ### Consuming stream events
 
-`agent.astream()` yields [`AgentStreamEvent`](api/types.md) objects. Each event has a `type` and `content` string, plus optional `metadata`.
+`agent.astream()` takes a single `Invocation` or a `list[Invocation]` and yields [`AgentStreamEvent`](api/types.md) objects. A list is not multiple separate requests — every item is folded into one turn, producing exactly one response. Each event has a `type` and `content` string, plus optional `metadata`.
 
 ```python
-async for event in agent.astream(query):
+async for event in agent.astream(invocation):
     match event.type:
         case "token":
             # Incremental response text
@@ -235,14 +261,19 @@ async for event in agent.astream(query):
             print(f"\n[tool] {event.content}")
         case "tool_result":
             pass
-        case "worker_done":
-            idx = event.metadata["worker_idx"]
+        case "task_done":
+            idx = event.metadata["task_idx"]
             ok = event.metadata["success"]
             print(f"\n[worker {idx}] {'ok' if ok else 'failed'}")
         case "input_required":
-            # Agent needs a choice from the user — resume by calling astream() again
+            # Agent needs a choice from the user — resume with resume_with_input()
             choice = input(event.content + " ")
-            async for follow_up in agent.astream(choice):
+            async for follow_up in agent.resume_with_input(choice):
+                pass  # handle follow_up events as usual
+        case "approval_required":
+            # Agent needs yes/no approval before running a command — resume with resume_with_approval()
+            answer = input(event.content + " Allow? (y/n): ")
+            async for follow_up in agent.resume_with_approval(answer.strip().lower().startswith("y")):
                 pass  # handle follow_up events as usual
         case "response":
             # Final assembled answer — end of turn
@@ -266,10 +297,6 @@ secondary_provider: openai
 secondary_model: gpt-5.6-luna
 
 temperature: 0.1
-
-extra_web_domains:
-  - arxiv.org
-  - huggingface.co
 
 worker_timeout_seconds: 600
 midturn_compaction_threshold: 80000

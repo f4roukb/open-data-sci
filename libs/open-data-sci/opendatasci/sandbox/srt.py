@@ -4,6 +4,12 @@ Platform support: the underlying Sandbox Runtime only sandboxes on macOS and
 Linux. Windows is unsupported: ``sandbox_runtime`` imports the Unix-only
 ``resource`` module at import time, so this module fails to import at all on
 Windows; this class is therefore exercised only under mocks on such hosts.
+
+Accelerator (GPU/NPU) passthrough for the ``[deep-learning]`` extra is Linux
+only and opt-in — see ``_inject_accelerator_devices`` below for the mechanism
+and the security tradeoff it logs a warning about. Tested on native Linux and
+WSL2 with an NVIDIA GPU; macOS has no accelerator passthrough, so deep
+learning there runs on CPU only.
 """
 
 import asyncio
@@ -26,6 +32,9 @@ from typing import Any, AsyncIterator
 from sandbox_runtime import SandboxManager, SandboxRuntimeConfig
 from sandbox_runtime.utils.platform import get_platform
 
+from opendatasci._utils.accelerator_utils import discover_accelerator_devices
+from opendatasci._utils.fs_utils import find_maybe_sensitive_paths
+from opendatasci._utils.package_extras_utils import is_deep_learning_extra_active
 from opendatasci.sandbox.base import (
     BaseSandbox,
     BaseSandboxFactory,
@@ -79,18 +88,16 @@ def check_sandbox_dependencies() -> None:
 
 _RUNNER_SRC = Path(__file__).parent / "_runner.py"
 
-# Sensitive host locations the sandbox must never expose to model-generated
-# code. These are expanded to absolute, symlink-resolved paths before being
-# handed to SRT, which resolves deny rules relative to the workspace cwd and
-# does *not* expand ``~`` itself.
-_SENSITIVE_READ_PATHS: tuple[str, ...] = (
-    "~/.ssh",
-    "~/.aws",
-    "~/.gnupg",
-    "~/.config/gcloud",
-    "~/.kube",
-    "~/.docker",
-    "~/.netrc",
+
+# Domains the sandboxed ``gh`` CLI (see ``execute_cli_command``) is permitted to
+# reach. Scoped narrowly to GitHub's own hosts rather than opening network
+# access generally; every other sandboxed command remains fully offline.
+_CLI_ALLOWED_NETWORK_DOMAINS: tuple[str, ...] = (
+    "github.com",
+    "api.github.com",
+    "codeload.github.com",
+    "objects.githubusercontent.com",
+    "raw.githubusercontent.com",
 )
 
 # Allowlist of host environment variables propagated into the sandboxed
@@ -125,6 +132,67 @@ _ENV_PASSTHROUGH: tuple[str, ...] = (
     "PROCESSOR_ARCHITECTURE",
     "NUMBER_OF_PROCESSORS",
 )
+
+
+# ---------------------------------------------------------------------------
+# Accelerator (GPU/NPU) passthrough (Linux only; opt-in via ``[deep-learning]``)
+# ---------------------------------------------------------------------------
+#
+# ``sandbox_runtime`` (0.2.x) unconditionally runs ``bwrap --dev /dev`` on
+# Linux, which mounts only standard nodes (null, zero, random) and drops real
+# accelerator devices (/dev/nvidia*, /dev/dri/*, /dev/accel/*) with no config
+# knob to restore them. We work around that below by activating only when a
+# ``[deep-learning]`` package (torch/jax/transformers/sentence_transformers)
+# is importable, since it hands sandboxed code direct ioctl access to the
+# host kernel's accelerator driver (a real CVE surface, e.g.
+# nvidia-container-toolkit) with no resource limiting the way CPU/memory
+# have — hence the one-time warning below. Only compute-capable nodes are
+# ever bound, never /dev/dri/card* (display/KMS).
+#
+# Detection lives in ``opendatasci._utils`` (pure, reusable); the
+# bwrap-specific injection and its one-time warning stay here. The warning
+# flag is module-scoped so it fires once per process, not once per sandbox
+# instance.
+
+_ACCELERATOR_WARNING_EMITTED: bool = False
+
+
+def _inject_accelerator_devices(wrapped_command: str) -> str:
+    """Append ``--dev-bind`` for discovered accelerator devices to a wrapped bwrap command.
+
+    ``sandbox_runtime`` always emits a literal ``--dev /dev`` token on Linux
+    (see module docstring), which this appends immediately after — bwrap
+    applies bind mounts in argument order, so a later ``--dev-bind`` for a
+    specific node inside ``/dev`` takes effect over the synthetic devtmpfs
+    ``--dev`` created for that same path. If the sandbox isn't restricting
+    anything (no ``--dev /dev`` in the command — e.g. no filesystem/network
+    config was passed), the command is returned unchanged: an unrestricted
+    bwrap already sees the real ``/dev``, and a raw (non-bwrap) command has
+    nothing to inject into.
+    """
+    devices = discover_accelerator_devices()
+    if not devices:
+        return wrapped_command
+
+    marker = "--dev /dev"
+    if marker not in wrapped_command:
+        return wrapped_command
+
+    global _ACCELERATOR_WARNING_EMITTED
+    if not _ACCELERATOR_WARNING_EMITTED:
+        _ACCELERATOR_WARNING_EMITTED = True
+        warnings.warn(
+            "opendatasci: the sandbox now has access to this machine's accelerator "
+            f"device(s) ({', '.join(devices)}), needed for the [deep-learning] extra to run "
+            "deep learning on your GPU/NPU. This expands what sandboxed code can "
+            "reach on your machine. Reinstall without the [deep-learning] extra to disable it.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        logger.warning("Accelerator passthrough active: bind-mounting %s into the sandbox", devices)
+
+    bind_args = " ".join(f"--dev-bind {shlex.quote(d)} {shlex.quote(d)}" for d in devices)
+    return wrapped_command.replace(marker, f"{marker} {bind_args}", 1)
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +263,7 @@ class SRTSandbox(BaseSandbox):
         self._results: dict[str, str] = {}
         self._var_info: dict[str, str] = {}
         self._sandbox_config: SandboxRuntimeConfig | None = None
+        self._cli_sandbox_config: SandboxRuntimeConfig | None = None
         self._initialized = False
         # Set by reset(); consumed under _lock at the start of the next execute
         # so the on-disk wipe happens inside the serialized critical section.
@@ -229,6 +298,8 @@ class SRTSandbox(BaseSandbox):
                 wrapped = await SandboxManager.wrap_with_sandbox(
                     command, custom_config=self._make_config()
                 )
+                if is_deep_learning_extra_active():
+                    wrapped = _inject_accelerator_devices(wrapped)
                 stdout_str, stderr_str, _ = await self._run_subprocess(
                     wrapped, env=env, cwd=workspace
                 )
@@ -281,7 +352,7 @@ class SRTSandbox(BaseSandbox):
 
                 workspace = str(self._workspace_path or self._session_dir)
                 wrapped = await SandboxManager.wrap_with_sandbox(
-                    command, custom_config=self._make_config()
+                    command, custom_config=self._make_cli_config()
                 )
                 stdout_str, stderr_str, exit_code = await self._run_subprocess(
                     wrapped, env=_base_sandbox_env(), cwd=workspace
@@ -344,18 +415,39 @@ class SRTSandbox(BaseSandbox):
     def _make_config(self) -> SandboxRuntimeConfig:
         if self._sandbox_config is None:
             workspace = str(self._workspace_path or self._session_dir)
-            deny_read = [
-                os.path.realpath(os.path.expanduser(path)) for path in _SENSITIVE_READ_PATHS
-            ]
             self._sandbox_config = SandboxRuntimeConfig(
                 network={"allowed_domains": [], "denied_domains": []},
                 filesystem={
-                    "deny_read": deny_read,
+                    "deny_read": find_maybe_sensitive_paths(),
                     "allow_write": [workspace, str(self._session_dir)],
                     "deny_write": [],
                 },
             )
         return self._sandbox_config
+
+    def _make_cli_config(self) -> SandboxRuntimeConfig:
+        """Config for :meth:`execute_cli`: identical to :meth:`_make_config` except
+        network access is scoped to GitHub's hosts, for the ``gh`` CLI.
+
+        Kept separate from ``_make_config`` (used by :meth:`execute`) so Python
+        code execution remains fully network-isolated; only CLI commands (which
+        pass through the ``ALLOWED_CLI_COMMANDS`` allowlist) get this narrower
+        network exception.
+        """
+        if self._cli_sandbox_config is None:
+            workspace = str(self._workspace_path or self._session_dir)
+            self._cli_sandbox_config = SandboxRuntimeConfig(
+                network={
+                    "allowed_domains": list(_CLI_ALLOWED_NETWORK_DOMAINS),
+                    "denied_domains": [],
+                },
+                filesystem={
+                    "deny_read": find_maybe_sensitive_paths(),
+                    "allow_write": [workspace, str(self._session_dir)],
+                    "deny_write": [],
+                },
+            )
+        return self._cli_sandbox_config
 
     async def _run_subprocess(
         self, command: str, env: dict[str, str], cwd: str
@@ -380,10 +472,18 @@ class SRTSandbox(BaseSandbox):
                 cwd=cwd,
                 **spawn_kwargs,
             )
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(),
-                timeout=self._command_timeout,
-            )
+            try:
+                stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                    proc.communicate(),
+                    timeout=self._command_timeout,
+                )
+            except asyncio.CancelledError:
+                # Cancellation (e.g. via stop_task) throws in here without ever
+                # raising TimeoutError, so without this handler the wrapped
+                # subprocess (shell -> bwrap/sandbox-exec -> python) would be
+                # orphaned rather than killed.
+                await self._terminate_process_tree(proc)
+                raise
             returncode = proc.returncode
             if returncode is None:
                 # Should not happen after communicate(); surface it as a failure

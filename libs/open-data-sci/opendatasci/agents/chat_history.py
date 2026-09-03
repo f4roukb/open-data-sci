@@ -6,8 +6,10 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Any
 
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 
+from opendatasci._utils.message_utils import to_text_content_blocks
 from opendatasci._utils.mixins import RenderableMessageMixin
 from opendatasci.context.base import BaseContextStore
 from opendatasci.context.plans import Plan
@@ -68,7 +70,7 @@ class ChatHistoryBuilder(BaseChatHistoryBuilder):
 
     def __init__(
         self,
-        summarizer_llm: Any,
+        summarizer_llm: BaseChatModel | None,
         loop_compactor_llm: Any | None = None,
         midturn_compaction_threshold: int | None = None,
         context_store: BaseContextStore | None = None,
@@ -107,12 +109,13 @@ class ChatHistoryBuilder(BaseChatHistoryBuilder):
         """Build a recall message for *plan*, preserving its original timestamp."""
         raw_ts = plan.metadata.get("created_at")
         created_at = datetime.fromisoformat(raw_ts) if raw_ts else datetime.now(timezone.utc)
-        return PlanMessage(content=plan.to_content(), created_at=created_at)
+        return PlanMessage(content=to_text_content_blocks(plan.to_content()), created_at=created_at)
 
     def _build_compaction_message(self, compaction: "ChatHistoryCompaction") -> CompactionMessage:
         """Convert *compaction* into a stamped recall message."""
         return CompactionMessage(
-            content=compaction.to_content(), created_at=compaction.compacted_at
+            content=to_text_content_blocks(compaction.to_content()),
+            created_at=compaction.compacted_at,
         )
 
     def _build_summary_messages(
@@ -124,7 +127,7 @@ class ChatHistoryBuilder(BaseChatHistoryBuilder):
         """
         return [
             SummaryMessage(
-                content=summary.to_content(),
+                content=to_text_content_blocks(summary.to_content()),
                 created_at=summary.turn_end_timestamp,
                 turn_start_timestamp=summary.turn_start_timestamp,
                 turn_end_timestamp=summary.turn_end_timestamp,

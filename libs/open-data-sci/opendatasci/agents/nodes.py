@@ -1,14 +1,18 @@
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from typing import Any, Awaitable, Callable, Optional
+from uuid import UUID
 
 from langchain_core.messages import SystemMessage
 from langchain_core.runnables import RunnableConfig
 
+from opendatasci._utils.background_tasks_utils import merge_task_updates
 from opendatasci._utils.mixins import RenderableMessageMixin
 from opendatasci.agents.chat_history import ChatHistoryBuilder
 from opendatasci.agents.states import AgentState
 from opendatasci.memory.messages import AgentMessage
 from opendatasci.models.factory import _RetryRunnable
+from opendatasci.tasks.base import BackgroundTaskManagerBase, BackgroundTaskUpdate
 
 BuildSystemContext = Callable[[AgentState], list[SystemMessage]]
 
@@ -47,7 +51,7 @@ class AgentNode(BaseNode):
         self,
         get_llm_with_tools: Callable[[AgentState], _RetryRunnable],
         build_system_context: BuildSystemContext,
-        chat_history_builder: ChatHistoryBuilder | None = None,
+        chat_history_builder: ChatHistoryBuilder | None,
     ) -> None:
         self._get_llm_with_tools = get_llm_with_tools
         self._build_system_context = build_system_context
@@ -76,3 +80,21 @@ class AgentNode(BaseNode):
         response = AgentMessage.from_langchain(_raw)
         updates["messages"] = [response]
         return updates
+
+
+class SynchronizationNode(BaseNode):
+    """Graph node that folds finished background tasks into context mid-turn."""
+
+    def __init__(self, background_task_manager: BackgroundTaskManagerBase) -> None:
+        self._background_task_manager = background_task_manager
+
+    async def ainvoke(
+        self, state: AgentState, config: Optional[RunnableConfig] = None
+    ) -> dict[str, Any]:
+        updates = await self._background_task_manager.pull_task_updates()
+        if not updates:
+            return {}
+        grouped: dict[UUID, list[BackgroundTaskUpdate]] = defaultdict(list)
+        for update in updates:
+            grouped[update.task_id].append(update)
+        return {"messages": [merge_task_updates(group) for group in grouped.values()]}

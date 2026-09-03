@@ -127,10 +127,10 @@ class TestRegistryContents:
     def test_list_python_libs_summary_arg(self) -> None:
         assert REGISTRY["list_python_libs"].summary_arg == "summary"
 
-    # ── Planning ──────────────────────────────────────────────────────────────
+    # ── Modes ─────────────────────────────────────────────────────────────────
 
-    def test_enter_plan_mode_label(self) -> None:
-        assert REGISTRY["enter_plan_mode"].label == "Planning the next steps"
+    def test_switch_agentic_mode_label(self) -> None:
+        assert REGISTRY["switch_agentic_mode"].label == "Switching mode"
 
     def test_exit_plan_mode_label(self) -> None:
         assert REGISTRY["exit_plan_mode"].label == "Planning complete"
@@ -151,11 +151,11 @@ class TestRegistryContents:
 
     # ── Workers ───────────────────────────────────────────────────────────────
 
-    def test_spawn_workers_label(self) -> None:
-        assert REGISTRY["spawn_workers"].label == "Spawning workers"
+    def test_task_label(self) -> None:
+        assert REGISTRY["task"].label == "Spawning workers"
 
-    def test_spawn_workers_summary_arg(self) -> None:
-        assert REGISTRY["spawn_workers"].summary_arg == "summary"
+    def test_task_summary_arg(self) -> None:
+        assert REGISTRY["task"].summary_arg == "summary"
 
     # ── Dataset ───────────────────────────────────────────────────────────────
 
@@ -203,9 +203,6 @@ class TestRegistryContents:
 
     # ── Self-review ───────────────────────────────────────────────────────────
 
-    def test_enter_self_review_mode_label(self) -> None:
-        assert REGISTRY["enter_self_review_mode"].label == "Reviewing progress so far"
-
     def test_exit_self_review_mode_label(self) -> None:
         assert REGISTRY["exit_self_review_mode"].label == "Done reviewing progress"
 
@@ -235,7 +232,5 @@ class TestAllToolNamesRegistered:
 
         known = {name.value for name in ToolName}
         # Filter out test-only keys injected by other tests in this session.
-        orphans = {
-            k for k in REGISTRY if k not in known and not k.startswith("__")
-        }
+        orphans = {k for k in REGISTRY if k not in known and not k.startswith("__")}
         assert orphans == set(), f"Unexpected orphan keys in REGISTRY: {orphans}"

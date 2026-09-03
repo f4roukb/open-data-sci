@@ -5,10 +5,10 @@
 ## Usage
 
 ```python
-from opendatasci import create_agent
+from opendatasci import Invocation, create_agent
 
 async with create_agent("data.csv") as agent:
-    async for event in agent.astream("What is the average revenue by region?"):
+    async for event in agent.astream(Invocation.from_text("What is the average revenue by region?")):
         if event.type == "token":
             print(event.content, end="", flush=True)
 ```
@@ -18,7 +18,7 @@ The function returns an `Agent` that must be used as an async context manager. T
 ## With a custom config
 
 ```python
-from opendatasci import create_agent, OpenDataSciConfig
+from opendatasci import create_agent, Invocation, OpenDataSciConfig
 
 config = OpenDataSciConfig(
     provider="openai",
@@ -27,7 +27,7 @@ config = OpenDataSciConfig(
 )
 
 async with create_agent("/data/sales.parquet", config=config) as agent:
-    async for event in agent.astream("Train a gradient-boosting classifier."):
+    async for event in agent.astream(Invocation.from_text("Train a gradient-boosting classifier.")):
         ...
 ```
 
