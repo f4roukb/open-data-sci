@@ -162,6 +162,7 @@ For each batch, report:
 - goal: One sentence. What sub-goal was this batch of steps pursuing?
 - actions: The actions the agent took to get there — approaches or tools used. May span several steps.
 - outcome: The outcome of those actions — what worked, what didn't, and any results or errors produced. If an attempt failed and was retried differently, say so explicitly rather than only reporting the final state; a later turn needs to know an approach was already tried and failed so it doesn't repeat it.
+- key_observations: Any notable facts, constraints, or discoveries surfaced in this batch that aren't already captured by goal/actions/outcome — e.g. a surprising finding, a caveat the user should know about.
 - artifacts: Paths of files this batch created or modified — in particular anything written under `.opendatasci/artifacts/`. Leave empty if nothing was created or modified.
 
 Keep at most 16 batches. If more occurred, don't just truncate — judge what the agent would actually need to pick its work back up (unresolved errors, produced artifacts, decisions made) versus what is now dead information (superseded attempts, resolved dead ends, exploratory steps that led nowhere), fold the latter away, and keep the rest as the most consequential batches."""
