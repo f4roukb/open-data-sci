@@ -121,7 +121,7 @@ cloud providers; only the setup differs.
 | `/cancel-message` | Cancel the most recently queued message |
 | `/compact` | Summarise and compress the conversation to free context |
 | `/reset` | Clear sandbox state and reload data from disk |
-| `/clear` | Clear conversation history; the sandbox is untouched |
+| `/clear` | Clear conversation history |
 | `/ls-workspace` | List every file in the workspace |
 | `/models` | Show primary and secondary model in use |
 | `/stop` | Interrupt a running agent turn |

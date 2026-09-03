@@ -27,7 +27,7 @@ async with create_agent("data.csv", config=config) as agent:
 
 - **`astream(invocation)`** — delegates to the agent and yields `AgentStreamEvent` objects (`invocation` is an `Invocation` or `list[Invocation]`, never a plain string)
 - **`reset_session()`** — clears the sandbox's execution history and the agent's conversation history
-- **`clear_context()`** — clears only the conversation history; the sandbox is untouched
+- **`clear_context()`** — clears only the conversation history
 - **`compact_chat_history()`** — calls the agent's LLM-based compaction and returns the summary
 - **`get_workspace_files()`** — returns filenames visible in the workspace (used by `/ls-workspace`)
 

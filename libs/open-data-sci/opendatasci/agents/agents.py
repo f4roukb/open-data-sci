@@ -498,7 +498,7 @@ class Agent(BaseOpenDataSciAgent):
 
     @override
     async def clear_chat_history(self) -> None:
-        """Clear all conversation context (the sandbox instance itself is untouched).
+        """Clear all conversation context.
 
         Drops the conversation history, turn summaries, compaction, active
         skills, mode flags, and any pending interrupt by starting a fresh

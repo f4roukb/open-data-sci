@@ -58,7 +58,7 @@ async for event in agent.astream(invocation):
 
 | Method | Description |
 |--------|-------------|
-| `clear_chat_history()` | Remove all messages and rolling memory summaries. The sandbox instance itself is untouched. |
+| `clear_chat_history()` | Remove all messages and rolling memory summaries. |
 | `rewind_turn()` | Remove only the last turn (user message + agent response) from the conversation. |
 | `compact_chat_history()` | Fold all turn summaries and any existing compaction into a single `ChatHistoryCompaction` record. Returns the compaction text. Use this instead of `clear_chat_history` when you want to preserve context across a long session. |
 
