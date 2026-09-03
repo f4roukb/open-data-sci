@@ -89,7 +89,7 @@ Type `/` and press **Tab** to autocomplete. All commands take effect immediately
 | `/cancel-message` | Cancels the most recently queued message |
 | `/compact` | Summarises the conversation and replaces it with a compressed version — use this when sessions get long instead of losing context |
 | `/reset` | Clears sandbox state and conversation; data is reloaded fresh from disk |
-| `/clear` | Clears conversation history but keeps sandbox variables (DataFrames, models, etc.) |
+| `/clear` | Clears conversation history |
 | `/ls-workspace` | Lists every file in the current workspace |
 | `/models` | Shows which primary model and secondary model are in use |
 | `/themes` | Lists available colour themes and marks the active one |

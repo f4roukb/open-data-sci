@@ -474,10 +474,11 @@ class TestMonitorTask:
         await manager.cancel_task(task_id2)
 
     @pytest.mark.asyncio
-    async def test_matches_past_the_storage_truncation_cutoff(self) -> None:
-        # Storage-side truncation of long entries must never shrink what a
-        # monitor actually scans — a match placed past the truncation cutoff
-        # would otherwise be silently missed.
+    async def test_does_not_match_past_the_truncation_cutoff(self) -> None:
+        # Monitors scan the truncated entry, not the raw one, so regex time is
+        # bounded by _MAX_ACTIVITY_ENTRY_LEN regardless of how much a single
+        # tool call actually printed — a match placed past the cutoff is
+        # therefore not found.
         manager = BackgroundTaskManager()
         started = asyncio.Event()
 
@@ -493,12 +494,33 @@ class TestMonitorTask:
         entry = ("x" * (_MAX_ACTIVITY_ENTRY_LEN + 10)) + "needle"
         await manager.push_activity(task_id, entry)
 
-        updates = await manager.pull_task_updates()
-        assert updates[0].matched_texts == ["needle"]
+        assert manager.has_task_updates() is False
 
         record = await manager.get_task(task_id)
         assert record is not None
         assert record.activity[0].endswith("... (truncated)")
+
+        await manager.cancel_task(task_id)
+
+    @pytest.mark.asyncio
+    async def test_matches_within_the_truncation_cutoff(self) -> None:
+        manager = BackgroundTaskManager()
+        started = asyncio.Event()
+
+        async def _work(task_id: object) -> str:
+            started.set()
+            await asyncio.sleep(10)
+            return "never"
+
+        task_id = await manager.submit_task(_work, summary="s")
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        await manager.monitor_task(task_id, ["needle"])
+        entry = "needle" + ("x" * (_MAX_ACTIVITY_ENTRY_LEN + 10))
+        await manager.push_activity(task_id, entry)
+
+        updates = await manager.pull_task_updates()
+        assert updates[0].matched_texts == ["needle"]
 
         await manager.cancel_task(task_id)
 

@@ -175,7 +175,6 @@ covers:
 - What data was being analyzed (file names, shapes, columns if mentioned)
 - What questions the user asked
 - Key findings, statistics, and conclusions reached
-- Any important variables, DataFrames, or results that are still in the sandbox
 - Preferences or constraints the user expressed
 
 Write in past tense. Be specific — include numbers and column names where relevant. \

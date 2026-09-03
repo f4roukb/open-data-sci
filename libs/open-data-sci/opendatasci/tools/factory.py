@@ -66,9 +66,10 @@ def _base_tools(
     skill_store: BaseSkillStore,
     persist: bool = True,
     approval_manager: HumanApprovalBaseManager | None = None,
+    background_task_manager: BackgroundTaskManagerBase | None = None,
 ) -> list[BaseTool]:
     tools: list[BaseTool] = [
-        *create_coding_tools(sandbox),
+        *create_coding_tools(sandbox, background_task_manager=background_task_manager),
         *create_cli_tools(sandbox, approval_manager=approval_manager),
         *create_data_context_tools(context_store, sandbox, persist=persist),
         *create_skill_tools(skill_store),
@@ -150,7 +151,12 @@ def create_execution_mode_tools(
     # A single manager instance is shared by every tool that supports human approval.
     approval_manager: HumanApprovalBaseManager = HumanApprovalManager(datasci_config)
     tools = _base_tools(
-        workspace, sandbox, context_store, skill_store, approval_manager=approval_manager
+        workspace,
+        sandbox,
+        context_store,
+        skill_store,
+        approval_manager=approval_manager,
+        background_task_manager=background_task_manager,
     )
     tools.extend(create_code_verification_tools(datasci_config))
     tools.extend(create_mode_tools(skill_store, context_store, session_id))

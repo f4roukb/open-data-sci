@@ -7,7 +7,6 @@ import json
 import logging
 import re
 from datetime import datetime
-from enum import StrEnum, auto
 from pathlib import Path
 from typing import Annotated, Any, Awaitable, Callable, override
 from uuid import UUID
@@ -27,6 +26,7 @@ from opendatasci.tasks.base import (
     BackgroundTaskManagerBase,
     BackgroundTaskRecord,
     BackgroundTaskStatus,
+    RunMode,
 )
 from opendatasci.tools.base import OpenDataSciBaseTool
 from opendatasci.tools.coding import create_cli_tools, create_coding_tools
@@ -34,13 +34,6 @@ from opendatasci.tools.skills import create_skill_tools
 from opendatasci.workspace.base import BaseWorkspace
 
 logger = logging.getLogger(__name__)
-
-
-class RunMode(StrEnum):
-    """Whether the ``task`` tool waits for results (foreground) or schedules them in the background."""
-
-    FOREGROUND = auto()
-    BACKGROUND = auto()
 
 
 class TaskTool(OpenDataSciBaseTool):
@@ -164,7 +157,7 @@ Args:
                 if task_id is not None and event_type == "task_tool_result":
                     output = (metadata or {}).get("output", "")
                     await self.background_task_manager.push_activity(
-                        task_id, f"tool: {content}\nresult: {output}"
+                        task_id, f"<tool>{content}</tool>\n<output>{output}</output>"
                     )
 
             background_task = asyncio.get_running_loop().create_task(_emit())

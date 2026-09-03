@@ -32,15 +32,12 @@ While a turn is already in progress, the agent drains its own task manager autom
 
 ## Activity log
 
-Every background task accumulates a plain-text `activity` log on its `BackgroundTaskRecord`: one entry per tool call the worker makes (`tool: <name>\nresult: <output>`), appended as each call completes. It's capped at 200 entries and 32KB per entry (oldest entries/characters dropped first) to bound memory on a long-running worker, and it's readable through the `check_task` tool without any extra setup.
+Every background task accumulates a plain-text `activity` log on its `BackgroundTaskRecord`: one entry per tool call the worker makes, appended as each call completes. It's capped at 200 entries and 32KB per entry (oldest entries/characters dropped first) to bound memory on a long-running worker, and it's readable through the `check_task` tool without any extra setup.
 
 ## Monitoring task activity
 
 Rather than relying on a worker to proactively narrate its own progress, the scheduling agent can register a **monitor** — a regex checked against every future activity entry on a task. `monitor_task(task_id, regex_patterns)` registers one monitor per pattern and returns their `monitor_id`s. A monitor is **fire-once**: the first activity entry that matches produces a `BackgroundTaskUpdateKind.PROGRESS` update, delivered through the same channel a completion uses, and the monitor is then removed — call `monitor_task` again to keep watching for that pattern. If a monitor for a given pattern is already registered on a task, registering it again is a no-op that returns the existing monitor's ID rather than creating a duplicate. Two *distinct* monitors never share an ID, whether on the same task or across different tasks.
 
-Matching happens against the full, untruncated entry — never the 32KB-truncated copy that gets persisted to `activity` — so a match placed past the truncation cutoff is never missed. Only the newly-appended entry is scanned each time, never a task's prior activity, so a monitor is never re-triggered by text it has already seen. Every match found in the triggering entry (not just the first) is carried in that one update, numbered `Match 0: ...`, `Match 1: ...`, and so on.
-
-`list_task_monitors(task_id)` and the `check_task`/`list_tasks` tools (the latter via `show_monitors=True`) surface a task's currently active monitors as `Monitoring logs:\n- Monitor(<id>) Matches regex: <pattern>` text, so the agent can see what's already being watched before adding more. There is no explicit "stop a monitor" call — fire-once means a monitor's lifetime naturally ends the moment it does its job, or when its task reaches a terminal state.
 
 This is exposed to the agent as the `monitor_task` tool, alongside `check_task`/`list_tasks`/`stop_task` — see `opendatasci.tools.tasks.create_task_management_tools`.
 
