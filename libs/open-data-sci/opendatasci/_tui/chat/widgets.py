@@ -152,6 +152,7 @@ class TurnStatusBar(Static):
 
     DEFAULT_CSS = """
     TurnStatusBar {
+        width: auto;
         height: auto;
         padding: 0 2;
         margin-bottom: 0;
@@ -234,6 +235,59 @@ class TurnStatusBar(Static):
             self._stopped = True
             if self._interval is not None:
                 self._interval.stop()
+
+
+# Short, discoverable tips — cycled round-robin by TipsBar regardless of
+# what the user is doing, so people find features they'd otherwise only see
+# by reading /help.
+_TIPS: tuple[str, ...] = (
+    "Tip: type /help to see all commands",
+    "Tip: type /config to change theme, model, or provider",
+    "Tip: type /models to switch the active model",
+    "Tip: type /providers to switch the active provider",
+    "Tip: type @path/to/file to attach a file",
+    "Tip: press Tab to autocomplete a command or file path",
+    "Tip: press ↑ / ↓ to browse your input history",
+    "Tip: press Esc to stop the agent mid-turn",
+    "Tip: type /compact to summarise a long conversation",
+    "Tip: type /clear to wipe the conversation and start fresh",
+    "Tip: type /reset to reload your data from disk",
+    "Tip: type /ls-workspace to list your workspace files",
+    "Tip: type /cancel-message to drop the last queued message",
+    "Tip: press Ctrl+R to reset the session",
+    "Tip: press Ctrl+L to clear the conversation",
+)
+
+_TIP_INTERVAL_SECONDS = 7
+
+
+class TipsBar(Static):
+    """Rotating one-line tip docked at the footer's left — always cycling,
+    independent of agent/turn state."""
+
+    DEFAULT_CSS = """
+    TipsBar {
+        width: 1fr;
+        height: auto;
+        padding: 0 2;
+        color: $ods-text-muted;
+    }
+    """
+
+    def __init__(self) -> None:
+        super().__init__("")
+        self._index = 0
+
+    def on_mount(self) -> None:
+        self._render_tip()
+        self.set_interval(_TIP_INTERVAL_SECONDS, self._tick)
+
+    def _tick(self) -> None:
+        self._index = (self._index + 1) % len(_TIPS)
+        self._render_tip()
+
+    def _render_tip(self) -> None:
+        self.update(_TIPS[self._index])
 
 
 class MessageBubble(Widget):
@@ -891,6 +945,8 @@ class ChatPane(Widget):
                 id="user-input",
                 highlighter=CommandHighlighter(),
             )
+        with Horizontal(id="status-bar"):
+            yield TipsBar()
         yield WorkspacePanel(id="workspace-panel")
 
     def _mount_in_messages(self, widget: Widget) -> None:
@@ -916,7 +972,7 @@ class ChatPane(Widget):
         for existing in self.query(TurnStatusBar):
             existing.remove()
         timer = TurnStatusBar()
-        self.mount(timer, after=self.query_one("#input-bar"))
+        self.query_one("#status-bar", Horizontal).mount(timer)
         return timer
 
     def add_pending_message(self, text: str) -> "PendingMessageBubble":

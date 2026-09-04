@@ -62,6 +62,7 @@ def _make_header(version: str = "0.1.0") -> AppHeader:
     header._workspace = "/tmp/data"
     header._workspace_name = None
     header._file_count = ""
+    header._model_info = ""
     header._background_tasks = ""
     return header
 
@@ -82,10 +83,16 @@ class TestAppHeaderVersionString:
         text = _render_info_plain(_make_header(version="1.2.3"))
         assert "v1.2.3" in text
 
-    def test_no_model_line_rendered(self) -> None:
-        # Model info now lives behind /models, not the always-on header.
+    def test_no_model_line_rendered_when_unset(self) -> None:
         text = _render_info_plain(_make_header())
         assert "Model" not in text
+
+    def test_model_line_shown_once_set(self) -> None:
+        header = _make_header()
+        header._model_info = "Anthropic  claude-sonnet-5"
+        text = _render_info_plain(header)
+        assert "Model" in text
+        assert "Anthropic  claude-sonnet-5" in text
 
 
 # ---------------------------------------------------------------------------
@@ -516,24 +523,23 @@ def _make_chat_pane() -> ChatPane:
 
 
 class TestChatPaneAddTurnStatusBar:
-    """add_turn_status_bar mounts the new bar on the pane after the input-bar."""
+    """add_turn_status_bar mounts the new bar into #status-bar, alongside TipsBar."""
 
     def _setup_pane(self, existing_bars: list | None = None) -> tuple[ChatPane, MagicMock]:
         pane = _make_chat_pane()
-        input_bar = MagicMock()
+        status_bar = MagicMock()
         pane.query = MagicMock(return_value=existing_bars or [])
-        pane.query_one = MagicMock(return_value=input_bar)
-        pane.mount = MagicMock()
-        return pane, input_bar
+        pane.query_one = MagicMock(return_value=status_bar)
+        return pane, status_bar
 
-    def test_bar_is_mounted_on_pane_after_input_bar(self) -> None:
-        pane, input_bar = self._setup_pane()
+    def test_bar_is_mounted_into_status_bar(self) -> None:
+        pane, status_bar = self._setup_pane()
         bar = MagicMock()
 
         with patch("opendatasci._tui.chat.widgets.TurnStatusBar", return_value=bar):
             result = pane.add_turn_status_bar()
 
-        pane.mount.assert_called_once_with(bar, after=input_bar)
+        status_bar.mount.assert_called_once_with(bar)
         assert result is bar
 
     def test_existing_bars_are_removed_before_mounting(self) -> None:
@@ -546,14 +552,14 @@ class TestChatPaneAddTurnStatusBar:
         stale_a.remove.assert_called_once()
         stale_b.remove.assert_called_once()
 
-    def test_new_bar_is_mounted_on_pane(self) -> None:
-        pane, input_bar = self._setup_pane()
+    def test_new_bar_is_mounted_into_status_bar(self) -> None:
+        pane, status_bar = self._setup_pane()
         bar = MagicMock()
 
         with patch("opendatasci._tui.chat.widgets.TurnStatusBar", return_value=bar):
             pane.add_turn_status_bar()
 
-        pane.mount.assert_called_once_with(bar, after=input_bar)
+        status_bar.mount.assert_called_once_with(bar)
 
     def test_returns_the_newly_created_bar(self) -> None:
         pane, _ = self._setup_pane()

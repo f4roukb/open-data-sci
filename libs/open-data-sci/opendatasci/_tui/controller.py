@@ -873,6 +873,7 @@ class CLIController:
 
         info = CLISessionInfo.from_path(self._workspace_path, workspace_path, cfg)
         self._ui.set_file_count(self._describe_data(info))
+        self._ui.set_model_info(self._describe_model(new_base_config))
         return None
 
     async def stop_agent(self) -> None:

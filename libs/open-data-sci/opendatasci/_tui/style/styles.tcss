@@ -58,6 +58,12 @@ ChatPane {
     background: $ods-background;
 }
 
+#status-bar {
+    height: auto;
+    layout: horizontal;
+    background: $ods-background;
+}
+
 #completion-popup {
     display: none;
     height: auto;

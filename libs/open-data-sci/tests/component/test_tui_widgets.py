@@ -113,11 +113,18 @@ class TestAppHeader:
         assert "v9.9.9" in info
         assert "/data" in info
 
-    async def test_does_not_render_a_model_line(self, harness) -> None:
-        # Model info now lives behind /models, not the always-on header.
+    async def test_does_not_render_a_model_line_when_unset(self, harness) -> None:
         app, pilot, _ = harness
         info = _plain(app.query_one("#header-info", Static))
         assert "Model" not in info
+
+    async def test_set_model_info_renders_a_model_line(self, harness) -> None:
+        app, pilot, _ = harness
+        header = app.query_one(AppHeader)
+        header.set_model_info("Anthropic  claude-sonnet-5")
+        info = _plain(app.query_one("#header-info", Static))
+        assert "Model" in info
+        assert "Anthropic  claude-sonnet-5" in info
 
     async def test_set_file_count_and_workspace_rerender(self, harness) -> None:
         app, pilot, _ = harness
