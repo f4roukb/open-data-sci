@@ -120,8 +120,12 @@ def _parse_mcp_servers(data: dict[str, Any]) -> list[tuple[str, str]]:
     return [(name, entry["url"]) for name, entry in servers.items() if "url" in entry]
 
 
-def load_mcp_servers(workspace_path: Path) -> list[str]:
-    """Read MCP server URLs from ``<workspace>/.opendatasci/mcp.json``.
+def _workspace_mcp_config_path(workspace_path: Path) -> Path:
+    return workspace_path / OPENDATASCI_DIRNAME / _MCP_CONFIG_FILE
+
+
+def load_workspace_mcp_servers(workspace_path: Path) -> list[tuple[str, str]]:
+    """Read ``(name, url)`` pairs from ``<workspace>/.opendatasci/mcp.json``.
 
     The file format mirrors the Cursor ``mcp.json`` convention::
 
@@ -135,19 +139,46 @@ def load_mcp_servers(workspace_path: Path) -> list[str]:
     Returns an empty list when the file is absent, empty, or malformed
     (a warning is printed to stderr in the latter case).
     """
-    config_path = workspace_path / OPENDATASCI_DIRNAME / _MCP_CONFIG_FILE
+    config_path = _workspace_mcp_config_path(workspace_path)
     if not config_path.exists():
         return []
 
     try:
         data = json.loads(config_path.read_text(encoding="utf-8"))
-        return [url for _, url in _parse_mcp_servers(data)]
+        return _parse_mcp_servers(data)
     except Exception as exc:
         print(
             f"Warning: Failed to parse {config_path}: {type(exc).__name__}: {exc}",
             file=sys.stderr,
         )
         return []
+
+
+def save_workspace_mcp_servers(workspace_path: Path, servers: list[tuple[str, str]]) -> None:
+    """Write ``(name, url)`` pairs to ``<workspace>/.opendatasci/mcp.json``.
+
+    Replaces the file's whole ``mcpServers`` block with *servers*, creating
+    the ``.opendatasci`` directory if needed.
+    """
+    config_path = _workspace_mcp_config_path(workspace_path)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    data = {"mcpServers": {name: {"url": url} for name, url in servers}}
+    config_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def check_mcp_server(url: str) -> None:
+    """Verify an MCP server at *url* is reachable and speaks MCP, raising on failure."""
+    _initialize(url)
+    _list_tools(url)
+
+
+def load_mcp_servers(workspace_path: Path) -> list[str]:
+    """Read MCP server URLs from ``<workspace>/.opendatasci/mcp.json``.
+
+    See :func:`load_workspace_mcp_servers` for the file format. Returns an
+    empty list when the file is absent, empty, or malformed.
+    """
+    return [url for _, url in load_workspace_mcp_servers(workspace_path)]
 
 
 def load_named_mcp_servers(config_path: Path) -> list[tuple[str, str]]:

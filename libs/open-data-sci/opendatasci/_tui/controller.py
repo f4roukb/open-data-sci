@@ -82,7 +82,11 @@ from opendatasci.streaming.events import (
     UsageEvent,
 )
 from opendatasci.tasks.base import BackgroundTaskStatus, BackgroundTaskUpdate
-from opendatasci.tools.mcp import load_mcp_servers
+from opendatasci.tools.mcp import (
+    load_mcp_servers,
+    load_workspace_mcp_servers,
+    save_workspace_mcp_servers,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -127,10 +131,6 @@ class CLIController:
         self._cfg: OpenDataSciConfig | None = None
         self._completion = completion if completion is not None else CompletionState()
         self._paste_attachment: PasteAttachment | None = None
-        # MCP servers added via the /config panel this run. Session-only —
-        # never written to .opendatasci/mcp.json, so a restart loses them;
-        # they're merged with the workspace file's servers on every rebuild.
-        self._session_mcp_servers: list[tuple[str, str]] = []
 
     @property
     def base_config(self) -> OpenDataSciConfig:
@@ -192,9 +192,7 @@ class CLIController:
         ui = self._ui
 
         try:
-            resolved_path = Path(self._workspace_path).resolve()
-            config_search_path = resolved_path if resolved_path.is_dir() else resolved_path.parent
-            mcp_servers = self._resolve_mcp_servers(config_search_path)
+            mcp_servers = load_mcp_servers(self._config_search_path())
 
             cfg = self._base_config.model_copy(update={"mcp_servers": mcp_servers})
             self._cfg = cfg
@@ -227,6 +225,11 @@ class CLIController:
             await self._fail_boot(ui, f"Provider error: {exc}")
         except Exception as exc:
             await self._fail_boot(ui, f"Failed to load: {exc}")
+
+    def _config_search_path(self) -> Path:
+        """Directory to look for ``.opendatasci/mcp.json`` in for this workspace."""
+        resolved_path = Path(self._workspace_path).resolve()
+        return resolved_path if resolved_path.is_dir() else resolved_path.parent
 
     async def _fail_boot(self, ui: UIAdapter, msg_text: str) -> None:
         self._boot_failed = True
@@ -817,8 +820,9 @@ class CLIController:
         cfg = self._cfg or self._base_config
         root = build_config_tree()
         values = build_initial_values(cfg, _theme.active_name)
+        initial_mcp_servers = load_workspace_mcp_servers(self._config_search_path())
         self._ui.open_config_panel(
-            root, values, start_path or [], self._apply_config_changes, self._session_mcp_servers
+            root, values, start_path or [], self._apply_config_changes, initial_mcp_servers
         )
 
     async def _apply_config_changes(
@@ -858,32 +862,32 @@ class CLIController:
             if key_field and not getattr(self._base_config, key_field, None):
                 return format_missing_api_key_message(provider, key_field)
 
-        if mcp_servers is not None:
-            self._session_mcp_servers = list(mcp_servers)
-
+        mcp_server_urls = [url for _, url in mcp_servers] if mcp_servers is not None else None
         new_cfg = self._base_config.model_copy(update=config_changes)
-        return await self._rebuild_agent(new_cfg)
+        error = await self._rebuild_agent(new_cfg, mcp_server_urls)
+        if error is None and mcp_servers is not None:
+            save_workspace_mcp_servers(self._config_search_path(), mcp_servers)
+        return error
 
-    def _resolve_mcp_servers(self, config_search_path: Path) -> list[str]:
-        """Workspace ``.opendatasci/mcp.json`` servers plus this run's /config additions."""
-        file_servers = load_mcp_servers(config_search_path)
-        session_servers = [url for _, url in self._session_mcp_servers]
-        return list(dict.fromkeys([*file_servers, *session_servers]))
-
-    async def _rebuild_agent(self, new_base_config: OpenDataSciConfig) -> str | None:
+    async def _rebuild_agent(
+        self, new_base_config: OpenDataSciConfig, mcp_server_urls: list[str] | None = None
+    ) -> str | None:
         """Boot a fresh agent from *new_base_config*, swapping it in only on success.
 
         The current session (service + exit stack) is left completely
         untouched until the new agent has booted successfully, so a bad
         model/provider switch never leaves the user without a working
         session. Returns an error string on failure, or ``None`` on success.
+
+        *mcp_server_urls*, when given, overrides the workspace file's MCP
+        servers for this rebuild (used by the /config panel to apply staged
+        additions/removals before they're persisted to disk).
         """
-        resolved_path = Path(self._workspace_path).resolve()
-        config_search_path = resolved_path if resolved_path.is_dir() else resolved_path.parent
         exit_stack = AsyncExitStack()
         try:
-            mcp_servers = self._resolve_mcp_servers(config_search_path)
-            cfg = new_base_config.model_copy(update={"mcp_servers": mcp_servers})
+            if mcp_server_urls is None:
+                mcp_server_urls = load_mcp_servers(self._config_search_path())
+            cfg = new_base_config.model_copy(update={"mcp_servers": mcp_server_urls})
             agent = await exit_stack.enter_async_context(
                 create_agent(self._workspace_path, config=cfg)
             )

@@ -121,9 +121,7 @@ def build_tips_leaf() -> ConfigLeaf:
 
 
 def build_provider_leaf(field_name: str, linked_field: str) -> ConfigLeaf:
-    linked_default = (
-        _default_model_for if linked_field == "model" else _default_secondary_model_for
-    )
+    linked_default = _default_model_for if linked_field == "model" else _default_secondary_model_for
     return ConfigLeaf(
         field=field_name,
         options_provider=_provider_options,

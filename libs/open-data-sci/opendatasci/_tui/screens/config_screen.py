@@ -12,6 +12,7 @@ for all three). Left moves up one level. Escape leaves the whole panel,
 prompting Save/Discard first if anything was changed.
 """
 
+import asyncio
 from pathlib import Path
 from typing import Awaitable, Callable
 
@@ -28,7 +29,7 @@ from textual.widgets.option_list import Option
 
 from opendatasci._tui.config.config_tree import ConfigLeaf, ConfigNode, diff_values
 from opendatasci._tui.style.theme import active as theme
-from opendatasci.tools.mcp import load_named_mcp_servers
+from opendatasci.tools.mcp import check_mcp_server, load_named_mcp_servers
 
 _SAVE = "Save changes"
 _DISCARD = "Discard changes"
@@ -138,6 +139,7 @@ class ConfigScreen(ModalScreen[None]):
         self._cursor_by_path: dict[tuple[str, ...], int] = {}
         self._mode: str = "browse"
         self._error: str = ""
+        self._status: str = ""
         # MCP servers editor state — kept outside ``_staged`` since it's a
         # list of (name, url) pairs, not a scalar field.
         self._initial_mcp_servers: list[tuple[str, str]] = list(initial_mcp_servers or [])
@@ -146,6 +148,7 @@ class ConfigScreen(ModalScreen[None]):
         self._mcp_selected: set[int] = set()
         self._mcp_select_cursor: int = 0
         self._mcp_pending_name: str | None = None
+        self._mcp_checking: bool = False
 
     @staticmethod
     def _resolve_path(root: ConfigNode, start_path: list[str]) -> list[ConfigNode]:
@@ -201,6 +204,8 @@ class ConfigScreen(ModalScreen[None]):
         ]
         if self._error:
             lines.append(f"[{theme['error']}]{escape(self._error)}[/{theme['error']}]")
+        elif self._status:
+            lines.append(f"[{theme['text_muted']}]{escape(self._status)}[/{theme['text_muted']}]")
         self.query_one("#config-breadcrumb", Static).update("\n".join(lines))
 
     def _clear_body(self) -> None:
@@ -295,12 +300,12 @@ class ConfigScreen(ModalScreen[None]):
         body.mount(text_input)
         text_input.focus()
 
-    def _render_mcp_manual_url(self) -> None:
+    def _render_mcp_manual_url(self, value: str = "") -> None:
         self._mode = "mcp_manual_url"
         self._breadcrumb_text()
         self._clear_body()
         body = self.query_one("#config-body", Vertical)
-        text_input = _ConfigTextInput(placeholder="Server URL")
+        text_input = _ConfigTextInput(value=value, placeholder="Server URL")
         body.mount(text_input)
         text_input.focus()
 
@@ -313,7 +318,9 @@ class ConfigScreen(ModalScreen[None]):
         for idx, (name, url) in enumerate(self._mcp_candidates):
             marker = "[x]" if idx in self._mcp_selected else "[ ]"
             options.append(Option(f"{marker} {escape(name)} — {escape(url)}", id=f"cand:{idx}"))
-        options.append(Option(f"✔ Add selected ({len(self._mcp_selected)})", id="confirm_selection"))
+        options.append(
+            Option(f"✔ Add selected ({len(self._mcp_selected)})", id="confirm_selection")
+        )
         option_list = _McpSelectOptionList(*options)
         body.mount(option_list)
         option_list.highlighted = self._mcp_select_cursor
@@ -331,6 +338,8 @@ class ConfigScreen(ModalScreen[None]):
         self._mcp_selected = set()
         self._mcp_select_cursor = 0
         self._mcp_pending_name = None
+        self._mcp_checking = False
+        self._status = ""
 
     def _handle_mcp_load_path_submit(self, value: str) -> None:
         if not value:
@@ -359,12 +368,32 @@ class ConfigScreen(ModalScreen[None]):
         self._mcp_pending_name = value
         self._render_mcp_manual_url()
 
-    def _handle_mcp_manual_url_submit(self, value: str) -> None:
+    async def _handle_mcp_manual_url_submit(self, value: str) -> None:
         name = self._mcp_pending_name
         if not value or not name:
             self._reset_mcp_transient_state()
             self._render_mcp_list()
             return
+        if self._mcp_checking:
+            return
+
+        self._error = ""
+        self._status = "Checking connection…"
+        self._mcp_checking = True
+        self._render_mcp_manual_url(value=value)
+        try:
+            await asyncio.to_thread(check_mcp_server, value)
+        except Exception as exc:
+            if self._mode != "mcp_manual_url" or not self._mcp_checking:
+                return  # user navigated away while the check was in flight
+            self._mcp_checking = False
+            self._status = ""
+            self._error = f"Couldn't connect to {value}: {exc}"
+            self._render_mcp_manual_url(value=value)
+            return
+
+        if self._mode != "mcp_manual_url" or not self._mcp_checking:
+            return  # user navigated away while the check was in flight
         self._upsert_mcp_server(name, value)
         self._reset_mcp_transient_state()
         self._render_mcp_list()
@@ -380,7 +409,9 @@ class ConfigScreen(ModalScreen[None]):
                 id=_SAVE,
             ),
             Option(
-                Text.from_markup(f"[{theme['text_secondary']}]{_DISCARD}[/{theme['text_secondary']}]"),
+                Text.from_markup(
+                    f"[{theme['text_secondary']}]{_DISCARD}[/{theme['text_secondary']}]"
+                ),
                 id=_DISCARD,
             ),
         ]
@@ -467,7 +498,7 @@ class ConfigScreen(ModalScreen[None]):
         self._render_mcp_load_select()
 
     @on(Input.Submitted)
-    def _on_text_submitted(self, event: Input.Submitted) -> None:
+    async def _on_text_submitted(self, event: Input.Submitted) -> None:
         event.stop()
         value = event.value.strip()
         if self._mode == "mcp_load_path":
@@ -477,7 +508,7 @@ class ConfigScreen(ModalScreen[None]):
             self._handle_mcp_manual_name_submit(value)
             return
         if self._mode == "mcp_manual_url":
-            self._handle_mcp_manual_url_submit(value)
+            await self._handle_mcp_manual_url_submit(value)
             return
 
         node = self._path[-1]

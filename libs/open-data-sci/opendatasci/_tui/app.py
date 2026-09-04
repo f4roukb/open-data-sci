@@ -160,7 +160,9 @@ class OpenDataSciApp(App[None]):
                 ("Secondary provider", build_provider_leaf("secondary_provider", "secondary_model"))
             )
         if "secondary_model" in self._missing_selection:
-            steps.append(("Secondary model", build_model_leaf("secondary_model", "secondary_provider")))
+            steps.append(
+                ("Secondary model", build_model_leaf("secondary_model", "secondary_provider"))
+            )
         return steps
 
     def _on_wizard_complete(self, values: dict[str, str]) -> None:
