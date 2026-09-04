@@ -14,7 +14,10 @@ to do next, in place of ad hoc string literals.
 """
 
 from enum import Enum
-from typing import Protocol
+from typing import TYPE_CHECKING, Awaitable, Callable, Protocol
+
+if TYPE_CHECKING:
+    from .config.config_tree import ConfigNode
 
 
 class SubmitAction(str, Enum):
@@ -89,6 +92,13 @@ class UIAdapter(Protocol):
     def show_approval_prompt(self, description: str, heads_up: str) -> None: ...
     def show_attachment(self, label: str) -> None: ...
     def hide_attachment(self) -> None: ...
+    def open_config_panel(
+        self,
+        root: "ConfigNode",
+        initial_values: dict[str, str],
+        start_path: list[str],
+        on_apply: Callable[[dict[str, str]], Awaitable[str | None]],
+    ) -> None: ...
 
     def refresh_theme(self) -> None:
         """Re-apply the active theme palette (call after opendatasci._tui.theme.set_active)."""

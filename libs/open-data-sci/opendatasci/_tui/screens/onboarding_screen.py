@@ -9,10 +9,9 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, Static
 
-from opendatasci.global_config import save_global_config_value
-from opendatasci.onboarding import RequiredField
-
-from .theme import active as theme
+from ..theme import active as theme
+from .global_config import save_global_config_value
+from .onboarding import RequiredField
 
 
 class OnboardingScreen(ModalScreen[None]):

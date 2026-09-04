@@ -780,7 +780,9 @@ class ThinkingBlock(Static):
     def _update_display(self) -> None:
         spin = SPINNER[self._spin_idx]
         self.update(
-            Text.from_markup(f"[dim {theme['text_muted']}]{spin} Thinking[/dim {theme['text_muted']}]")
+            Text.from_markup(
+                f"[dim {theme['text_muted']}]{spin} Thinking[/dim {theme['text_muted']}]"
+            )
         )
 
     def dismiss(self) -> None:

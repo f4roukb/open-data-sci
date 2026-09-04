@@ -11,6 +11,7 @@ Two seams are exercised:
 """
 
 import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -18,13 +19,11 @@ from textual.widgets import Input
 
 import opendatasci._tui.app as app_module
 from opendatasci._tui.adapter import SubmitAction
-from opendatasci.configs import DEFAULT_MODEL, OpenDataSciConfig
-from opendatasci.models.providers import Provider
 from opendatasci._tui.app import OpenDataSciApp, _get_version, main
+from opendatasci._tui.config.startup_wizard_screen import StartupWizardScreen
 from opendatasci._tui.widgets import (
     AppHeader,
     ChatPane,
-    CommandApprovalPrompt,
     CompletionPopup,
     MessageBubble,
     PendingMessageBubble,
@@ -34,6 +33,8 @@ from opendatasci._tui.widgets import (
     TurnStatusBar,
     WorkspacePanel,
 )
+from opendatasci.configs import DEFAULT_MODEL, OpenDataSciConfig
+from opendatasci.models.providers import Provider
 
 # ---------------------------------------------------------------------------
 # OpenDataSciApp with a stubbed controller
@@ -64,11 +65,26 @@ def _make_controller_stub(workspace_path: str) -> MagicMock:
     return stub
 
 
+def _skip_wizard_on_mount(self) -> None:
+    """Bypass the startup wizard: focus input and boot immediately.
+
+    Used by tests that exercise chat/input behavior, not the wizard itself
+    (that gets its own tests below) — mirrors the pre-wizard on_mount body.
+    """
+    self._quit_requested = False
+    self._quit_timer = None
+    self.query_one("#user-input", Input).focus()
+    self._boot()
+
+
 @pytest.fixture
 async def running_app(tmp_path, datasci_config):
     """Yield ``(app, pilot, controller_stub)`` for a headless OpenDataSciApp."""
     stub = _make_controller_stub(str(tmp_path))
-    with patch.object(app_module, "CLIController", return_value=stub):
+    with (
+        patch.object(app_module, "CLIController", return_value=stub),
+        patch.object(OpenDataSciApp, "on_mount", _skip_wizard_on_mount),
+    ):
         app = OpenDataSciApp(
             workspace_path=str(tmp_path),
             session_id="sess",
@@ -306,19 +322,75 @@ async def test_controller_closed_on_unmount(tmp_path, datasci_config) -> None:
     stub.close.assert_awaited()
 
 
-async def test_unknown_theme_falls_back_to_default(tmp_path, datasci_config) -> None:
-    from opendatasci._tui import theme as _theme
+# ---------------------------------------------------------------------------
+# Startup wizard — always runs before boot, on every launch
+# ---------------------------------------------------------------------------
 
-    stub = _make_controller_stub(str(tmp_path))
-    with patch.object(app_module, "CLIController", return_value=stub):
-        OpenDataSciApp(
-            workspace_path=str(tmp_path),
-            session_id="sess",
-            datasci_config=datasci_config,
-            theme="does-not-exist",
-        )
-    assert _theme.active_name == "default"
-    assert _theme.active == _theme.THEMES["default"]
+
+class TestStartupWizard:
+    async def test_on_mount_pushes_the_wizard_instead_of_booting(
+        self, tmp_path, datasci_config
+    ) -> None:
+        stub = _make_controller_stub(str(tmp_path))
+        with patch.object(app_module, "CLIController", return_value=stub):
+            app = OpenDataSciApp(
+                workspace_path=str(tmp_path), session_id="sess", datasci_config=datasci_config
+            )
+            async with app.run_test(size=(100, 40)) as pilot:
+                await pilot.pause()
+                assert isinstance(app.screen, StartupWizardScreen)
+        stub.boot.assert_not_awaited()
+
+    def test_theme_step_is_always_first_regardless_of_missing_selection(self) -> None:
+        app = OpenDataSciApp.__new__(OpenDataSciApp)
+        app._missing_selection = []
+        steps = app._build_wizard_steps()
+        assert [title for title, _leaf in steps] == ["Theme"]
+
+    def test_missing_selection_fields_become_steps_in_dependency_order(self) -> None:
+        app = OpenDataSciApp.__new__(OpenDataSciApp)
+        app._missing_selection = ["secondary_model", "model", "secondary_provider", "provider"]
+        steps = app._build_wizard_steps()
+        assert [title for title, _leaf in steps] == [
+            "Theme",
+            "Provider",
+            "Model",
+            "Secondary provider",
+            "Secondary model",
+        ]
+
+    async def test_wizard_complete_applies_theme_and_boots_when_nothing_else_missing(
+        self, tmp_path, datasci_config
+    ) -> None:
+        from opendatasci._tui import theme as _theme
+
+        stub = _make_controller_stub(str(tmp_path))
+        stub.base_config = datasci_config
+        with (
+            patch.object(app_module, "CLIController", return_value=stub),
+            patch.object(app_module, "compute_missing_fields", return_value=[]),
+        ):
+            app = OpenDataSciApp(
+                workspace_path=str(tmp_path), session_id="sess", datasci_config=datasci_config
+            )
+            async with app.run_test(size=(100, 40)) as pilot:
+                await pilot.pause()
+                try:
+                    app._on_wizard_complete(
+                        {
+                            "theme": "dracula",
+                            "provider": "anthropic",
+                            "model": "claude-sonnet-4-6",
+                            "secondary_provider": "anthropic",
+                            "secondary_model": "claude-haiku-4-5",
+                        }
+                    )
+                    await pilot.pause()
+                    assert _theme.active_name == "dracula"
+                    stub.apply_config_updates.assert_called_once()
+                    stub.boot.assert_awaited_once()
+                finally:
+                    _theme.set_active("default")
 
 
 # ---------------------------------------------------------------------------
@@ -371,51 +443,20 @@ class TestMainArgParsing:
         assert config.secondary_provider == Provider.ANTHROPIC
         app_cls_stub.return_value.run.assert_called_once()
 
-    def test_explicit_provider_model_and_api_key(self, monkeypatch, app_cls_stub, tmp_path) -> None:
-        data = tmp_path / "d.csv"
-        data.write_text("a\n1\n")
-        _run_main(
-            monkeypatch,
-            str(data),
-            "--provider",
-            "openai",
-            "--model",
-            "gpt-4o",
-            "--secondary-provider",
-            "openai",
-            "--secondary-model",
-            "gpt-4o-mini",
-            "--api-key",
-            "sk-cli",
-        )
-        config = app_cls_stub.call_args.kwargs["datasci_config"]
-        assert config.provider == Provider.OPENAI
-        assert config.model == "gpt-4o"
-        assert config.secondary_model == "gpt-4o-mini"
-        assert config.openai_api_key == "sk-cli"
-
-    def test_secondary_defaults_follow_primary_provider(
+    def test_missing_selection_lists_all_four_fields_by_default(
         self, monkeypatch, app_cls_stub, tmp_path
     ) -> None:
         data = tmp_path / "d.csv"
         data.write_text("a\n1\n")
-        _run_main(monkeypatch, str(data), "--provider", "openai")
-        config = app_cls_stub.call_args.kwargs["datasci_config"]
-        assert config.secondary_provider == Provider.OPENAI
+        _run_main(monkeypatch, str(data))
+        missing = app_cls_stub.call_args.kwargs["missing_selection"]
+        assert set(missing) == {"provider", "model", "secondary_provider", "secondary_model"}
 
-    def test_api_key_rejected_for_cloud_native_provider(
-        self, monkeypatch, app_cls_stub, tmp_path
-    ) -> None:
-        data = tmp_path / "d.csv"
-        data.write_text("a\n1\n")
-        with pytest.raises(SystemExit):
-            _run_main(monkeypatch, str(data), "--provider", "bedrock", "--api-key", "k")
-        app_cls_stub.assert_not_called()
-
-    def test_missing_path_errors(self, monkeypatch, app_cls_stub) -> None:
-        with pytest.raises(SystemExit):
-            _run_main(monkeypatch)
-        app_cls_stub.assert_not_called()
+    def test_missing_path_defaults_to_cwd(self, monkeypatch, app_cls_stub) -> None:
+        _run_main(monkeypatch)
+        kwargs = app_cls_stub.call_args.kwargs
+        assert kwargs["workspace_path"] == str(Path.cwd())
+        app_cls_stub.return_value.run.assert_called_once()
 
     def test_list_providers_prints_table_and_exits(self, monkeypatch, app_cls_stub, capsys) -> None:
         _run_main(monkeypatch, "--list-providers")
@@ -424,7 +465,7 @@ class TestMainArgParsing:
         assert "openai" in out
         app_cls_stub.assert_not_called()
 
-    def test_config_file_provides_base_and_flags_override(
+    def test_config_file_provides_provider_and_model(
         self, monkeypatch, app_cls_stub, tmp_path
     ) -> None:
         data = tmp_path / "d.csv"
@@ -436,33 +477,27 @@ class TestMainArgParsing:
             "secondary_provider: openai\n"
             "secondary_model: gpt-4o-mini\n"
         )
-        _run_main(monkeypatch, str(data), "--config", str(cfg), "--model", "gpt-4.1")
+        _run_main(monkeypatch, str(data), "--config", str(cfg))
         config = app_cls_stub.call_args.kwargs["datasci_config"]
         assert config.provider == Provider.OPENAI
-        assert config.model == "gpt-4.1"  # flag wins over the YAML value
+        assert config.model == "gpt-4o"
         assert config.secondary_model == "gpt-4o-mini"
+        # Every field was explicit in the YAML, so the wizard has nothing left to ask.
+        assert app_cls_stub.call_args.kwargs["missing_selection"] == []
 
-    def test_config_file_with_api_key_targets_effective_provider(
+    def test_config_file_partial_fields_leave_the_rest_for_the_wizard(
         self, monkeypatch, app_cls_stub, tmp_path
     ) -> None:
         data = tmp_path / "d.csv"
         data.write_text("a\n1\n")
         cfg = tmp_path / "config.yaml"
         cfg.write_text("provider: gemini\nmodel: gemini-2.5-pro\n")
-        _run_main(monkeypatch, str(data), "--config", str(cfg), "--api-key", "g-key")
-        config = app_cls_stub.call_args.kwargs["datasci_config"]
-        assert config.google_api_key == "g-key"
-
-    def test_config_file_api_key_rejected_for_cloud_native_provider(
-        self, monkeypatch, app_cls_stub, tmp_path
-    ) -> None:
-        data = tmp_path / "d.csv"
-        data.write_text("a\n1\n")
-        cfg = tmp_path / "config.yaml"
-        cfg.write_text("provider: bedrock\nmodel: some-model\n")
-        with pytest.raises(SystemExit):
-            _run_main(monkeypatch, str(data), "--config", str(cfg), "--api-key", "k")
-        app_cls_stub.assert_not_called()
+        _run_main(monkeypatch, str(data), "--config", str(cfg))
+        missing = app_cls_stub.call_args.kwargs["missing_selection"]
+        assert "provider" not in missing
+        assert "model" not in missing
+        assert "secondary_provider" in missing
+        assert "secondary_model" in missing
 
     def test_version_flag_exits_cleanly(self, monkeypatch, app_cls_stub, capsys) -> None:
         with pytest.raises(SystemExit) as excinfo:

@@ -271,7 +271,7 @@ class OpenDataSciConfig(BaseSettings):
             ValueError: If the file does not contain a mapping.
         """
         try:
-            import yaml  # type: ignore[import-untyped]
+            import yaml
         except ImportError as exc:
             raise ImportError(
                 "PyYAML is required to load YAML config files. Install it with: pip install pyyaml"

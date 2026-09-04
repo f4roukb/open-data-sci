@@ -5,14 +5,16 @@ Concerns deliberately kept here:
   - Input routing (on_input_changed, on_submit)
   - Slash-command dispatch
   - Choice-prompt state machine
-  - Action methods (reset, clear, compact, show_models, show_help, stop, ls_workspace)
+  - Action methods (reset, clear, compact, show_help, stop, ls_workspace)
+  - The /config, /models, /providers config panel (open_config_panel + _apply_config_changes)
 
 Everything else has been extracted into focused sibling modules:
-  - adapter.py   — UIAdapter + handle ABCs
-  - commands.py  — SLASH_COMMANDS registry + display formatters
-  - completion.py — CompletionState (tab-completion logic)
-  - file_refs.py  — @file-ref parsing helpers
-  - presenter.py  — _TurnPresenter (streaming event dispatch)
+  - adapter.py     — UIAdapter + handle ABCs
+  - commands.py    — SLASH_COMMANDS registry + display formatters
+  - completion.py  — CompletionState (tab-completion logic)
+  - config/         — data model + screens behind /config, /models, /providers, onboarding
+  - file_refs.py   — @file-ref parsing helpers
+  - presenter.py   — _TurnPresenter (streaming event dispatch)
 """
 
 import asyncio
@@ -32,12 +34,7 @@ from opendatasci._tui.session import CLISessionInfo
 from opendatasci._utils.background_tasks_utils import merge_task_updates
 from opendatasci.agents.agents import Invocation
 from opendatasci.agents.agents_factory import create_agent
-from opendatasci.configs import (
-    DEFAULT_MODEL,
-    DEFAULT_SECONDARY_MODEL,
-    PROVIDER_KEY_FIELD,
-    OpenDataSciConfig,
-)
+from opendatasci.configs import PROVIDER_KEY_FIELD, OpenDataSciConfig
 from opendatasci.memory.messages import MessageOrigin
 from opendatasci.models.providers import Provider
 from opendatasci.streaming import AgentStreamEvent, BaseAgentStreamEvent
@@ -65,17 +62,10 @@ from .adapter import (
     TurnStatusHandle,
     UIAdapter,
 )
-from .commands import (
-    format_help_message,
-    format_missing_api_key_message,
-    format_model_switched_message,
-    format_models_message,
-    format_theme_switched_message,
-    format_themes_message,
-    format_unknown_provider_message,
-    format_unknown_theme_message,
-)
+from .commands import format_help_message, format_missing_api_key_message
 from .completion import CompletionState
+from .config.config_tree import build_config_tree
+from .config.config_tree import initial_values as build_initial_values
 from .file_refs import (
     PasteAttachment,
     _build_agent_query,
@@ -127,14 +117,12 @@ class CLIController:
         self._background_watcher_task: asyncio.Task[None] | None = None
         self._background_status_task: asyncio.Task[None] | None = None
         self._cfg: OpenDataSciConfig | None = None
-        self._completion = (
-            completion
-            if completion is not None
-            else CompletionState(
-                extra_commands=[], config_provider=lambda: self._cfg or self._base_config
-            )
-        )
+        self._completion = completion if completion is not None else CompletionState()
         self._paste_attachment: PasteAttachment | None = None
+
+    @property
+    def base_config(self) -> OpenDataSciConfig:
+        return self._base_config
 
     @property
     def provider(self) -> str:
@@ -221,9 +209,7 @@ class CLIController:
                 f"Check the path and try again.{hint}",
             )
         except PermissionError:
-            await self._fail_boot(
-                ui, f"Permission denied: `{escape_markup(self._workspace_path)}`"
-            )
+            await self._fail_boot(ui, f"Permission denied: `{escape_markup(self._workspace_path)}`")
         except ValueError as exc:
             await self._fail_boot(ui, f"Provider error: {exc}")
         except Exception as exc:
@@ -592,9 +578,7 @@ class CLIController:
             if len(choices) < len(string.ascii_uppercase)
             else None
         )
-        lines = [
-            f"[bold {theme['text_primary']}]{question}[/bold {theme['text_primary']}]\n"
-        ]
+        lines = [f"[bold {theme['text_primary']}]{question}[/bold {theme['text_primary']}]\n"]
         for label, choice_text in zip(labels, choices):
             lines.append(
                 f"  [bold {theme['warning']}]{label}[/bold {theme['warning']}]  {choice_text}"
@@ -709,34 +693,18 @@ class CLIController:
             await self.compact()
         elif cmd == "/ls-workspace":
             await self.ls_workspace()
-        elif cmd == "/models":
-            await self.show_models()
-        elif cmd == "/stop":
-            await self.stop_agent()
         elif cmd == "/cancel-all-messages":
-            await self.cancel_pending_messages()
+            self.cancel_pending_messages()
         elif cmd == "/cancel-message":
-            await self.cancel_last_pending_message()
+            self.cancel_last_pending_message()
         elif cmd == "/help":
             await self.show_help()
-        elif cmd == "/themes":
-            await self.show_themes()
-        elif cmd == "/theme":
-            await self.switch_theme(self._command_args(raw))
-        elif cmd == "/model":
-            await self.switch_model(self._command_args(raw))
-        elif cmd == "/provider":
-            parts = raw.split()[1:]
-            await self.switch_provider(
-                parts[0] if parts else "", parts[1] if len(parts) > 1 else None
-            )
-        elif cmd == "/secondary-model":
-            await self.switch_secondary_model(self._command_args(raw))
-        elif cmd == "/secondary-provider":
-            parts = raw.split()[1:]
-            await self.switch_secondary_provider(
-                parts[0] if parts else "", parts[1] if len(parts) > 1 else None
-            )
+        elif cmd == "/config":
+            self.open_config_panel()
+        elif cmd == "/models":
+            self.open_config_panel(["models"])
+        elif cmd == "/providers":
+            self.open_config_panel(["providers"])
         elif cmd == "/vars":
             await self._ui.add_message(
                 "agent",
@@ -752,249 +720,105 @@ class CLIController:
     # ── Actions ───────────────────────────────────────────────────────────────
 
     async def reset(self) -> None:
-        """Reset agent session and reload data from disk."""
+        """Reset agent session and reload data from disk.
+
+        No confirmation output: the conversation is cleared and the sole
+        remaining message is the "/reset" the user just entered, so they can
+        see what they ran without it competing with the (now-empty) chat.
+        """
         self._awaiting_approval = False  # the prompt widget is removed with the messages
         self._clear_pending_queue()
-        self._ui.clear_messages()
         if self._service is not None:
             try:
                 await self._service.reset_session()
-                await self._ui.add_message("agent", "✓ Session reset.").finish()
-            except Exception as exc:
-                await self._ui.add_message("agent", f"✗ Reset failed: {exc}").finish()
-        else:
-            await self._ui.add_message("agent", "Not loaded yet.").finish()
+            except Exception:
+                logger.exception("Failed to reset session")
+        self._ui.clear_messages()
+        await self._ui.add_message("user", "/reset").finish()
 
     async def clear_conv(self) -> None:
-        """Clear all conversation context."""
+        """Clear all conversation context.
+
+        No confirmation output — same rationale as ``reset()``.
+        """
         if self._agent_running:
             # A still-running turn would write the cleared conversation back
             # into state (and schedule its summarization) when it finishes.
             self._ui.stop_agent()
         self._awaiting_approval = False  # the prompt widget is removed with the messages
         self._clear_pending_queue()
-        self._ui.clear_messages()
         if self._service is not None:
             try:
                 await self._service.clear_context()
-            except Exception as exc:
+            except Exception:
                 logger.exception("Failed to clear service context")
-                await self._ui.add_message("agent", f"✗ Clear failed: {exc}").finish()
-                return
-        await self._ui.add_message("agent", "✓ Context cleared.").finish()
+        self._ui.clear_messages()
+        await self._ui.add_message("user", "/clear").finish()
 
     async def compact(self) -> None:
-        """Summarize the conversation and replace it with a compact context preamble."""
+        """Summarize the conversation, then clear the UI down to just "/compact".
+
+        The compaction itself still runs against the agent's real memory; a
+        turn-status bar shows live progress the same way an agent turn does.
+        On failure, nothing is cleared and nothing further is shown, so a
+        stale success message can never be left behind.
+        """
         if self._service is None:
-            await self._ui.add_message("agent", "Not loaded yet.").finish()
             return
-        status = self._ui.add_message("agent", "Compacting conversation…")
-        await status.set_content("Compacting conversation…")
         compact_timer: TurnStatusHandle | None = self._ui.add_turn_status_bar()
         try:
             await self._service.compact_chat_history()
-        except Exception as exc:
-            await status.set_content(f"✗ Compact failed: {exc}")
-            if compact_timer is not None:
-                compact_timer.stop()
-            await status.finish()
+        except Exception:
+            logger.exception("Failed to compact chat history")
             return
-        try:
-            self._ui.clear_messages()
-            compact_timer = None  # removed from DOM by clear_messages()
-            await self._ui.add_message(
-                "agent",
-                "**✓ Compaction done.** You may continue the conversation.",
-            ).finish()
         finally:
-            await status.finish()
             if compact_timer is not None:
                 compact_timer.stop()
-
-    async def show_models(self) -> None:
-        """Display the primary and secondary model in use."""
-        cfg = self._cfg or self._base_config
-        await self._ui.add_message(
-            "agent",
-            format_models_message(
-                cfg.provider,
-                cfg.model,
-                cfg.secondary_provider,
-                cfg.secondary_model,
-            ),
-        ).finish()
+        self._ui.clear_messages()
+        await self._ui.add_message("user", "/compact").finish()
 
     async def show_help(self) -> None:
         """Display all available slash commands with descriptions."""
         await self._ui.add_message("agent", format_help_message()).finish()
 
-    async def show_themes(self) -> None:
-        """Display the list of available colour themes and mark the active one."""
-        await self._ui.add_message(
-            "agent",
-            format_themes_message(_theme.active_name, _theme.THEME_DESCRIPTIONS),
-        ).finish()
+    # ── Config panel (/config, /models, /providers) ──────────────────────────
 
-    @staticmethod
-    def _command_args(raw: str) -> str:
-        """Return everything after the command token, stripped (``""`` if none)."""
-        parts = raw.split(maxsplit=1)
-        return parts[1].strip() if len(parts) > 1 else ""
+    def open_config_panel(self, start_path: list[str] | None = None) -> None:
+        """Open the selection-driven config panel, optionally jumping to a sub-node."""
+        cfg = self._cfg or self._base_config
+        root = build_config_tree()
+        values = build_initial_values(cfg, _theme.active_name)
+        self._ui.open_config_panel(root, values, start_path or [], self._apply_config_changes)
 
-    # ── Live theme/model/provider switching ──────────────────────────────────
+    async def _apply_config_changes(self, changes: dict[str, str]) -> str | None:
+        """Apply staged changes from the config panel. Returns an error string, or None."""
+        if "theme" in changes:
+            _theme.set_active(changes["theme"])
+            self._ui.refresh_theme()
 
-    async def switch_theme(self, name: str) -> None:
-        """Switch the colour theme in place — no restart required."""
-        name = name.strip().lower()
-        if not name:
-            await self._ui.add_message(
-                "agent",
-                "Usage: `/theme <name>`\n\n"
-                + format_themes_message(_theme.active_name, _theme.THEME_DESCRIPTIONS),
-            ).finish()
-            return
-        if not _theme.set_active(name):
-            await self._ui.add_message(
-                "agent", format_unknown_theme_message(name, _theme.THEME_DESCRIPTIONS)
-            ).finish()
-            return
-        self._ui.refresh_theme()
-        await self._ui.add_message("agent", format_theme_switched_message(name)).finish()
+        config_changes = {k: v for k, v in changes.items() if k != "theme"}
+        if not config_changes:
+            return None
 
-    async def switch_model(self, model_name: str) -> None:
-        """Switch the primary model, rebuilding the agent with the current provider."""
-        model_name = model_name.strip()
-        if not model_name:
-            await self._ui.add_message("agent", "Usage: `/model <model-name>`").finish()
-            return
-        if self._cfg is None:
-            await self._ui.add_message("agent", "Not loaded yet.").finish()
-            return
         if self._agent_running:
-            await self._ui.add_message(
-                "agent", "Agent is running — stop it first with `/stop`."
-            ).finish()
-            return
-        if model_name == self._base_config.model:
-            await self._ui.add_message("agent", f"Already using model `{model_name}`.").finish()
-            return
-        new_cfg = self._base_config.model_copy(update={"model": model_name})
-        await self._switch_config(new_cfg, f"model `{model_name}`")
+            return "Agent is running — stop it first."
 
-    async def switch_provider(self, provider_name: str, model_name: str | None) -> None:
-        """Switch provider (and optionally model), rebuilding the agent."""
-        provider_name = provider_name.strip()
-        if not provider_name:
-            await self._ui.add_message(
-                "agent", "Usage: `/provider <provider-name> [model]`"
-            ).finish()
-            return
-        if self._cfg is None:
-            await self._ui.add_message("agent", "Not loaded yet.").finish()
-            return
-        if self._agent_running:
-            await self._ui.add_message(
-                "agent", "Agent is running — stop it first with `/stop`."
-            ).finish()
-            return
-        try:
-            provider = Provider(provider_name.lower())
-        except ValueError:
-            await self._ui.add_message(
-                "agent", format_unknown_provider_message(provider_name)
-            ).finish()
-            return
-        key_field = PROVIDER_KEY_FIELD.get(provider)
-        if key_field and not getattr(self._base_config, key_field, None):
-            await self._ui.add_message(
-                "agent", format_missing_api_key_message(provider, key_field)
-            ).finish()
-            return
-        model = model_name.strip() if model_name else DEFAULT_MODEL[provider]
-        new_cfg = self._base_config.model_copy(update={"provider": provider, "model": model})
-        await self._switch_config(new_cfg, f"provider `{provider}`")
+        changed_providers = {
+            field: value
+            for field, value in config_changes.items()
+            if field in ("provider", "secondary_provider")
+        }
+        for field, provider_name in changed_providers.items():
+            try:
+                provider = Provider(provider_name)
+            except ValueError:
+                return f"Unknown provider: {provider_name}"
+            key_field = PROVIDER_KEY_FIELD.get(provider)
+            if key_field and not getattr(self._base_config, key_field, None):
+                return format_missing_api_key_message(provider, key_field)
 
-    async def switch_secondary_model(self, model_name: str) -> None:
-        """Switch the secondary model, rebuilding the agent with the current secondary provider."""
-        model_name = model_name.strip()
-        if not model_name:
-            await self._ui.add_message(
-                "agent", "Usage: `/secondary-model <model-name>`"
-            ).finish()
-            return
-        if self._cfg is None:
-            await self._ui.add_message("agent", "Not loaded yet.").finish()
-            return
-        if self._agent_running:
-            await self._ui.add_message(
-                "agent", "Agent is running — stop it first with `/stop`."
-            ).finish()
-            return
-        if model_name == self._base_config.secondary_model:
-            await self._ui.add_message(
-                "agent", f"Already using secondary model `{model_name}`."
-            ).finish()
-            return
-        new_cfg = self._base_config.model_copy(update={"secondary_model": model_name})
-        await self._switch_config(new_cfg, f"secondary model `{model_name}`", secondary=True)
-
-    async def switch_secondary_provider(
-        self, provider_name: str, model_name: str | None
-    ) -> None:
-        """Switch the secondary provider (and optionally model), rebuilding the agent."""
-        provider_name = provider_name.strip()
-        if not provider_name:
-            await self._ui.add_message(
-                "agent", "Usage: `/secondary-provider <provider-name> [model]`"
-            ).finish()
-            return
-        if self._cfg is None:
-            await self._ui.add_message("agent", "Not loaded yet.").finish()
-            return
-        if self._agent_running:
-            await self._ui.add_message(
-                "agent", "Agent is running — stop it first with `/stop`."
-            ).finish()
-            return
-        try:
-            provider = Provider(provider_name.lower())
-        except ValueError:
-            await self._ui.add_message(
-                "agent", format_unknown_provider_message(provider_name)
-            ).finish()
-            return
-        key_field = PROVIDER_KEY_FIELD.get(provider)
-        if key_field and not getattr(self._base_config, key_field, None):
-            await self._ui.add_message(
-                "agent", format_missing_api_key_message(provider, key_field)
-            ).finish()
-            return
-        model = model_name.strip() if model_name else DEFAULT_SECONDARY_MODEL[provider]
-        new_cfg = self._base_config.model_copy(
-            update={"secondary_provider": provider, "secondary_model": model}
-        )
-        await self._switch_config(new_cfg, f"secondary provider `{provider}`", secondary=True)
-
-    async def _switch_config(
-        self, new_cfg: OpenDataSciConfig, label: str, secondary: bool = False
-    ) -> None:
-        """Rebuild the agent from *new_cfg*, swapping it in only on success."""
-        status = self._ui.add_message("agent", f"Switching to {label}…")
-        await status.set_content(f"Switching to {label}…")
-        error = await self._rebuild_agent(new_cfg)
-        if error is not None:
-            await status.set_content(f"✗ Failed to switch to {label}: {error}")
-        elif secondary:
-            await status.set_content(
-                format_model_switched_message(
-                    self._base_config.secondary_provider, self._base_config.secondary_model
-                )
-            )
-        else:
-            await status.set_content(
-                format_model_switched_message(self._base_config.provider, self._base_config.model)
-            )
-        await status.finish()
+        new_cfg = self._base_config.model_copy(update=config_changes)
+        return await self._rebuild_agent(new_cfg)
 
     async def _rebuild_agent(self, new_base_config: OpenDataSciConfig) -> str | None:
         """Boot a fresh agent from *new_base_config*, swapping it in only on success.
@@ -1045,27 +869,19 @@ class CLIController:
             await self._service.rewind_turn()
         await self._ui.add_message("agent", "Agent stopped. You can continue from here.").finish()
 
-    async def cancel_pending_messages(self) -> None:
-        """Discard every message currently queued behind a running agent turn."""
-        removed = self._pending_queue.cancel_all()
-        for message in removed:
-            self._discard_pending_handle(message.id)
-        if removed:
-            count = len(removed)
-            await self._ui.add_message(
-                "agent", f"✓ Cancelled {count} pending message{'s' if count != 1 else ''}."
-            ).finish()
-        else:
-            await self._ui.add_message("agent", "No pending messages to cancel.").finish()
+    def cancel_pending_messages(self) -> None:
+        """Discard every message currently queued behind a running agent turn.
 
-    async def cancel_last_pending_message(self) -> None:
-        """Discard only the most recently queued message."""
+        No output: the queued pills disappearing from the UI is the feedback.
+        """
+        for message in self._pending_queue.cancel_all():
+            self._discard_pending_handle(message.id)
+
+    def cancel_last_pending_message(self) -> None:
+        """Discard only the most recently queued message. No output — see above."""
         message = self._pending_queue.cancel_last()
-        if message is None:
-            await self._ui.add_message("agent", "No pending messages to cancel.").finish()
-            return
-        self._discard_pending_handle(message.id)
-        await self._ui.add_message("agent", "✓ Cancelled last pending message.").finish()
+        if message is not None:
+            self._discard_pending_handle(message.id)
 
     def _discard_pending_handle(self, message_id: int) -> None:
         handle = self._pending_handles.pop(message_id, None)

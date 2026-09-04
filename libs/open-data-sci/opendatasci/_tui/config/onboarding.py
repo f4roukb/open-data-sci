@@ -55,6 +55,29 @@ PROVIDER_REQUIRED_FIELDS: MappingProxyType[Provider, tuple[RequiredField, ...]] 
 )
 
 
+# The four OpenDataSciConfig fields the startup wizard may need to prompt
+# for — anything not already resolved via a --config YAML file or env/.env.
+SELECTION_FIELDS: tuple[str, ...] = ("provider", "model", "secondary_provider", "secondary_model")
+
+
+def compute_missing_selection_fields(yaml_data: dict[str, object]) -> list[str]:
+    """Return which of ``SELECTION_FIELDS`` still need interactive selection.
+
+    A field is considered already resolved when *yaml_data* (the raw
+    ``--config`` file contents, or ``{}`` when none was given) sets it, or
+    its aliased environment variable is set.
+    """
+    missing: list[str] = []
+    for field_name in SELECTION_FIELDS:
+        if yaml_data.get(field_name):
+            continue
+        model_field = OpenDataSciConfig.model_fields[field_name]
+        if model_field.alias and os.environ.get(model_field.alias):
+            continue
+        missing.append(field_name)
+    return missing
+
+
 def compute_missing_fields(
     providers: Iterable[Provider],
     kwargs: dict[str, object],

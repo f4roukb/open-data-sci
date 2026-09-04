@@ -1874,12 +1874,12 @@ class TestTurnStatusBarStop:
         t.stop()
         t._interval.stop.assert_called_once()
 
-    def test_stop_updates_label_to_worked_for(self) -> None:
+    def test_stop_updates_label_to_scienced_for(self) -> None:
         t = self._bar()
         t.update = MagicMock()
         t.stop()
         rendered: str = t.update.call_args[0][0]
-        assert "Worked for" in rendered
+        assert "Scienced for" in rendered
 
     def test_stop_noop_when_already_stopped(self) -> None:
         t = self._bar()

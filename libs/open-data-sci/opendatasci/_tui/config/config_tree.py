@@ -1,0 +1,189 @@
+"""Data model for the selection-driven config panels (/config, /models, /providers).
+
+Pure logic, no Textual — the menu tree and its option lists are plain data so
+``config_screen.py`` (rendering) and ``startup_wizard_screen.py`` (the linear
+startup flow) can both walk the same structures, and so this module stays
+unit-testable without a running app.
+"""
+
+from dataclasses import dataclass, field
+from typing import Callable
+
+from opendatasci.configs import DEFAULT_MODEL, DEFAULT_SECONDARY_MODEL, OpenDataSciConfig
+from opendatasci.models.providers import Provider
+
+from .. import theme as _theme
+from ..commands import _PROVIDER_DISPLAY
+
+# Providers with no fixed model catalog — the model is whatever the user's
+# self-hosted endpoint exposes, so picking one always falls back to free text.
+_NO_CATALOG_PROVIDERS = frozenset({Provider.OLLAMA, Provider.OPENAI_COMPATIBLE_SERVER})
+
+# The four OpenDataSciConfig fields a startup/config selection can touch.
+SELECTION_FIELDS: tuple[str, ...] = ("provider", "model", "secondary_provider", "secondary_model")
+
+
+@dataclass(frozen=True)
+class ConfigOption:
+    value: str
+    label: str
+    description: str = ""
+
+
+@dataclass(frozen=True)
+class ConfigLeaf:
+    field: str
+    static_options: list[ConfigOption] | None = None
+    options_provider: Callable[[dict[str, str]], list[ConfigOption]] | None = None
+    text_placeholder: str = ""
+    # When this leaf's staged value changes, also reset staged[linked_field]
+    # to linked_default(new_value) — used so picking a new provider resets
+    # its paired model to that provider's default.
+    linked_field: str | None = None
+    linked_default: Callable[[str], str] | None = None
+
+    def options(self, staged: dict[str, str]) -> list[ConfigOption]:
+        """Selectable options for the current *staged* values.
+
+        An empty result means "no catalog" — the caller should fall back to
+        a free-text input instead of a list.
+        """
+        if self.static_options is not None:
+            return self.static_options
+        if self.options_provider is not None:
+            return self.options_provider(staged)
+        return []
+
+
+@dataclass(frozen=True)
+class ConfigNode:
+    key: str
+    label: str
+    children: list["ConfigNode"] = field(default_factory=list)
+    leaf: ConfigLeaf | None = None
+
+
+def _provider_options(_staged: dict[str, str]) -> list[ConfigOption]:
+    return [ConfigOption(p.value, _PROVIDER_DISPLAY.get(p, p.value.title())) for p in Provider]
+
+
+def _model_options_for(provider_field: str) -> Callable[[dict[str, str]], list[ConfigOption]]:
+    def resolve(staged: dict[str, str]) -> list[ConfigOption]:
+        try:
+            provider = Provider(staged.get(provider_field, ""))
+        except ValueError:
+            return []
+        if provider in _NO_CATALOG_PROVIDERS:
+            return []
+        candidates = {DEFAULT_MODEL.get(provider), DEFAULT_SECONDARY_MODEL.get(provider)}
+        return [ConfigOption(m, m) for m in sorted(c for c in candidates if c)]
+
+    return resolve
+
+
+def _default_model_for(provider_value: str) -> str:
+    try:
+        provider = Provider(provider_value)
+    except ValueError:
+        return ""
+    return DEFAULT_MODEL.get(provider, "")
+
+
+def _default_secondary_model_for(provider_value: str) -> str:
+    try:
+        provider = Provider(provider_value)
+    except ValueError:
+        return ""
+    return DEFAULT_SECONDARY_MODEL.get(provider, "")
+
+
+def build_theme_leaf() -> ConfigLeaf:
+    return ConfigLeaf(
+        field="theme",
+        static_options=[
+            ConfigOption(name, name, desc) for name, desc in _theme.THEME_DESCRIPTIONS.items()
+        ],
+    )
+
+
+def build_provider_leaf(field_name: str, linked_field: str) -> ConfigLeaf:
+    linked_default = (
+        _default_model_for if linked_field == "model" else _default_secondary_model_for
+    )
+    return ConfigLeaf(
+        field=field_name,
+        options_provider=_provider_options,
+        linked_field=linked_field,
+        linked_default=linked_default,
+    )
+
+
+def build_model_leaf(field_name: str, provider_field: str) -> ConfigLeaf:
+    return ConfigLeaf(
+        field=field_name,
+        options_provider=_model_options_for(provider_field),
+        text_placeholder="Model name",
+    )
+
+
+def build_config_tree() -> ConfigNode:
+    """The full /config menu: Display, Models, Providers."""
+    return ConfigNode(
+        key="root",
+        label="Configure",
+        children=[
+            ConfigNode(
+                key="display",
+                label="Display",
+                children=[ConfigNode(key="theme", label="Theme", leaf=build_theme_leaf())],
+            ),
+            ConfigNode(
+                key="models",
+                label="Models",
+                children=[
+                    ConfigNode(
+                        key="primary_model",
+                        label="Primary model",
+                        leaf=build_model_leaf("model", "provider"),
+                    ),
+                    ConfigNode(
+                        key="secondary_model",
+                        label="Secondary model",
+                        leaf=build_model_leaf("secondary_model", "secondary_provider"),
+                    ),
+                ],
+            ),
+            ConfigNode(
+                key="providers",
+                label="Providers",
+                children=[
+                    ConfigNode(
+                        key="primary_provider",
+                        label="Primary provider",
+                        leaf=build_provider_leaf("provider", "model"),
+                    ),
+                    ConfigNode(
+                        key="secondary_provider",
+                        label="Secondary provider",
+                        leaf=build_provider_leaf("secondary_provider", "secondary_model"),
+                    ),
+                ],
+            ),
+        ],
+    )
+
+
+def initial_values(cfg: OpenDataSciConfig, theme_name: str) -> dict[str, str]:
+    """Seed the staged-values dict from the current config and active theme."""
+    return {
+        "theme": theme_name,
+        "provider": str(cfg.provider),
+        "model": cfg.model,
+        "secondary_provider": str(cfg.secondary_provider),
+        "secondary_model": cfg.secondary_model,
+    }
+
+
+def diff_values(initial: dict[str, str], staged: dict[str, str]) -> dict[str, str]:
+    """Only the keys whose value actually changed."""
+    return {k: v for k, v in staged.items() if initial.get(k) != v}

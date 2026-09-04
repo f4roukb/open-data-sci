@@ -268,9 +268,9 @@ class TestTurnStatusBar:
         app, pilot, pane = harness
         bar = pane.add_turn_status_bar()
         await pilot.pause()
-        assert "Working for 0s" in _plain(bar)
+        assert "Sciencing for 0s" in _plain(bar)
         bar.stop()
-        assert _plain(bar).startswith("Worked for")
+        assert _plain(bar).startswith("Scienced for")
         assert bar._interval is not None and bar._stopped is True
 
     async def test_context_suffix_without_cache_info(self, harness) -> None:
@@ -301,10 +301,10 @@ class TestTurnStatusBar:
         await pilot.pause()
         bar._start = time.monotonic() - 61
         bar._tick()
-        assert "Working for 1min 01s" in _plain(bar)
+        assert "Sciencing for 1min 01s" in _plain(bar)
         bar._start = time.monotonic() - 120
         bar._tick()
-        assert "Working for 2min" in _plain(bar)
+        assert "Sciencing for 2min" in _plain(bar)
 
     async def test_new_bar_replaces_previous_one(self, harness) -> None:
         app, pilot, pane = harness
