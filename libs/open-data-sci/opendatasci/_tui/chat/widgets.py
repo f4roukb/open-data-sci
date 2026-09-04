@@ -28,6 +28,7 @@ try:
 except ImportError:
     _TUIImage = None
 
+from opendatasci._tui import tips
 from opendatasci._tui.chat.commands import SLASH_COMMANDS
 from opendatasci._tui.chat.models import SPINNER, SPINNER_INTERVAL
 from opendatasci._tui.style.theme import active as theme
@@ -241,14 +242,16 @@ class TurnStatusBar(Static):
 # what the user is doing, so people find features they'd otherwise only see
 # by reading /help.
 _TIPS: tuple[str, ...] = (
+    # Ordered most-to-least useful: gateways and everyday-workflow speedups
+    # first, one-off/niche/rarely-touched actions last.
     "Tip: type /help to see all commands",
-    "Tip: type /config to change theme, model, or provider",
-    "Tip: type /models to switch the active model",
-    "Tip: type /providers to switch the active provider",
     "Tip: type @path/to/file to attach a file",
     "Tip: press Tab to autocomplete a command or file path",
     "Tip: press ↑ / ↓ to browse your input history",
+    "Tip: type /config to configure the app",
     "Tip: press Esc to stop the agent mid-turn",
+    "Tip: type /models to switch the active model",
+    "Tip: type /providers to switch the active provider",
     "Tip: type /compact to summarise a long conversation",
     "Tip: type /clear to wipe the conversation and start fresh",
     "Tip: type /reset to reload your data from disk",
@@ -256,6 +259,7 @@ _TIPS: tuple[str, ...] = (
     "Tip: type /cancel-message to drop the last queued message",
     "Tip: press Ctrl+R to reset the session",
     "Tip: press Ctrl+L to clear the conversation",
+    "Tip: disable tips in /config menu",
 )
 
 _TIP_INTERVAL_SECONDS = 7
@@ -287,7 +291,11 @@ class TipsBar(Static):
         self._render_tip()
 
     def _render_tip(self) -> None:
-        self.update(_TIPS[self._index])
+        self.update(_TIPS[self._index] if tips.enabled else "")
+
+    def apply_settings(self) -> None:
+        """Re-render immediately after /config ▸ Display ▸ Tips is toggled."""
+        self._render_tip()
 
 
 class MessageBubble(Widget):

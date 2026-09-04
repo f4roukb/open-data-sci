@@ -32,6 +32,7 @@ from uuid import UUID
 
 from rich.markup import escape as escape_markup
 
+from opendatasci._tui import tips as _tips
 from opendatasci._tui.adapter import (
     PendingMessageHandle,
     SubmitAction,
@@ -126,6 +127,10 @@ class CLIController:
         self._cfg: OpenDataSciConfig | None = None
         self._completion = completion if completion is not None else CompletionState()
         self._paste_attachment: PasteAttachment | None = None
+        # MCP servers added via the /config panel this run. Session-only —
+        # never written to .opendatasci/mcp.json, so a restart loses them;
+        # they're merged with the workspace file's servers on every rebuild.
+        self._session_mcp_servers: list[tuple[str, str]] = []
 
     @property
     def base_config(self) -> OpenDataSciConfig:
@@ -189,7 +194,7 @@ class CLIController:
         try:
             resolved_path = Path(self._workspace_path).resolve()
             config_search_path = resolved_path if resolved_path.is_dir() else resolved_path.parent
-            mcp_servers = load_mcp_servers(config_search_path)
+            mcp_servers = self._resolve_mcp_servers(config_search_path)
 
             cfg = self._base_config.model_copy(update={"mcp_servers": mcp_servers})
             self._cfg = cfg
@@ -282,6 +287,10 @@ class CLIController:
 
     def hide_completion(self) -> None:
         self._completion.hide(self._ui)
+
+    def accept_completion(self) -> bool:
+        """Close the popup on Enter without submitting. True if it was showing."""
+        return self._completion.try_accept(self._ui)
 
     # ── Paste attachment ──────────────────────────────────────────────────────
 
@@ -808,16 +817,28 @@ class CLIController:
         cfg = self._cfg or self._base_config
         root = build_config_tree()
         values = build_initial_values(cfg, _theme.active_name)
-        self._ui.open_config_panel(root, values, start_path or [], self._apply_config_changes)
+        self._ui.open_config_panel(
+            root, values, start_path or [], self._apply_config_changes, self._session_mcp_servers
+        )
 
-    async def _apply_config_changes(self, changes: dict[str, str]) -> str | None:
+    async def _apply_config_changes(
+        self, changes: dict[str, str], mcp_servers: list[tuple[str, str]] | None = None
+    ) -> str | None:
         """Apply staged changes from the config panel. Returns an error string, or None."""
         if "theme" in changes:
             _theme.set_active(changes["theme"])
             self._ui.refresh_theme()
 
-        config_changes = {k: v for k, v in changes.items() if k != "theme"}
-        if not config_changes:
+        if "tips" in changes:
+            _tips.set_enabled(changes["tips"] == "on")
+            self._ui.refresh_tips()
+
+        config_changes = {k: v for k, v in changes.items() if k not in ("theme", "tips")}
+        if "skills_directory" in config_changes:
+            value = config_changes["skills_directory"].strip()
+            config_changes["skills_directory"] = Path(value) if value else None
+
+        if not config_changes and mcp_servers is None:
             return None
 
         if self._agent_running:
@@ -837,8 +858,17 @@ class CLIController:
             if key_field and not getattr(self._base_config, key_field, None):
                 return format_missing_api_key_message(provider, key_field)
 
+        if mcp_servers is not None:
+            self._session_mcp_servers = list(mcp_servers)
+
         new_cfg = self._base_config.model_copy(update=config_changes)
         return await self._rebuild_agent(new_cfg)
+
+    def _resolve_mcp_servers(self, config_search_path: Path) -> list[str]:
+        """Workspace ``.opendatasci/mcp.json`` servers plus this run's /config additions."""
+        file_servers = load_mcp_servers(config_search_path)
+        session_servers = [url for _, url in self._session_mcp_servers]
+        return list(dict.fromkeys([*file_servers, *session_servers]))
 
     async def _rebuild_agent(self, new_base_config: OpenDataSciConfig) -> str | None:
         """Boot a fresh agent from *new_base_config*, swapping it in only on success.
@@ -852,7 +882,7 @@ class CLIController:
         config_search_path = resolved_path if resolved_path.is_dir() else resolved_path.parent
         exit_stack = AsyncExitStack()
         try:
-            mcp_servers = load_mcp_servers(config_search_path)
+            mcp_servers = self._resolve_mcp_servers(config_search_path)
             cfg = new_base_config.model_copy(update={"mcp_servers": mcp_servers})
             agent = await exit_stack.enter_async_context(
                 create_agent(self._workspace_path, config=cfg)

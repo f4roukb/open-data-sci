@@ -127,6 +127,7 @@ def _make_app() -> tuple[OpenDataSciApp, MagicMock]:
     mock_input = MagicMock()
     app.query_one = MagicMock(return_value=mock_input)
     app._controller = MagicMock()
+    app._controller.accept_completion = MagicMock(return_value=False)
     return app, mock_input
 
 

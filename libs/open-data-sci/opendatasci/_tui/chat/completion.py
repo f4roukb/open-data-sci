@@ -138,7 +138,28 @@ class CompletionState:
         cursor = self._at_pos + 1 + len(match)
         self._completing = True
         ui.set_input_value(new_value, cursor)
+
+        if match.endswith("/"):
+            # Selected a directory: descend into it immediately so the next
+            # Tab press round-robins over *its* contents, without requiring
+            # the user to type "/" themselves first.
+            self._matches = _discover_files(match)
+            self._last_at_fragment = match
+            self._cached_at_matches = self._matches
+            self._idx = -1
         ui.show_completion(self._matches, self._idx)
+        return True
+
+    def try_accept(self, ui: UIAdapter) -> bool:
+        """Accept the active completion popup as-is (Enter key).
+
+        Closes the popup without submitting, so Enter first confirms a
+        completion and only submits the message on a second press. Returns
+        True when a popup was showing and consumed the key press.
+        """
+        if not self._matches:
+            return False
+        self.hide(ui)
         return True
 
     def hide(self, ui: UIAdapter) -> None:

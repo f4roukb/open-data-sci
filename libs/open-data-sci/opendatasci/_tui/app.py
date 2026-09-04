@@ -26,6 +26,7 @@ from opendatasci._tui.chat.widgets import (
     PendingMessageBubble,
     SmartInput,
     ThinkingBlock,
+    TipsBar,
     ToolCallBlock,
     TurnStatusBar,
 )
@@ -242,13 +243,20 @@ class OpenDataSciApp(App[None]):
         root: ConfigNode,
         initial_values: dict[str, str],
         start_path: list[str],
-        on_apply: Callable[[dict[str, str]], Awaitable[str | None]],
+        on_apply: Callable[[dict[str, str], list[tuple[str, str]] | None], Awaitable[str | None]],
+        initial_mcp_servers: list[tuple[str, str]] | None = None,
     ) -> None:
-        self.push_screen(ConfigScreen(root, initial_values, start_path, on_apply))
+        self.push_screen(
+            ConfigScreen(root, initial_values, start_path, on_apply, initial_mcp_servers)
+        )
 
     def refresh_theme(self) -> None:
         """Recompute $ods-* CSS variables from the (just-switched) active palette."""
         self.refresh_css()
+
+    def refresh_tips(self) -> None:
+        """Re-render the footer tips bar after tips.set_enabled() flips it."""
+        self.query_one(TipsBar).apply_settings()
 
     def stop_agent(self) -> None:
         self.workers.cancel_group(self, "agent")
@@ -286,6 +294,10 @@ class OpenDataSciApp(App[None]):
 
     @on(Input.Submitted, "#user-input")
     async def on_submit(self, event: Input.Submitted) -> None:
+        if self._controller.accept_completion():
+            # A completion popup was active: Enter confirms the selection
+            # (already written into the input text) instead of sending it.
+            return
         raw = event.value.strip()
         if raw:
             self.query_one("#user-input", SmartInput).push_history(raw)

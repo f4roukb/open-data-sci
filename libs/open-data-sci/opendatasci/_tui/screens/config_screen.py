@@ -12,7 +12,8 @@ for all three). Left moves up one level. Escape leaves the whole panel,
 prompting Save/Discard first if anything was changed.
 """
 
-from typing import Awaitable, Callable, Literal
+from pathlib import Path
+from typing import Awaitable, Callable
 
 from rich.markup import escape
 from rich.text import Text
@@ -27,9 +28,12 @@ from textual.widgets.option_list import Option
 
 from opendatasci._tui.config.config_tree import ConfigLeaf, ConfigNode, diff_values
 from opendatasci._tui.style.theme import active as theme
+from opendatasci.tools.mcp import load_named_mcp_servers
 
 _SAVE = "Save changes"
 _DISCARD = "Discard changes"
+
+_MCP_TEXT_MODES = ("mcp_load_path", "mcp_manual_name", "mcp_manual_url")
 
 
 def _hint_chip(key: str, label: str) -> str:
@@ -77,6 +81,17 @@ class _ConfigTextInput(Input):
         self.post_message(_RequestClose())
 
 
+class _ToggleSelectAll(Message):
+    pass
+
+
+class _McpSelectOptionList(_ConfigOptionList):
+    BINDINGS = [Binding("ctrl+a", "toggle_all", show=False)]
+
+    def action_toggle_all(self) -> None:
+        self.post_message(_ToggleSelectAll())
+
+
 class ConfigScreen(ModalScreen[None]):
     """Tree-navigable settings panel: Display, Models, Providers."""
 
@@ -111,7 +126,8 @@ class ConfigScreen(ModalScreen[None]):
         root: ConfigNode,
         initial_values: dict[str, str],
         start_path: list[str],
-        on_apply: Callable[[dict[str, str]], Awaitable[str | None]],
+        on_apply: Callable[[dict[str, str], list[tuple[str, str]] | None], Awaitable[str | None]],
+        initial_mcp_servers: list[tuple[str, str]] | None = None,
     ) -> None:
         super().__init__()
         self._root = root
@@ -120,8 +136,16 @@ class ConfigScreen(ModalScreen[None]):
         self._on_apply = on_apply
         self._path: list[ConfigNode] = self._resolve_path(root, start_path)
         self._cursor_by_path: dict[tuple[str, ...], int] = {}
-        self._mode: Literal["browse", "text", "confirm"] = "browse"
+        self._mode: str = "browse"
         self._error: str = ""
+        # MCP servers editor state — kept outside ``_staged`` since it's a
+        # list of (name, url) pairs, not a scalar field.
+        self._initial_mcp_servers: list[tuple[str, str]] = list(initial_mcp_servers or [])
+        self._mcp_servers: list[tuple[str, str]] = list(initial_mcp_servers or [])
+        self._mcp_candidates: list[tuple[str, str]] = []
+        self._mcp_selected: set[int] = set()
+        self._mcp_select_cursor: int = 0
+        self._mcp_pending_name: str | None = None
 
     @staticmethod
     def _resolve_path(root: ConfigNode, start_path: list[str]) -> list[ConfigNode]:
@@ -150,11 +174,27 @@ class ConfigScreen(ModalScreen[None]):
 
     def _breadcrumb_text(self) -> None:
         crumbs = " › ".join(n.label for n in self._path)
-        hint = (
-            _hint_bar([("↑↓", "move"), ("Enter/→", "select"), ("←", "back"), ("Esc", "close")])
-            if self._mode != "confirm"
-            else _hint_bar([("↑↓", "move"), ("Enter", "select"), ("Esc", "keep editing")])
-        )
+        if self._mode == "confirm":
+            hint = _hint_bar([("↑↓", "move"), ("Enter", "select"), ("Esc", "keep editing")])
+        elif self._mode == "mcp_list":
+            hint = _hint_bar(
+                [("↑↓", "move"), ("Enter", "remove/choose"), ("←", "back"), ("Esc", "close")]
+            )
+        elif self._mode == "mcp_load_select":
+            hint = _hint_bar(
+                [
+                    ("↑↓", "move"),
+                    ("Enter", "toggle"),
+                    ("Ctrl+A", "select/clear all"),
+                    ("←", "cancel"),
+                ]
+            )
+        elif self._mode in _MCP_TEXT_MODES:
+            hint = _hint_bar([("Enter", "continue"), ("←/Esc", "cancel")])
+        else:
+            hint = _hint_bar(
+                [("↑↓", "move"), ("Enter/→", "select"), ("←", "back"), ("Esc", "close")]
+            )
         lines = [
             f"[bold {theme['accent']}]{escape(crumbs)}[/bold {theme['accent']}]",
             hint,
@@ -184,6 +224,10 @@ class ConfigScreen(ModalScreen[None]):
 
         assert node.leaf is not None
         leaf = node.leaf
+        if leaf.kind == "mcp_servers":
+            self._render_mcp_list()
+            return
+
         choices = leaf.options(self._staged)
         if choices:
             options = []
@@ -205,10 +249,125 @@ class ConfigScreen(ModalScreen[None]):
             text_input.focus()
 
     def _child_label(self, child: ConfigNode) -> str:
+        if child.leaf is not None and child.leaf.kind == "mcp_servers":
+            count = len(self._mcp_servers)
+            suffix = f"{count} server{'s' if count != 1 else ''}" if count else "none configured"
+            return f"{child.label}  [dim]({suffix})[/dim]"
         if child.leaf is not None:
             value = self._staged.get(child.leaf.field, "")
             return f"{child.label}  [dim]({value})[/dim]" if value else child.label
         return child.label
+
+    # ── MCP servers editor ──────────────────────────────────────────────────
+
+    def _render_mcp_list(self) -> None:
+        self._mode = "mcp_list"
+        self._error = ""
+        self._breadcrumb_text()
+        self._clear_body()
+        body = self.query_one("#config-body", Vertical)
+        options = [
+            Option(f"✕ {escape(name)} — {escape(url)}", id=f"remove:{idx}")
+            for idx, (name, url) in enumerate(self._mcp_servers)
+        ]
+        options.append(Option("+ Load from config file", id="mcp_load"))
+        options.append(Option("+ Add manually", id="mcp_manual"))
+        option_list = _ConfigOptionList(*options)
+        body.mount(option_list)
+        option_list.highlighted = self._cursor_by_path.get((*self._path_key(), "mcp_list"), 0)
+        option_list.focus()
+
+    def _render_mcp_load_path(self) -> None:
+        self._mode = "mcp_load_path"
+        self._breadcrumb_text()
+        self._clear_body()
+        body = self.query_one("#config-body", Vertical)
+        text_input = _ConfigTextInput(placeholder="Path to mcp.json")
+        body.mount(text_input)
+        text_input.focus()
+
+    def _render_mcp_manual_name(self) -> None:
+        self._mode = "mcp_manual_name"
+        self._breadcrumb_text()
+        self._clear_body()
+        body = self.query_one("#config-body", Vertical)
+        text_input = _ConfigTextInput(placeholder="Server name")
+        body.mount(text_input)
+        text_input.focus()
+
+    def _render_mcp_manual_url(self) -> None:
+        self._mode = "mcp_manual_url"
+        self._breadcrumb_text()
+        self._clear_body()
+        body = self.query_one("#config-body", Vertical)
+        text_input = _ConfigTextInput(placeholder="Server URL")
+        body.mount(text_input)
+        text_input.focus()
+
+    def _render_mcp_load_select(self) -> None:
+        self._mode = "mcp_load_select"
+        self._breadcrumb_text()
+        self._clear_body()
+        body = self.query_one("#config-body", Vertical)
+        options = []
+        for idx, (name, url) in enumerate(self._mcp_candidates):
+            marker = "[x]" if idx in self._mcp_selected else "[ ]"
+            options.append(Option(f"{marker} {escape(name)} — {escape(url)}", id=f"cand:{idx}"))
+        options.append(Option(f"✔ Add selected ({len(self._mcp_selected)})", id="confirm_selection"))
+        option_list = _McpSelectOptionList(*options)
+        body.mount(option_list)
+        option_list.highlighted = self._mcp_select_cursor
+        option_list.focus()
+
+    def _upsert_mcp_server(self, name: str, url: str) -> None:
+        for idx, (_, existing_url) in enumerate(self._mcp_servers):
+            if existing_url == url:
+                self._mcp_servers[idx] = (name, url)
+                return
+        self._mcp_servers.append((name, url))
+
+    def _reset_mcp_transient_state(self) -> None:
+        self._mcp_candidates = []
+        self._mcp_selected = set()
+        self._mcp_select_cursor = 0
+        self._mcp_pending_name = None
+
+    def _handle_mcp_load_path_submit(self, value: str) -> None:
+        if not value:
+            self._render_mcp_list()
+            return
+        try:
+            candidates = load_named_mcp_servers(Path(value))
+        except Exception as exc:
+            self._error = f"Couldn't read {value}: {exc}"
+            self._render_mcp_load_path()
+            return
+        if not candidates:
+            self._error = f"No MCP servers found in {value}"
+            self._render_mcp_load_path()
+            return
+        self._error = ""
+        self._mcp_candidates = candidates
+        self._mcp_selected = set()
+        self._mcp_select_cursor = 0
+        self._render_mcp_load_select()
+
+    def _handle_mcp_manual_name_submit(self, value: str) -> None:
+        if not value:
+            self._render_mcp_list()
+            return
+        self._mcp_pending_name = value
+        self._render_mcp_manual_url()
+
+    def _handle_mcp_manual_url_submit(self, value: str) -> None:
+        name = self._mcp_pending_name
+        if not value or not name:
+            self._reset_mcp_transient_state()
+            self._render_mcp_list()
+            return
+        self._upsert_mcp_server(name, value)
+        self._reset_mcp_transient_state()
+        self._render_mcp_list()
 
     def _render_confirm(self) -> None:
         self._mode = "confirm"
@@ -240,14 +399,47 @@ class ConfigScreen(ModalScreen[None]):
         if self._mode == "confirm":
             if option_id == _SAVE:
                 diff = diff_values(self._initial_values, self._staged)
-                error = await self._on_apply(diff)
+                mcp_changes = (
+                    list(self._mcp_servers)
+                    if self._mcp_servers != self._initial_mcp_servers
+                    else None
+                )
+                error = await self._on_apply(diff, mcp_changes)
                 if error is not None:
                     self._error = error
                     self._initial_values = dict(self._staged)
+                    self._initial_mcp_servers = list(self._mcp_servers)
                     self._render_level()
                     return
             # Both Save (on success) and Discard close the whole panel.
             self.dismiss()
+            return
+
+        if self._mode == "mcp_list":
+            self._cursor_by_path[(*self._path_key(), "mcp_list")] = (
+                event.option_list.highlighted or 0
+            )
+            if option_id.startswith("remove:"):
+                del self._mcp_servers[int(option_id.split(":", 1)[1])]
+                self._render_mcp_list()
+            elif option_id == "mcp_load":
+                self._render_mcp_load_path()
+            elif option_id == "mcp_manual":
+                self._render_mcp_manual_name()
+            return
+
+        if self._mode == "mcp_load_select":
+            self._mcp_select_cursor = event.option_list.highlighted or 0
+            if option_id == "confirm_selection":
+                for idx in sorted(self._mcp_selected):
+                    name, url = self._mcp_candidates[idx]
+                    self._upsert_mcp_server(name, url)
+                self._reset_mcp_transient_state()
+                self._render_mcp_list()
+                return
+            idx = int(option_id.split(":", 1)[1])
+            self._mcp_selected.symmetric_difference_update({idx})
+            self._render_mcp_load_select()
             return
 
         node = self._path[-1]
@@ -263,12 +455,33 @@ class ConfigScreen(ModalScreen[None]):
         self._path.pop()
         self._render_level()
 
+    @on(_ToggleSelectAll)
+    def _on_toggle_select_all(self, event: _ToggleSelectAll) -> None:
+        event.stop()
+        if self._mode != "mcp_load_select":
+            return
+        if len(self._mcp_selected) == len(self._mcp_candidates):
+            self._mcp_selected = set()
+        else:
+            self._mcp_selected = set(range(len(self._mcp_candidates)))
+        self._render_mcp_load_select()
+
     @on(Input.Submitted)
     def _on_text_submitted(self, event: Input.Submitted) -> None:
         event.stop()
+        value = event.value.strip()
+        if self._mode == "mcp_load_path":
+            self._handle_mcp_load_path_submit(value)
+            return
+        if self._mode == "mcp_manual_name":
+            self._handle_mcp_manual_name_submit(value)
+            return
+        if self._mode == "mcp_manual_url":
+            self._handle_mcp_manual_url_submit(value)
+            return
+
         node = self._path[-1]
         assert node.leaf is not None
-        value = event.value.strip()
         if value:
             self._stage_value(node.leaf, value)
         self._path.pop()
@@ -287,6 +500,10 @@ class ConfigScreen(ModalScreen[None]):
         if self._mode == "confirm":
             self._render_level()
             return
+        if self._mode in _MCP_TEXT_MODES or self._mode == "mcp_load_select":
+            self._reset_mcp_transient_state()
+            self._render_mcp_list()
+            return
         if len(self._path) > 1:
             self._path.pop()
             self._render_level()
@@ -297,7 +514,13 @@ class ConfigScreen(ModalScreen[None]):
         if self._mode == "confirm":
             self.dismiss()
             return
-        if diff_values(self._initial_values, self._staged):
+        if self._mode in _MCP_TEXT_MODES or self._mode == "mcp_load_select":
+            self._reset_mcp_transient_state()
+            self._render_mcp_list()
+            return
+        if diff_values(self._initial_values, self._staged) or (
+            self._mcp_servers != self._initial_mcp_servers
+        ):
             self._render_confirm()
         else:
             self.dismiss()

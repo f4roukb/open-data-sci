@@ -114,6 +114,12 @@ def _make_mcp_tool(server_url: str, tool_def: dict[str, Any]) -> BaseTool:
     )
 
 
+def _parse_mcp_servers(data: dict[str, Any]) -> list[tuple[str, str]]:
+    """Extract ``(name, url)`` pairs from a decoded ``mcp.json`` document."""
+    servers: dict[str, dict[str, str]] = data.get("mcpServers", {})
+    return [(name, entry["url"]) for name, entry in servers.items() if "url" in entry]
+
+
 def load_mcp_servers(workspace_path: Path) -> list[str]:
     """Read MCP server URLs from ``<workspace>/.opendatasci/mcp.json``.
 
@@ -135,14 +141,28 @@ def load_mcp_servers(workspace_path: Path) -> list[str]:
 
     try:
         data = json.loads(config_path.read_text(encoding="utf-8"))
-        servers: dict[str, dict[str, str]] = data.get("mcpServers", {})
-        return [entry["url"] for entry in servers.values() if "url" in entry]
+        return [url for _, url in _parse_mcp_servers(data)]
     except Exception as exc:
         print(
             f"Warning: Failed to parse {config_path}: {type(exc).__name__}: {exc}",
             file=sys.stderr,
         )
         return []
+
+
+def load_named_mcp_servers(config_path: Path) -> list[tuple[str, str]]:
+    """Read ``(name, url)`` pairs from an ``mcp.json``-formatted file at *config_path*.
+
+    Unlike :func:`load_mcp_servers`, this reads *config_path* directly (it is
+    not resolved relative to a workspace's ``.opendatasci`` directory) and
+    raises on a missing or malformed file instead of degrading to an empty
+    list — callers driving an interactive picker want to show the user why
+    the file couldn't be used.
+    """
+    if not config_path.is_file():
+        raise FileNotFoundError(f"No such file: {config_path}")
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+    return _parse_mcp_servers(data)
 
 
 def create_mcp_tools(server_urls: list[str]) -> list[BaseTool]:

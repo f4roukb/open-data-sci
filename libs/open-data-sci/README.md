@@ -246,7 +246,6 @@ Attach files or code snippets to any message using the `@` prefix:
 
 ```
 @path/to/file.py                      # attach an entire file
-@path/to/notebook.ipynb:L10-L40      # attach a specific line range
 ```
 
 The agent sees the attached content as structured context inline with your message. Paths are resolved relative to your current working directory.

@@ -30,6 +30,13 @@ SLASH_COMMAND_DESCRIPTIONS: dict[str, str] = {
     "/reset": "Reset agent session",
 }
 
+# Keyboard shortcuts that duplicate a slash command, keyed by that command.
+# Sourced from OpenDataSciApp.BINDINGS in _tui/app.py — keep in sync.
+SLASH_COMMAND_SHORTCUTS: dict[str, str] = {
+    "/clear": "Ctrl+L",
+    "/reset": "Ctrl+R",
+}
+
 _PROVIDER_DISPLAY: dict[Provider, str] = {
     Provider.ANTHROPIC: "Anthropic",
     Provider.OPENAI: "OpenAI",
@@ -42,22 +49,42 @@ _PROVIDER_DISPLAY: dict[Provider, str] = {
 }
 
 
+_COMMAND_HELP_TEXT: dict[str, str] = {
+    "/cancel-all-messages": "Cancel all messages queued while the agent was busy",
+    "/cancel-message": "Cancel the most recently queued message",
+    "/clear": "Clear all conversation context",
+    "/compact": "Summarize and compress the conversation history",
+    "/config": "Open the configuration panel (display, models, providers)",
+    "/exit": "Exit OpenDataSci",
+    "/help": "Show this help message",
+    "/ls-workspace": "List files in the workspace",
+    "/models": "Pick the primary and secondary model",
+    "/providers": "Pick the primary and secondary provider",
+    "/reset": "Reset the agent session and reload data from disk",
+}
+
+# Global keyboard shortcuts with no slash-command equivalent (see
+# OpenDataSciApp.BINDINGS in _tui/app.py, kept in sync by hand).
+_GENERAL_SHORTCUTS: list[tuple[str, str]] = [
+    ("Ctrl+C", "Stop the running agent turn, or quit (press twice while idle)"),
+    ("Ctrl+D", "Quit"),
+    ("Escape", "Focus the input box; cancel a pending choice or completion popup"),
+    ("Tab", "Cycle @file and /command completions"),
+]
+
+
 def format_help_message() -> str:
     """Return the Markdown text shown by the /help command."""
-    lines = [
-        "## Available Commands\n",
-        "- **/cancel-all-messages** — Cancel all messages queued while the agent was busy",
-        "- **/cancel-message** — Cancel the most recently queued message",
-        "- **/clear** — Clear all conversation context",
-        "- **/compact** — Summarize and compress the conversation history",
-        "- **/config** — Open the configuration panel (display, models, providers)",
-        "- **/exit** — Exit OpenDataSci",
-        "- **/help** — Show this help message",
-        "- **/ls-workspace** — List files in the workspace",
-        "- **/models** — Pick the primary and secondary model",
-        "- **/providers** — Pick the primary and secondary provider",
-        "- **/reset** — Reset the agent session and reload data from disk",
-    ]
+    lines = ["## Available Commands\n"]
+    for cmd in SLASH_COMMANDS:
+        shortcut = SLASH_COMMAND_SHORTCUTS.get(cmd)
+        suffix = f" (**{shortcut}**)" if shortcut else ""
+        lines.append(f"- **{cmd}**{suffix} — {_COMMAND_HELP_TEXT[cmd]}")
+
+    lines.append("\n## Keyboard Shortcuts\n")
+    for key, desc in _GENERAL_SHORTCUTS:
+        lines.append(f"- **{key}** — {desc}")
+
     lines.append("\n**Tip:** Type `/` to see commands via autocomplete, or `@` to attach a file.")
     return "\n".join(lines)
 

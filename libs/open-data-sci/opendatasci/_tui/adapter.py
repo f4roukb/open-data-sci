@@ -98,11 +98,15 @@ class UIAdapter(Protocol):
         root: "ConfigNode",
         initial_values: dict[str, str],
         start_path: list[str],
-        on_apply: Callable[[dict[str, str]], Awaitable[str | None]],
+        on_apply: Callable[[dict[str, str], list[tuple[str, str]] | None], Awaitable[str | None]],
+        initial_mcp_servers: list[tuple[str, str]] | None = None,
     ) -> None: ...
 
     def refresh_theme(self) -> None:
         """Re-apply the active theme palette (call after opendatasci._tui.theme.set_active)."""
+
+    def refresh_tips(self) -> None:
+        """Re-render the footer tips bar (call after opendatasci._tui.tips.set_enabled)."""
 
     def stop_agent(self) -> None:
         """Cancel the running agent worker. No-op if nothing is running."""

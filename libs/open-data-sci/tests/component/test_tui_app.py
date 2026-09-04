@@ -50,6 +50,7 @@ def _make_controller_stub(workspace_path: str) -> MagicMock:
     stub.awaiting_choice = False
     stub.has_completion_matches = False
     stub.has_paste_attachment = False
+    stub.accept_completion = MagicMock(return_value=False)
     stub.boot = AsyncMock()
     stub.close = AsyncMock()
     stub.stop_agent = AsyncMock()

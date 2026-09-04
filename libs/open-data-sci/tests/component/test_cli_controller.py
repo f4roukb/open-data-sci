@@ -232,7 +232,9 @@ class _RecordingUI(UIAdapter):
     def stop_agent(self) -> None:
         self.stop_agent_calls += 1
 
-    def open_config_panel(self, root, initial_values, start_path, on_apply) -> None:
+    def open_config_panel(
+        self, root, initial_values, start_path, on_apply, initial_mcp_servers=None
+    ) -> None:
         self.config_panels.append((root, dict(initial_values), list(start_path), on_apply))
 
     def refresh_theme(self) -> None:

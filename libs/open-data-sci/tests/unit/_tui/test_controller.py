@@ -1868,7 +1868,7 @@ class TestOpenConfigPanel:
     ) -> None:
         controller.open_config_panel()
         mock_ui.open_config_panel.assert_called_once()
-        root, values, start_path, on_apply = mock_ui.open_config_panel.call_args[0]
+        root, values, start_path, on_apply, _initial_mcp_servers = mock_ui.open_config_panel.call_args[0]
         assert root.key == "root"
         assert start_path == []
         assert on_apply == controller._apply_config_changes

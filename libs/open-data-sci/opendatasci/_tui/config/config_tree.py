@@ -7,8 +7,9 @@ unit-testable without a running app.
 """
 
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Callable, Literal
 
+from opendatasci._tui import tips as _tips
 from opendatasci._tui.chat.commands import _PROVIDER_DISPLAY
 from opendatasci._tui.style import theme as _theme
 from opendatasci.configs import DEFAULT_MODEL, DEFAULT_SECONDARY_MODEL, OpenDataSciConfig
@@ -40,6 +41,9 @@ class ConfigLeaf:
     # its paired model to that provider's default.
     linked_field: str | None = None
     linked_default: Callable[[str], str] | None = None
+    # "mcp_servers" opts this leaf out of the generic choice/text rendering —
+    # ConfigScreen instead drives its dedicated add/remove flow for it.
+    kind: Literal["choice", "mcp_servers"] = "choice"
 
     def options(self, staged: dict[str, str]) -> list[ConfigOption]:
         """Selectable options for the current *staged* values.
@@ -106,6 +110,16 @@ def build_theme_leaf() -> ConfigLeaf:
     )
 
 
+def build_tips_leaf() -> ConfigLeaf:
+    return ConfigLeaf(
+        field="tips",
+        static_options=[
+            ConfigOption("on", "On", "Show rotating tips in the footer"),
+            ConfigOption("off", "Off", "Hide the footer tips"),
+        ],
+    )
+
+
 def build_provider_leaf(field_name: str, linked_field: str) -> ConfigLeaf:
     linked_default = (
         _default_model_for if linked_field == "model" else _default_secondary_model_for
@@ -126,8 +140,16 @@ def build_model_leaf(field_name: str, provider_field: str) -> ConfigLeaf:
     )
 
 
+def build_mcp_servers_leaf() -> ConfigLeaf:
+    return ConfigLeaf(field="mcp_servers", kind="mcp_servers")
+
+
+def build_skills_leaf() -> ConfigLeaf:
+    return ConfigLeaf(field="skills_directory", text_placeholder="Path to skills folder")
+
+
 def build_config_tree() -> ConfigNode:
-    """The full /config menu, in Providers, Models, Display order."""
+    """The full /config menu, in Providers, Models, Display, Integrations order."""
     return ConfigNode(
         key="root",
         label="Configure",
@@ -167,7 +189,24 @@ def build_config_tree() -> ConfigNode:
             ConfigNode(
                 key="display",
                 label="Display",
-                children=[ConfigNode(key="theme", label="Theme", leaf=build_theme_leaf())],
+                children=[
+                    ConfigNode(key="theme", label="Theme", leaf=build_theme_leaf()),
+                    ConfigNode(key="tips", label="Tips", leaf=build_tips_leaf()),
+                ],
+            ),
+            ConfigNode(
+                key="integrations",
+                label="Integrations",
+                children=[
+                    ConfigNode(
+                        key="mcp_servers", label="MCP Servers", leaf=build_mcp_servers_leaf()
+                    ),
+                    ConfigNode(
+                        key="skills_directory",
+                        label="Skills directory",
+                        leaf=build_skills_leaf(),
+                    ),
+                ],
             ),
         ],
     )
@@ -177,10 +216,12 @@ def initial_values(cfg: OpenDataSciConfig, theme_name: str) -> dict[str, str]:
     """Seed the staged-values dict from the current config and active theme."""
     return {
         "theme": theme_name,
+        "tips": "on" if _tips.enabled else "off",
         "provider": str(cfg.provider),
         "model": cfg.model,
         "secondary_provider": str(cfg.secondary_provider),
         "secondary_model": cfg.secondary_model,
+        "skills_directory": str(cfg.skills_directory) if cfg.skills_directory else "",
     }
 
 
