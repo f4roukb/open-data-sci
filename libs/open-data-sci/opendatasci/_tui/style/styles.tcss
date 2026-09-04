@@ -168,6 +168,11 @@ MessageBubble.question {
     padding: 0 2;
 }
 
+MessageBubble.error {
+    border-left: thick $ods-error;
+    padding: 0 2;
+}
+
 MessageBubble.agent {
     /* No border-left like .user/.question, but the same 3-column text start
        (1 for their border + 2 for their padding) so agent and user text

@@ -44,6 +44,15 @@ class ConfigLeaf:
     # "mcp_servers" opts this leaf out of the generic choice/text rendering —
     # ConfigScreen instead drives its dedicated add/remove flow for it.
     kind: Literal["choice", "mcp_servers"] = "choice"
+    # Whether submitting an empty text value stages "" (meaning "unset / use
+    # the default") rather than being treated as a no-op. Only leaves with an
+    # explicit null-equals-default meaning (e.g. temperature) set this.
+    allow_empty: bool = False
+    # Optional validator run against a text leaf's submitted value before
+    # staging. Returns an error message to reject the value (the input stays
+    # open for another attempt), or None to accept it. Never called for an
+    # empty submission when allow_empty is True.
+    validate: Callable[[str], str | None] | None = None
 
     def options(self, staged: dict[str, str]) -> list[ConfigOption]:
         """Selectable options for the current *staged* values.
@@ -146,44 +155,45 @@ def build_skills_leaf() -> ConfigLeaf:
     return ConfigLeaf(field="skills_directory", text_placeholder="Path to skills folder")
 
 
+def _validate_temperature(value: str) -> str | None:
+    try:
+        parsed = float(value)
+    except ValueError:
+        return "Temperature must be a number between 0.0 and 1.0"
+    if not 0.0 <= parsed <= 1.0:
+        return "Temperature must be between 0.0 and 1.0"
+    return None
+
+
+def build_temperature_leaf() -> ConfigLeaf:
+    return ConfigLeaf(
+        field="temperature",
+        text_placeholder="0.0-1.0 (leave empty for default)",
+        allow_empty=True,
+        validate=_validate_temperature,
+    )
+
+
+def build_agent_name_leaf() -> ConfigLeaf:
+    return ConfigLeaf(field="name", text_placeholder="Agent name")
+
+
+def build_worker_timeout_leaf() -> ConfigLeaf:
+    return ConfigLeaf(field="worker_timeout_seconds", text_placeholder="Seconds")
+
+
+def _format_number(value: float) -> str:
+    """Render a float without a trailing ``.0`` for whole numbers."""
+    return str(int(value)) if value == int(value) else str(value)
+
+
 def build_config_tree() -> ConfigNode:
-    """The full /config menu, in Providers, Models, Display, Integrations order."""
+    """The full /config menu. Sections, and entries within each section, are
+    kept in lexical (alphabetical) order."""
     return ConfigNode(
         key="root",
         label="Configure",
         children=[
-            ConfigNode(
-                key="providers",
-                label="Providers",
-                children=[
-                    ConfigNode(
-                        key="primary_provider",
-                        label="Primary provider",
-                        leaf=build_provider_leaf("provider", "model"),
-                    ),
-                    ConfigNode(
-                        key="secondary_provider",
-                        label="Secondary provider",
-                        leaf=build_provider_leaf("secondary_provider", "secondary_model"),
-                    ),
-                ],
-            ),
-            ConfigNode(
-                key="models",
-                label="Models",
-                children=[
-                    ConfigNode(
-                        key="primary_model",
-                        label="Primary model",
-                        leaf=build_model_leaf("model", "provider"),
-                    ),
-                    ConfigNode(
-                        key="secondary_model",
-                        label="Secondary model",
-                        leaf=build_model_leaf("secondary_model", "secondary_provider"),
-                    ),
-                ],
-            ),
             ConfigNode(
                 key="display",
                 label="Display",
@@ -206,6 +216,63 @@ def build_config_tree() -> ConfigNode:
                     ),
                 ],
             ),
+            ConfigNode(
+                key="models",
+                label="Models",
+                children=[
+                    ConfigNode(
+                        key="primary_model",
+                        label="Primary model",
+                        leaf=build_model_leaf("model", "provider"),
+                    ),
+                    ConfigNode(
+                        key="secondary_model",
+                        label="Secondary model",
+                        leaf=build_model_leaf("secondary_model", "secondary_provider"),
+                    ),
+                    ConfigNode(
+                        key="temperature",
+                        label="Temperature",
+                        leaf=build_temperature_leaf(),
+                    ),
+                ],
+            ),
+            ConfigNode(
+                key="personalization",
+                label="Personalization",
+                children=[
+                    ConfigNode(
+                        key="agent_name", label="Agent name", leaf=build_agent_name_leaf()
+                    ),
+                ],
+            ),
+            ConfigNode(
+                key="providers",
+                label="Providers",
+                children=[
+                    ConfigNode(
+                        key="primary_provider",
+                        label="Primary provider",
+                        leaf=build_provider_leaf("provider", "model"),
+                    ),
+                    ConfigNode(
+                        key="secondary_provider",
+                        label="Secondary provider",
+                        leaf=build_provider_leaf("secondary_provider", "secondary_model"),
+                    ),
+                ],
+            ),
+            ConfigNode(
+                key="subagents",
+                label="Subagents",
+                children=[
+                    ConfigNode(
+                        key="worker_timeout",
+                        label="Worker timeout",
+                        leaf=build_worker_timeout_leaf(),
+                    ),
+                ],
+            ),
         ],
     )
 
@@ -220,6 +287,11 @@ def initial_values(cfg: OpenDataSciConfig, theme_name: str) -> dict[str, str]:
         "secondary_provider": str(cfg.secondary_provider),
         "secondary_model": cfg.secondary_model,
         "skills_directory": str(cfg.skills_directory) if cfg.skills_directory else "",
+        "temperature": "" if cfg.temperature == 0.0 else _format_number(cfg.temperature),
+        "name": cfg.name,
+        "worker_timeout_seconds": (
+            "" if cfg.worker_timeout_seconds is None else _format_number(cfg.worker_timeout_seconds)
+        ),
     }
 
 

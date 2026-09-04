@@ -70,6 +70,8 @@ dependencies = [
     # Web search & fetching
     "duckduckgo-search>=8.0.0,<9.0.0",
     "httpx>=0.27.0,<1.0.0",
+    # MCP client
+    "mcp>=1.0.0,<2.0.0",
     # Sandbox runtime
     "sandbox-runtime>=0.2.0,<1.0.0",
 ]

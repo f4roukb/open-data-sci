@@ -51,6 +51,7 @@ from opendatasci._tui.screens.onboarding_screen import OnboardingScreen
 from opendatasci._tui.screens.startup_wizard_screen import StartupWizardScreen
 from opendatasci._tui.style import theme as _theme
 from opendatasci.configs import DEFAULT_MODEL, OpenDataSciConfig
+from opendatasci.tools.mcp import MCPServerSpec
 
 logger = logging.getLogger(__name__)
 
@@ -245,8 +246,8 @@ class OpenDataSciApp(App[None]):
         root: ConfigNode,
         initial_values: dict[str, str],
         start_path: list[str],
-        on_apply: Callable[[dict[str, str], list[tuple[str, str]] | None], Awaitable[str | None]],
-        initial_mcp_servers: list[tuple[str, str]] | None = None,
+        on_apply: Callable[[dict[str, str], list[MCPServerSpec] | None], Awaitable[str | None]],
+        initial_mcp_servers: list[MCPServerSpec] | None = None,
     ) -> None:
         self.push_screen(
             ConfigScreen(root, initial_values, start_path, on_apply, initial_mcp_servers)

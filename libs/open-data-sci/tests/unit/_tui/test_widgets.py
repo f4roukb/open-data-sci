@@ -1793,12 +1793,14 @@ class TestPendingMessageBubbleMount:
         bubble.on_mount()
         bubble.update.assert_called_once()
 
-    def test_on_mount_renders_queued_label(self) -> None:
+    def test_on_mount_renders_bare_text(self) -> None:
+        # No "Queued" label: the warning-colored border/background already
+        # signals queued state, so the text is shown as-is.
         bubble = PendingMessageBubble("my pending query")
         bubble.update = MagicMock()
         bubble.on_mount()
         rendered: Text = bubble.update.call_args[0][0]
-        assert "Queued" in rendered.plain
+        assert rendered.plain == "my pending query"
 
     def test_on_mount_includes_message_text(self) -> None:
         bubble = PendingMessageBubble("analyse this dataset")

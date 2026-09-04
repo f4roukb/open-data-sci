@@ -257,15 +257,17 @@ class _TurnPresenter:
 
     async def handle_error(self, event: ErrorEvent) -> None:
         self._dismiss_thinking_block()
-        if self._agent_msg is None:
-            self._agent_msg = self._ui.add_message("agent", "")
-        await self._agent_msg.append(f"\n\n✗ {event.content}")
+        if self._agent_msg is not None:
+            await self._agent_msg.finish()
+            self._agent_msg = None
+        self._ui.add_message("error", f"✗ {event.content}")
 
     async def handle_exception(self, exc: Exception) -> None:
         self._dismiss_thinking_block()
-        if self._agent_msg is None:
-            self._agent_msg = self._ui.add_message("agent", "")
-        await self._agent_msg.set_content(f"✗ **Error:** {exc}")
+        if self._agent_msg is not None:
+            await self._agent_msg.finish()
+            self._agent_msg = None
+        self._ui.add_message("error", f"✗ Error: {exc}")
 
     # ── Cleanup ───────────────────────────────────────────────────────────────
 

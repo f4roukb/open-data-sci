@@ -12,6 +12,7 @@ from opendatasci.skills.local import (
     _BUILTIN_DOMAINS_DIRECTORY as _DEFAULT_BUILTIN_DOMAINS_DIRECTORY,
 )
 from opendatasci.skills.local import _BUILTIN_SKILLS_DIRECTORY as _DEFAULT_BUILTIN_SKILLS_DIRECTORY
+from opendatasci.tools.mcp import MCPServerSpec
 
 DEFAULT_MODEL: MappingProxyType[Provider, str] = MappingProxyType(
     {
@@ -106,8 +107,10 @@ class OpenDataSciConfig(BaseSettings):
                          Bedrock models that use adaptive thinking (Claude
                          4.6+), which reject explicit sampling parameters.
         name:            Display name of the agent.  Defaults to ``"Sai"``.
-        mcp_servers: List of MCP server URLs the agent may connect to
-                         (``MCP_SERVERS``).
+        mcp_servers: MCP servers the agent may connect to (``MCP_SERVERS``).
+                         Only the ``http`` and ``sse`` transports are
+                         supported; each server's tools are (re)discovered
+                         regularly rather than once at startup.
         skills_directory: Path to a directory of custom skill files
                          (``SKILLS_DIRECTORY``).  Loaded in addition to the
                          built-in skills; custom skills override built-ins of
@@ -200,7 +203,7 @@ class OpenDataSciConfig(BaseSettings):
     name: str = Field(default="Sai", alias="NAME")
 
     # ── MCP ───────────────────────────────────────────────────────────
-    mcp_servers: List[str] = Field(default_factory=list, alias="MCP_SERVERS")
+    mcp_servers: List[MCPServerSpec] = Field(default_factory=list, alias="MCP_SERVERS")
 
     # ── Context management ───────────────────────────────────────────────────────
     midturn_compaction_threshold: int = Field(

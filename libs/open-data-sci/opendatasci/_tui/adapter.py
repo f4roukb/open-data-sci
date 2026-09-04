@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Awaitable, Callable, Protocol
 
 if TYPE_CHECKING:
     from opendatasci._tui.config.config_tree import ConfigNode
+    from opendatasci.tools.mcp import MCPServerSpec
 
 
 class SubmitAction(str, Enum):
@@ -98,8 +99,8 @@ class UIAdapter(Protocol):
         root: "ConfigNode",
         initial_values: dict[str, str],
         start_path: list[str],
-        on_apply: Callable[[dict[str, str], list[tuple[str, str]] | None], Awaitable[str | None]],
-        initial_mcp_servers: list[tuple[str, str]] | None = None,
+        on_apply: Callable[[dict[str, str], list["MCPServerSpec"] | None], Awaitable[str | None]],
+        initial_mcp_servers: list["MCPServerSpec"] | None = None,
     ) -> None: ...
 
     def refresh_theme(self) -> None:

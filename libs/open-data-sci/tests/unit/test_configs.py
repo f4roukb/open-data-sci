@@ -136,9 +136,18 @@ class TestAgentConfigFromYaml:
 
     def test_loads_list_fields(self, tmp_path: Path) -> None:
         f = tmp_path / "cfg.yaml"
-        f.write_text("mcp_servers:\n  - http://localhost:1234\n  - http://localhost:5678\n")
+        f.write_text(
+            "mcp_servers:\n"
+            "  - name: a\n"
+            "    url: http://localhost:1234\n"
+            "  - name: b\n"
+            "    url: http://localhost:5678\n"
+            "    transport: sse\n"
+        )
         cfg = OpenDataSciConfig.from_yaml(f)
-        assert cfg.mcp_servers == ["http://localhost:1234", "http://localhost:5678"]
+        assert [s.name for s in cfg.mcp_servers] == ["a", "b"]
+        assert [s.url for s in cfg.mcp_servers] == ["http://localhost:1234", "http://localhost:5678"]
+        assert cfg.mcp_servers[1].transport == "sse"
 
     def test_empty_yaml_yields_defaults(self, tmp_path: Path) -> None:
         f = tmp_path / "cfg.yaml"

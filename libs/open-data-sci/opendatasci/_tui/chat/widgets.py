@@ -396,11 +396,21 @@ class MessageBubble(Widget):
         content = self._content
         if role == "user":
             assert isinstance(inner, Static)
-            inner.update(Text.from_markup(content))
+            try:
+                inner.update(Text.from_markup(content))
+            except Exception:
+                inner.update(Text(content))
         elif role == "question":
             assert isinstance(inner, Static)
             try:
                 inner.update(Text.from_markup(content))
+            except Exception:
+                inner.update(Text(content))
+        elif role == "error":
+            assert isinstance(inner, Static)
+            try:
+                markup = f"[bold {theme['error']}]{escape(content)}[/bold {theme['error']}]"
+                inner.update(Text.from_markup(markup))
             except Exception:
                 inner.update(Text(content))
         # "agent" rendering is handled entirely by the MarkdownStream.
@@ -895,11 +905,7 @@ class PendingMessageBubble(Static):
         self._text = text
 
     def on_mount(self) -> None:
-        self.update(
-            Text.from_markup(
-                f"[bold {theme['warning']}]Queued[/bold {theme['warning']}]  {self._text}"
-            )
-        )
+        self.update(Text(self._text))
 
 
 class PendingMessagePanel(Vertical):

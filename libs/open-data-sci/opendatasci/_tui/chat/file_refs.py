@@ -35,7 +35,7 @@ def _build_user_display(clean_text: str, refs: list[_FileRef]) -> str:
     parts = []
     accent = theme["accent"]
     for ref in refs:
-        parts.append(rf"[bold {accent}]\[{ref.display_name}][/bold {accent}]")
+        parts.append(rf"[bold {accent}]\[{escape_markup(ref.display_name)}][/bold {accent}]")
     if clean_text:
         parts.append(escape_markup(clean_text))
     return "\n".join(parts)

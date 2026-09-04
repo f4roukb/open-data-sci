@@ -759,11 +759,13 @@ class TestPendingMessages:
         assert _plain(bubbles[0]).endswith("first queued")
         assert _plain(bubbles[1]).endswith("second queued")
 
-    async def test_pending_bubble_shows_queued_marker(self, harness) -> None:
+    async def test_pending_bubble_shows_bare_text(self, harness) -> None:
+        # No "Queued" label: the warning-colored border/background already
+        # signals queued state.
         app, pilot, pane = harness
         bubble = pane.add_pending_message("run the model")
         await pilot.pause()
-        assert "Queued" in _plain(bubble)
+        assert _plain(bubble) == "run the model"
 
 
 # ---------------------------------------------------------------------------

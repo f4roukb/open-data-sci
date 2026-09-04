@@ -12,7 +12,6 @@ for all three). Left moves up one level. Escape leaves the whole panel,
 prompting Save/Discard first if anything was changed.
 """
 
-import asyncio
 from pathlib import Path
 from typing import Awaitable, Callable
 
@@ -29,12 +28,20 @@ from textual.widgets.option_list import Option
 
 from opendatasci._tui.config.config_tree import ConfigLeaf, ConfigNode, diff_values
 from opendatasci._tui.style.theme import active as theme
-from opendatasci.tools.mcp import check_mcp_server, load_named_mcp_servers
+from opendatasci.tools.mcp import MCPServerSpec, MCPTransport, check_mcp_server, load_named_mcp_servers
 
 _SAVE = "Save changes"
 _DISCARD = "Discard changes"
 
-_MCP_TEXT_MODES = ("mcp_load_path", "mcp_manual_name", "mcp_manual_url")
+_MCP_TEXT_MODES = ("mcp_load_path", "mcp_manual_name", "mcp_manual_url", "mcp_manual_header")
+# Every mode that belongs to an "add a server" sub-flow (load-from-file or
+# manual) — Back/Escape from any of these cancels the whole sub-flow rather
+# than stepping back one field at a time.
+_MCP_WIZARD_MODES = (*_MCP_TEXT_MODES, "mcp_load_select", "mcp_manual_transport")
+_MCP_TRANSPORT_LABELS = {
+    MCPTransport.HTTP: "HTTP (Streamable, recommended)",
+    MCPTransport.SSE: "SSE (Server-Sent Events, legacy)",
+}
 
 
 def _hint_chip(key: str, label: str) -> str:
@@ -127,8 +134,8 @@ class ConfigScreen(ModalScreen[None]):
         root: ConfigNode,
         initial_values: dict[str, str],
         start_path: list[str],
-        on_apply: Callable[[dict[str, str], list[tuple[str, str]] | None], Awaitable[str | None]],
-        initial_mcp_servers: list[tuple[str, str]] | None = None,
+        on_apply: Callable[[dict[str, str], list[MCPServerSpec] | None], Awaitable[str | None]],
+        initial_mcp_servers: list[MCPServerSpec] | None = None,
     ) -> None:
         super().__init__()
         self._root = root
@@ -141,14 +148,19 @@ class ConfigScreen(ModalScreen[None]):
         self._error: str = ""
         self._status: str = ""
         # MCP servers editor state — kept outside ``_staged`` since it's a
-        # list of (name, url) pairs, not a scalar field.
-        self._initial_mcp_servers: list[tuple[str, str]] = list(initial_mcp_servers or [])
-        self._mcp_servers: list[tuple[str, str]] = list(initial_mcp_servers or [])
-        self._mcp_candidates: list[tuple[str, str]] = []
+        # list of server specs, not a scalar field.
+        self._initial_mcp_servers: list[MCPServerSpec] = list(initial_mcp_servers or [])
+        self._mcp_servers: list[MCPServerSpec] = list(initial_mcp_servers or [])
+        self._mcp_candidates: list[MCPServerSpec] = []
         self._mcp_selected: set[int] = set()
         self._mcp_select_cursor: int = 0
-        self._mcp_pending_name: str | None = None
         self._mcp_checking: bool = False
+        # Fields collected across the manual-add wizard (name -> url ->
+        # transport -> headers) before the final connectivity check.
+        self._mcp_pending_name: str | None = None
+        self._mcp_pending_url: str | None = None
+        self._mcp_pending_transport: MCPTransport = MCPTransport.HTTP
+        self._mcp_pending_headers: dict[str, str] = {}
 
     @staticmethod
     def _resolve_path(root: ConfigNode, start_path: list[str]) -> list[ConfigNode]:
@@ -192,6 +204,8 @@ class ConfigScreen(ModalScreen[None]):
                     ("←", "cancel"),
                 ]
             )
+        elif self._mode == "mcp_manual_transport":
+            hint = _hint_bar([("↑↓", "move"), ("Enter", "select"), ("←", "cancel")])
         elif self._mode in _MCP_TEXT_MODES:
             hint = _hint_bar([("Enter", "continue"), ("←/Esc", "cancel")])
         else:
@@ -272,8 +286,11 @@ class ConfigScreen(ModalScreen[None]):
         self._clear_body()
         body = self.query_one("#config-body", Vertical)
         options = [
-            Option(f"✕ {escape(name)} — {escape(url)}", id=f"remove:{idx}")
-            for idx, (name, url) in enumerate(self._mcp_servers)
+            Option(
+                f"✕ {escape(server.name)} — {escape(server.url)} [dim]({server.transport.value})[/dim]",
+                id=f"remove:{idx}",
+            )
+            for idx, server in enumerate(self._mcp_servers)
         ]
         options.append(Option("+ Load from config file", id="mcp_load"))
         options.append(Option("+ Add manually", id="mcp_manual"))
@@ -315,9 +332,11 @@ class ConfigScreen(ModalScreen[None]):
         self._clear_body()
         body = self.query_one("#config-body", Vertical)
         options = []
-        for idx, (name, url) in enumerate(self._mcp_candidates):
+        for idx, server in enumerate(self._mcp_candidates):
             marker = "[x]" if idx in self._mcp_selected else "[ ]"
-            options.append(Option(f"{marker} {escape(name)} — {escape(url)}", id=f"cand:{idx}"))
+            options.append(
+                Option(f"{marker} {escape(server.name)} — {escape(server.url)}", id=f"cand:{idx}")
+            )
         options.append(
             Option(f"✔ Add selected ({len(self._mcp_selected)})", id="confirm_selection")
         )
@@ -326,20 +345,23 @@ class ConfigScreen(ModalScreen[None]):
         option_list.highlighted = self._mcp_select_cursor
         option_list.focus()
 
-    def _upsert_mcp_server(self, name: str, url: str) -> None:
-        for idx, (_, existing_url) in enumerate(self._mcp_servers):
-            if existing_url == url:
-                self._mcp_servers[idx] = (name, url)
+    def _upsert_mcp_server(self, server: MCPServerSpec) -> None:
+        for idx, existing in enumerate(self._mcp_servers):
+            if existing.url == server.url:
+                self._mcp_servers[idx] = server
                 return
-        self._mcp_servers.append((name, url))
+        self._mcp_servers.append(server)
 
     def _reset_mcp_transient_state(self) -> None:
         self._mcp_candidates = []
         self._mcp_selected = set()
         self._mcp_select_cursor = 0
-        self._mcp_pending_name = None
         self._mcp_checking = False
         self._status = ""
+        self._mcp_pending_name = None
+        self._mcp_pending_url = None
+        self._mcp_pending_transport = MCPTransport.HTTP
+        self._mcp_pending_headers = {}
 
     def _handle_mcp_load_path_submit(self, value: str) -> None:
         if not value:
@@ -368,33 +390,87 @@ class ConfigScreen(ModalScreen[None]):
         self._mcp_pending_name = value
         self._render_mcp_manual_url()
 
-    async def _handle_mcp_manual_url_submit(self, value: str) -> None:
-        name = self._mcp_pending_name
-        if not value or not name:
+    def _handle_mcp_manual_url_submit(self, value: str) -> None:
+        if not value or not self._mcp_pending_name:
             self._reset_mcp_transient_state()
             self._render_mcp_list()
             return
-        if self._mcp_checking:
+        self._mcp_pending_url = value
+        self._render_mcp_manual_transport()
+
+    def _render_mcp_manual_transport(self) -> None:
+        self._mode = "mcp_manual_transport"
+        self._breadcrumb_text()
+        self._clear_body()
+        body = self.query_one("#config-body", Vertical)
+        options = [
+            Option(_MCP_TRANSPORT_LABELS[transport], id=transport.value) for transport in MCPTransport
+        ]
+        option_list = _ConfigOptionList(*options)
+        body.mount(option_list)
+        option_list.focus()
+
+    def _render_mcp_manual_header(self) -> None:
+        self._mode = "mcp_manual_header"
+        if not self._mcp_checking:
+            count = len(self._mcp_pending_headers)
+            self._status = (
+                f"{count} header{'s' if count != 1 else ''} added — "
+                "Enter with nothing typed to finish"
+                if count
+                else "Optional — e.g. Authorization: Bearer <token>. Enter with nothing typed to skip"
+            )
+        self._breadcrumb_text()
+        self._clear_body()
+        body = self.query_one("#config-body", Vertical)
+        text_input = _ConfigTextInput(placeholder="Header (Name: Value)")
+        body.mount(text_input)
+        text_input.focus()
+
+    async def _handle_mcp_manual_header_submit(self, value: str) -> None:
+        if not value:
+            await self._finalize_manual_mcp_add()
             return
+        name, sep, header_value = value.partition(":")
+        name, header_value = name.strip(), header_value.strip()
+        if not sep or not name or not header_value:
+            self._error = "Expected 'Header-Name: value'"
+            self._render_mcp_manual_header()
+            return
+        self._error = ""
+        self._mcp_pending_headers[name] = header_value
+        self._render_mcp_manual_header()
+
+    async def _finalize_manual_mcp_add(self) -> None:
+        name = self._mcp_pending_name
+        url = self._mcp_pending_url
+        if not name or not url or self._mcp_checking:
+            return
+        server = MCPServerSpec(
+            name=name,
+            url=url,
+            transport=self._mcp_pending_transport,
+            headers=dict(self._mcp_pending_headers),
+        )
 
         self._error = ""
         self._status = "Checking connection…"
         self._mcp_checking = True
-        self._render_mcp_manual_url(value=value)
+        self._render_mcp_manual_header()
         try:
-            await asyncio.to_thread(check_mcp_server, value)
+            await check_mcp_server(server)
         except Exception as exc:
-            if self._mode != "mcp_manual_url" or not self._mcp_checking:
+            if self._mode != "mcp_manual_header" or not self._mcp_checking:
                 return  # user navigated away while the check was in flight
             self._mcp_checking = False
             self._status = ""
-            self._error = f"Couldn't connect to {value}: {exc}"
-            self._render_mcp_manual_url(value=value)
+            self._error = f"Couldn't connect to {url}: {exc}"
+            self._render_mcp_manual_header()
             return
 
-        if self._mode != "mcp_manual_url" or not self._mcp_checking:
+        if self._mode != "mcp_manual_header" or not self._mcp_checking:
             return  # user navigated away while the check was in flight
-        self._upsert_mcp_server(name, value)
+        self._upsert_mcp_server(server)
         self._reset_mcp_transient_state()
         self._render_mcp_list()
 
@@ -463,14 +539,18 @@ class ConfigScreen(ModalScreen[None]):
             self._mcp_select_cursor = event.option_list.highlighted or 0
             if option_id == "confirm_selection":
                 for idx in sorted(self._mcp_selected):
-                    name, url = self._mcp_candidates[idx]
-                    self._upsert_mcp_server(name, url)
+                    self._upsert_mcp_server(self._mcp_candidates[idx])
                 self._reset_mcp_transient_state()
                 self._render_mcp_list()
                 return
             idx = int(option_id.split(":", 1)[1])
             self._mcp_selected.symmetric_difference_update({idx})
             self._render_mcp_load_select()
+            return
+
+        if self._mode == "mcp_manual_transport":
+            self._mcp_pending_transport = MCPTransport(option_id)
+            self._render_mcp_manual_header()
             return
 
         node = self._path[-1]
@@ -508,15 +588,40 @@ class ConfigScreen(ModalScreen[None]):
             self._handle_mcp_manual_name_submit(value)
             return
         if self._mode == "mcp_manual_url":
-            await self._handle_mcp_manual_url_submit(value)
+            self._handle_mcp_manual_url_submit(value)
+            return
+        if self._mode == "mcp_manual_header":
+            await self._handle_mcp_manual_header_submit(value)
             return
 
         node = self._path[-1]
         assert node.leaf is not None
-        if value:
-            self._stage_value(node.leaf, value)
+        leaf = node.leaf
+        if value or leaf.allow_empty:
+            if value and leaf.validate is not None:
+                error = leaf.validate(value)
+                if error is not None:
+                    self._error = error
+                    self._render_leaf_text_retry(leaf, value)
+                    return
+            self._stage_value(leaf, value)
         self._path.pop()
         self._render_level()
+
+    def _render_leaf_text_retry(self, leaf: ConfigLeaf, value: str) -> None:
+        """Re-show a leaf's text input after a validation error.
+
+        Unlike ``_render_level``, this keeps ``self._error`` (so the message
+        set by the caller stays visible) and preserves the invalid draft the
+        user just typed, so they can fix it in place instead of retyping.
+        """
+        self._mode = "text"
+        self._breadcrumb_text()
+        self._clear_body()
+        body = self.query_one("#config-body", Vertical)
+        text_input = _ConfigTextInput(value=value, placeholder=leaf.text_placeholder)
+        body.mount(text_input)
+        text_input.focus()
 
     def _stage_value(self, leaf: ConfigLeaf, value: str) -> None:
         self._staged[leaf.field] = value
@@ -531,7 +636,7 @@ class ConfigScreen(ModalScreen[None]):
         if self._mode == "confirm":
             self._render_level()
             return
-        if self._mode in _MCP_TEXT_MODES or self._mode == "mcp_load_select":
+        if self._mode in _MCP_WIZARD_MODES:
             self._reset_mcp_transient_state()
             self._render_mcp_list()
             return
@@ -545,7 +650,7 @@ class ConfigScreen(ModalScreen[None]):
         if self._mode == "confirm":
             self.dismiss()
             return
-        if self._mode in _MCP_TEXT_MODES or self._mode == "mcp_load_select":
+        if self._mode in _MCP_WIZARD_MODES:
             self._reset_mcp_transient_state()
             self._render_mcp_list()
             return

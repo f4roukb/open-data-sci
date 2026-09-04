@@ -82,11 +82,7 @@ from opendatasci.streaming.events import (
     UsageEvent,
 )
 from opendatasci.tasks.base import BackgroundTaskStatus, BackgroundTaskUpdate
-from opendatasci.tools.mcp import (
-    load_mcp_servers,
-    load_workspace_mcp_servers,
-    save_workspace_mcp_servers,
-)
+from opendatasci.tools.mcp import MCPServerSpec, load_workspace_mcp_servers, save_workspace_mcp_servers
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +188,7 @@ class CLIController:
         ui = self._ui
 
         try:
-            mcp_servers = load_mcp_servers(self._config_search_path())
+            mcp_servers = load_workspace_mcp_servers(self._config_search_path())
 
             cfg = self._base_config.model_copy(update={"mcp_servers": mcp_servers})
             self._cfg = cfg
@@ -610,10 +606,14 @@ class CLIController:
             if len(choices) < len(string.ascii_uppercase)
             else None
         )
-        lines = [f"[bold {theme['text_primary']}]{question}[/bold {theme['text_primary']}]\n"]
+        lines = [
+            f"[bold {theme['text_primary']}]{escape_markup(question)}"
+            f"[/bold {theme['text_primary']}]\n"
+        ]
         for label, choice_text in zip(labels, choices):
             lines.append(
-                f"  [bold {theme['warning']}]{label}[/bold {theme['warning']}]  {choice_text}"
+                f"  [bold {theme['warning']}]{label}[/bold {theme['warning']}]  "
+                f"{escape_markup(choice_text)}"
             )
         if other_label is not None:
             lines.append(
@@ -826,7 +826,7 @@ class CLIController:
         )
 
     async def _apply_config_changes(
-        self, changes: dict[str, str], mcp_servers: list[tuple[str, str]] | None = None
+        self, changes: dict[str, str], mcp_servers: list[MCPServerSpec] | None = None
     ) -> str | None:
         """Apply staged changes from the config panel. Returns an error string, or None."""
         if "theme" in changes:
@@ -841,6 +841,18 @@ class CLIController:
         if "skills_directory" in config_changes:
             value = config_changes["skills_directory"].strip()
             config_changes["skills_directory"] = Path(value) if value else None
+        if "temperature" in config_changes:
+            value = config_changes["temperature"].strip()
+            config_changes["temperature"] = float(value) if value else 0.0
+        if "worker_timeout_seconds" in config_changes:
+            value = config_changes["worker_timeout_seconds"].strip()
+            if value:
+                try:
+                    config_changes["worker_timeout_seconds"] = float(value)
+                except ValueError:
+                    return f"Worker timeout must be a number: {value!r}"
+            else:
+                config_changes["worker_timeout_seconds"] = None
 
         if not config_changes and mcp_servers is None:
             return None
@@ -862,15 +874,14 @@ class CLIController:
             if key_field and not getattr(self._base_config, key_field, None):
                 return format_missing_api_key_message(provider, key_field)
 
-        mcp_server_urls = [url for _, url in mcp_servers] if mcp_servers is not None else None
         new_cfg = self._base_config.model_copy(update=config_changes)
-        error = await self._rebuild_agent(new_cfg, mcp_server_urls)
+        error = await self._rebuild_agent(new_cfg, mcp_servers)
         if error is None and mcp_servers is not None:
             save_workspace_mcp_servers(self._config_search_path(), mcp_servers)
         return error
 
     async def _rebuild_agent(
-        self, new_base_config: OpenDataSciConfig, mcp_server_urls: list[str] | None = None
+        self, new_base_config: OpenDataSciConfig, mcp_servers: list[MCPServerSpec] | None = None
     ) -> str | None:
         """Boot a fresh agent from *new_base_config*, swapping it in only on success.
 
@@ -879,15 +890,15 @@ class CLIController:
         model/provider switch never leaves the user without a working
         session. Returns an error string on failure, or ``None`` on success.
 
-        *mcp_server_urls*, when given, overrides the workspace file's MCP
+        *mcp_servers*, when given, overrides the workspace file's MCP
         servers for this rebuild (used by the /config panel to apply staged
         additions/removals before they're persisted to disk).
         """
         exit_stack = AsyncExitStack()
         try:
-            if mcp_server_urls is None:
-                mcp_server_urls = load_mcp_servers(self._config_search_path())
-            cfg = new_base_config.model_copy(update={"mcp_servers": mcp_server_urls})
+            if mcp_servers is None:
+                mcp_servers = load_workspace_mcp_servers(self._config_search_path())
+            cfg = new_base_config.model_copy(update={"mcp_servers": mcp_servers})
             agent = await exit_stack.enter_async_context(
                 create_agent(self._workspace_path, config=cfg)
             )
