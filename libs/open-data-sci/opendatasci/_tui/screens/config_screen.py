@@ -85,7 +85,7 @@ class ConfigScreen(ModalScreen[None]):
         align: center middle;
     }
     ConfigScreen > Vertical {
-        width: 70;
+        width: 78;
         height: auto;
         max-height: 80%;
         border: round $ods-accent;
@@ -94,14 +94,15 @@ class ConfigScreen(ModalScreen[None]):
     ConfigScreen #config-breadcrumb {
         background: $ods-surface-alt;
         border-bottom: solid $ods-separator;
-        padding: 1 2;
+        padding: 1 3;
     }
     ConfigScreen #config-body {
-        padding: 1 2;
+        padding: 1 3;
     }
     ConfigScreen OptionList {
         height: auto;
         max-height: 16;
+        margin-bottom: 1;
     }
     """
 

@@ -396,19 +396,19 @@ class TestWorkerBlock:
         text = _plain(block)
         assert "Fanning out" in text
         assert "Parallelizing" in text
-        assert "Worker 1: Clean data" in text
-        assert "Worker 2: Fit model" in text
+        assert "Worker 1 — Clean data" in text
+        assert "Worker 2 — Fit model" in text
 
     async def test_activity_shown_while_running_and_cleared_when_done(self, harness) -> None:
         app, pilot, pane = harness
         block = pane.add_task_block("", ["Clean data", "Fit model"])
         await pilot.pause()
         block.update_task_activity(0, "run_python")
-        assert "Worker 1: run_python" in _plain(block)
+        assert "Worker 1 — run_python" in _plain(block)
 
         block.mark_task_done(0)
         text = _plain(block)
-        assert "Worker 1: Clean data" in text  # activity replaced by summary again
+        assert "Worker 1 — Clean data" in text  # activity replaced by summary again
         assert block.is_running() is True  # worker 2 still running
 
     async def test_all_workers_terminal_stops_spinner_and_marks_done(self, harness) -> None:
@@ -420,7 +420,7 @@ class TestWorkerBlock:
         assert block.is_running() is False
         assert block._spin_timer is None
         text = _plain(block)
-        assert "✗ Worker 2: b" in text
+        assert "✗ Worker 2 — b" in text
 
     async def test_out_of_range_worker_indices_are_ignored(self, harness) -> None:
         app, pilot, pane = harness
@@ -438,8 +438,8 @@ class TestWorkerBlock:
         block.mark_task_done(0)
         block.set_done()  # e.g. turn ended while worker 2 still running
         text = _plain(block)
-        assert "Worker 1: a" in text
-        assert "Worker 2: b" in text
+        assert "Worker 1 — a" in text
+        assert "Worker 2 — b" in text
         assert "✗" not in text  # promoted to done, not error
 
 
@@ -748,7 +748,7 @@ class TestWorkspacePanel:
 
 
 class TestPendingMessages:
-    async def test_newest_pending_message_is_mounted_first(self, harness) -> None:
+    async def test_pending_messages_appear_in_queued_order(self, harness) -> None:
         app, pilot, pane = harness
         pane.add_pending_message("first queued")
         await pilot.pause()
@@ -756,8 +756,8 @@ class TestPendingMessages:
         await pilot.pause()
         panel = app.query_one(PendingMessagePanel)
         bubbles = list(panel.query(PendingMessageBubble))
-        assert _plain(bubbles[0]).endswith("second queued")
-        assert _plain(bubbles[1]).endswith("first queued")
+        assert _plain(bubbles[0]).endswith("first queued")
+        assert _plain(bubbles[1]).endswith("second queued")
 
     async def test_pending_bubble_shows_queued_marker(self, harness) -> None:
         app, pilot, pane = harness

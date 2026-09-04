@@ -63,7 +63,8 @@ class ConfigNode:
 
 
 def _provider_options(_staged: dict[str, str]) -> list[ConfigOption]:
-    return [ConfigOption(p.value, _PROVIDER_DISPLAY.get(p, p.value.title())) for p in Provider]
+    options = [ConfigOption(p.value, _PROVIDER_DISPLAY.get(p, p.value.title())) for p in Provider]
+    return sorted(options, key=lambda o: o.label.lower())
 
 
 def _model_options_for(provider_field: str) -> Callable[[dict[str, str]], list[ConfigOption]]:
@@ -126,15 +127,26 @@ def build_model_leaf(field_name: str, provider_field: str) -> ConfigLeaf:
 
 
 def build_config_tree() -> ConfigNode:
-    """The full /config menu: Display, Models, Providers."""
+    """The full /config menu, in Providers, Models, Display order."""
     return ConfigNode(
         key="root",
         label="Configure",
         children=[
             ConfigNode(
-                key="display",
-                label="Display",
-                children=[ConfigNode(key="theme", label="Theme", leaf=build_theme_leaf())],
+                key="providers",
+                label="Providers",
+                children=[
+                    ConfigNode(
+                        key="primary_provider",
+                        label="Primary provider",
+                        leaf=build_provider_leaf("provider", "model"),
+                    ),
+                    ConfigNode(
+                        key="secondary_provider",
+                        label="Secondary provider",
+                        leaf=build_provider_leaf("secondary_provider", "secondary_model"),
+                    ),
+                ],
             ),
             ConfigNode(
                 key="models",
@@ -153,20 +165,9 @@ def build_config_tree() -> ConfigNode:
                 ],
             ),
             ConfigNode(
-                key="providers",
-                label="Providers",
-                children=[
-                    ConfigNode(
-                        key="primary_provider",
-                        label="Primary provider",
-                        leaf=build_provider_leaf("provider", "model"),
-                    ),
-                    ConfigNode(
-                        key="secondary_provider",
-                        label="Secondary provider",
-                        leaf=build_provider_leaf("secondary_provider", "secondary_model"),
-                    ),
-                ],
+                key="display",
+                label="Display",
+                children=[ConfigNode(key="theme", label="Theme", leaf=build_theme_leaf())],
             ),
         ],
     )

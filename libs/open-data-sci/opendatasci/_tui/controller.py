@@ -122,6 +122,7 @@ class CLIController:
         self._pending_handles: dict[int, PendingMessageHandle] = {}
         self._background_watcher_task: asyncio.Task[None] | None = None
         self._background_status_task: asyncio.Task[None] | None = None
+        self._last_background_status: str = ""
         self._cfg: OpenDataSciConfig | None = None
         self._completion = completion if completion is not None else CompletionState()
         self._paste_attachment: PasteAttachment | None = None
@@ -498,17 +499,21 @@ class CLIController:
         """Refresh the header's "running background tasks" line every few seconds.
 
         Purely a status display of already-in-memory state — not the
-        completion-delivery mechanism (``_watch_background_tasks`` is).
+        completion-delivery mechanism (``_watch_background_tasks`` is). Only
+        touches the UI when the description actually changed, so an idle
+        session (the common case) doesn't re-render the header every couple
+        of seconds for no visible difference.
         """
         assert self._service is not None
         while True:
             await asyncio.sleep(_BACKGROUND_STATUS_POLL_SECONDS)
             records = await self._service.task_manager.list_tasks()
             running = [r for r in records if r.status == BackgroundTaskStatus.RUNNING]
-            if not running:
-                self._ui.set_background_tasks("")
+            description = "; ".join(r.summary for r in running)
+            if description == self._last_background_status:
                 continue
-            self._ui.set_background_tasks("; ".join(r.summary for r in running))
+            self._last_background_status = description
+            self._ui.set_background_tasks(description)
 
     def _drain_pending_batch(self) -> list[Invocation]:
         """Drain every queued user message, surface each in the UI, and return the batch.
@@ -554,7 +559,6 @@ class CLIController:
                 self._active_turn_status = None
             if not self._awaiting_choice and not self._awaiting_approval:
                 self._ui.set_input_placeholder("Ask a question about your data…")
-            self._ui.add_divider()
 
     async def _dispatch_stream_event(
         self, event: BaseAgentStreamEvent, presenter: _TurnPresenter

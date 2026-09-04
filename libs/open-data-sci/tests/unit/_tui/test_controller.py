@@ -1010,9 +1010,10 @@ class TestBackgroundTaskStatusPoll:
 
         mock_ui.set_background_tasks.assert_any_call("crunching numbers")
 
-    async def test_no_running_tasks_clears_header(
+    async def test_no_running_tasks_clears_header_once_something_was_shown(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
+        loaded_controller._last_background_status = "crunching numbers"  # previously shown
         mock_service.task_manager = MagicMock()
         mock_service.task_manager.list_tasks = AsyncMock(return_value=[])
 
@@ -1026,6 +1027,47 @@ class TestBackgroundTaskStatusPoll:
                 pass
 
         mock_ui.set_background_tasks.assert_any_call("")
+
+    async def test_no_running_tasks_on_an_idle_session_never_touches_the_header(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        """Nothing changed (idle session, nothing ever ran) — skip the redundant re-render."""
+        mock_service.task_manager = MagicMock()
+        mock_service.task_manager.list_tasks = AsyncMock(return_value=[])
+
+        with patch("opendatasci._tui.controller._BACKGROUND_STATUS_POLL_SECONDS", 0):
+            task = asyncio.create_task(loaded_controller._poll_background_task_status())
+            await asyncio.sleep(0.01)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        mock_ui.set_background_tasks.assert_not_called()
+
+    async def test_unchanged_running_tasks_only_render_once(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        """The same running-task summary across multiple polls should not re-render each time."""
+        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
+
+        running = BackgroundTaskRecord(
+            task_id=uuid4(), summary="crunching numbers", status=BackgroundTaskStatus.RUNNING
+        )
+        mock_service.task_manager = MagicMock()
+        mock_service.task_manager.list_tasks = AsyncMock(return_value=[running])
+
+        with patch("opendatasci._tui.controller._BACKGROUND_STATUS_POLL_SECONDS", 0):
+            task = asyncio.create_task(loaded_controller._poll_background_task_status())
+            await asyncio.sleep(0.03)  # several poll iterations, same result each time
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        assert mock_ui.set_background_tasks.call_count == 1
 
 
 class TestRunAgent:
@@ -1130,12 +1172,13 @@ class TestRunAgent:
         await loaded_controller.run_agent("q")
         mock_ui.add_thinking_block.assert_called()
 
-    async def test_run_agent_adds_divider_at_end(
+    async def test_run_agent_does_not_add_a_divider_at_end(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
+        """No line between turns — the user/agent bubbles alone separate them."""
         mock_service.astream.return_value = _aiter()
         await loaded_controller.run_agent("q")
-        mock_ui.add_divider.assert_called_once()
+        mock_ui.add_divider.assert_not_called()
 
     async def test_run_agent_task_block_marked_done_on_tool_result(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock

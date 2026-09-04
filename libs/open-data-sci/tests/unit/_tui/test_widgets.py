@@ -686,8 +686,8 @@ class TestToolCallBlockWorkerRowRendering:
     """Worker block renders a subtree:
 
         Parallelizing
-          └─ ⣾ Worker 1: …
-          └─ ⣾ Worker 2: …
+          └─ ⣾ Worker 1 — …
+          └─ ⣾ Worker 2 — …
 
     Each worker row is indented two spaces and prefixed with the L-shaped
     box-drawing character so the layout reads as a subtree under the header.
@@ -721,28 +721,28 @@ class TestToolCallBlockWorkerRowRendering:
         block = _make_block(communication="", task_summaries=["w1"])
         lines = self._rendered_lines(block)
         # Spinner is SPINNER[0] = "⣾"; tree prefix sits BEFORE the spinner.
-        assert lines[1] == f"{self.WORKER_UPDATE_BRANCH}⣾ Worker 1: w1"
+        assert lines[1] == f"{self.WORKER_UPDATE_BRANCH}⣾ Worker 1 — w1"
 
     def test_done_worker_row_preserves_tree_prefix(self) -> None:
         block = _make_block(communication="", task_summaries=["w1"])
         block._task_statuses[0] = "done"
         lines = self._rendered_lines(block)
         # No spinner in done state — prefix still leads, then the row text.
-        assert lines[1] == f"{self.WORKER_UPDATE_BRANCH}Worker 1: w1"
+        assert lines[1] == f"{self.WORKER_UPDATE_BRANCH}Worker 1 — w1"
 
     def test_error_worker_row_preserves_tree_prefix_before_x_glyph(self) -> None:
         block = _make_block(communication="", task_summaries=["w1"])
         block._task_statuses[0] = "error"
         lines = self._rendered_lines(block)
         # Error glyph "✗" sits inside the status markup; prefix is still external.
-        assert lines[1] == f"{self.WORKER_UPDATE_BRANCH}✗ Worker 1: w1"
+        assert lines[1] == f"{self.WORKER_UPDATE_BRANCH}✗ Worker 1 — w1"
 
     def test_running_worker_row_with_activity_keeps_tree_prefix(self) -> None:
         block = _make_block(communication="", task_summaries=["w1"])
         block._task_activities[0] = "🐍 running pandas"
         lines = self._rendered_lines(block)
         # Activity replaces the subtask summary while running; prefix unchanged.
-        assert lines[1] == f"{self.WORKER_UPDATE_BRANCH}⣾ Worker 1: 🐍 running pandas"
+        assert lines[1] == f"{self.WORKER_UPDATE_BRANCH}⣾ Worker 1 — 🐍 running pandas"
 
 
 def _make_bubble(role: str, content: str = "") -> MessageBubble:
@@ -1816,12 +1816,12 @@ class TestPendingMessageBubbleMount:
 
 
 # ---------------------------------------------------------------------------
-# PendingMessagePanel — add_pending mounts at the front
+# PendingMessagePanel — add_pending appends in queued order
 # ---------------------------------------------------------------------------
 
 
 class TestPendingMessagePanelAddPending:
-    def test_add_pending_mounts_bubble_before_position_zero(self) -> None:
+    def test_add_pending_appends_bubble(self) -> None:
         panel = PendingMessagePanel.__new__(PendingMessagePanel)
         panel.mount = MagicMock()
         bubble_sentinel = MagicMock()
@@ -1829,7 +1829,7 @@ class TestPendingMessagePanelAddPending:
         with patch("opendatasci._tui.chat.widgets.PendingMessageBubble", return_value=bubble_sentinel):
             panel.add_pending("queued message")
 
-        panel.mount.assert_called_once_with(bubble_sentinel, before=0)
+        panel.mount.assert_called_once_with(bubble_sentinel)
 
     def test_add_pending_creates_bubble_with_correct_text(self) -> None:
         panel = PendingMessagePanel.__new__(PendingMessagePanel)

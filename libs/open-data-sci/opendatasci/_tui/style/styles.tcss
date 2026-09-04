@@ -129,6 +129,7 @@ OptionList {
     background: $ods-surface;
     color: $ods-text-primary;
     border: solid $ods-separator;
+    padding: 0 2;
     scrollbar-color: $ods-text-muted $ods-surface-alt;
     scrollbar-background: $ods-surface-alt;
 }
@@ -168,7 +169,10 @@ MessageBubble.question {
 }
 
 MessageBubble.agent {
-    padding: 0 0;
+    /* No border-left like .user/.question, but the same 3-column text start
+       (1 for their border + 2 for their padding) so agent and user text
+       line up on the same left edge. */
+    padding: 0 0 0 3;
 }
 
 .msg-divider {

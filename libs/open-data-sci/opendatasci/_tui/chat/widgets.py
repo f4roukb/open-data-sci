@@ -822,7 +822,7 @@ class ThinkingBlock(Static):
     DEFAULT_CSS = """
     ThinkingBlock {
         height: auto;
-        padding: 0 1;
+        padding: 0 0 0 3;
         margin-bottom: 1;
     }
     """
@@ -897,8 +897,9 @@ class PendingMessageBubble(Static):
 class PendingMessagePanel(Vertical):
     """Holds pinned PendingMessageBubble widgets between the chat and input bar.
 
-    New bubbles are mounted at the top of the stack, closest to the live
-    conversation, so the most recently queued message is the most visible.
+    New bubbles are appended at the bottom, so the queue reads top-to-bottom
+    in the order the messages were queued (and will be sent) — the same
+    order as everything else in the conversation.
     """
 
     DEFAULT_CSS = """
@@ -911,7 +912,7 @@ class PendingMessagePanel(Vertical):
 
     def add_pending(self, text: str) -> "PendingMessageBubble":
         bubble = PendingMessageBubble(text)
-        self.mount(bubble, before=0)
+        self.mount(bubble)
         return bubble
 
 
@@ -1028,7 +1029,7 @@ class ToolCallBlock(Static):
     DEFAULT_CSS = """
     ToolCallBlock {
         height: auto;
-        padding: 0;
+        padding: 0 0 0 3;
         margin-bottom: 1;
     }
     """
@@ -1106,7 +1107,7 @@ class ToolCallBlock(Static):
                 else:
                     st = self._task_statuses[i]
                 activity = self._task_activities[i] if i < len(self._task_activities) else ""
-                label = f"Worker {i + 1}: {activity if activity and st == 'running' else s}"
+                label = f"Worker {i + 1} — {activity if activity and st == 'running' else s}"
                 display = self._task_status_markup(label, st, prefix="  └─ ")
                 lines.append(display)
         else:

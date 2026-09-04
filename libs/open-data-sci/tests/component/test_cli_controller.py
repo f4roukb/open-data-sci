@@ -619,9 +619,7 @@ class TestStreamingAllEventTypes:
         svc = _make_service_stub(astream_events=events)
         ctrl, ui = _make_controller(service=svc)
         await ctrl.run_agent("Q")
-        # Final state: agent stopped, dividers added once per turn.
         assert ctrl._agent_running is False
-        assert ui.dividers >= 1
 
     async def test_hidden_tool_call_skips_block(self):
         """Tools with display_status=False emit tool_result without a paired ephemeral; no crash."""

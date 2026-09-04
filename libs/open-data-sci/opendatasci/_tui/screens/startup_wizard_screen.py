@@ -43,7 +43,7 @@ class StartupWizardScreen(ModalScreen[None]):
         align: center middle;
     }
     StartupWizardScreen > Vertical {
-        width: 64;
+        width: 70;
         height: auto;
         border: round $ods-accent;
         background: $ods-surface;
@@ -51,14 +51,15 @@ class StartupWizardScreen(ModalScreen[None]):
     StartupWizardScreen #wizard-title {
         background: $ods-surface-alt;
         border-bottom: solid $ods-separator;
-        padding: 1 2;
+        padding: 1 3;
     }
     StartupWizardScreen #wizard-body {
-        padding: 1 2;
+        padding: 1 3;
     }
     StartupWizardScreen OptionList {
         height: auto;
         max-height: 14;
+        margin-bottom: 1;
     }
     """
 
