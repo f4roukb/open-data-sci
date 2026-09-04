@@ -6,7 +6,7 @@ from pathlib import Path
 
 from rich.markup import escape as escape_markup
 
-from .theme import active as theme
+from opendatasci._tui.style.theme import active as theme
 
 # Matches @path/to/file  or  @Makefile  or  @.env
 _FILE_REF_RE = re.compile(r"@(\S+?)(?=\s|$)")

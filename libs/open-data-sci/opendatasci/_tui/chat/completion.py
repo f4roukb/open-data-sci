@@ -6,9 +6,13 @@ widgets, so it can be unit-tested without a running app.
 
 import logging
 
-from .adapter import UIAdapter
-from .commands import SLASH_COMMAND_DESCRIPTIONS, SLASH_COMMANDS
-from .file_refs import _discover_files, _find_at_fragment, _find_slash_fragment
+from opendatasci._tui.adapter import UIAdapter
+from opendatasci._tui.chat.commands import SLASH_COMMAND_DESCRIPTIONS, SLASH_COMMANDS
+from opendatasci._tui.chat.file_refs import (
+    _discover_files,
+    _find_at_fragment,
+    _find_slash_fragment,
+)
 
 logger = logging.getLogger(__name__)
 

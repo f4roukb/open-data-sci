@@ -8,6 +8,14 @@ and calls ``cleanup()`` in the ``finally`` block.
 import logging
 import time
 
+from opendatasci._tui.adapter import (
+    EphemeralHandle,
+    MessageHandle,
+    ThinkingHandle,
+    TurnStatusHandle,
+    UIAdapter,
+)
+from opendatasci._tui.chat.tools_display import REGISTRY, ToolDisplay
 from opendatasci.streaming.events import (
     ErrorEvent,
     ReasoningEvent,
@@ -21,9 +29,6 @@ from opendatasci.streaming.events import (
     UsageEvent,
 )
 from opendatasci.tools.factory import ToolName
-
-from .adapter import EphemeralHandle, MessageHandle, ThinkingHandle, TurnStatusHandle, UIAdapter
-from .tools_display import REGISTRY, ToolDisplay
 
 logger = logging.getLogger(__name__)
 

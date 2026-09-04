@@ -3,11 +3,10 @@
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
-
-from opendatasci.agents.agents import Invocation
-from opendatasci.configs import OpenDataSciConfig
 from opendatasci._tui.service import OpenDataSciTuiService
 from opendatasci._tui.session import CLISessionInfo
+from opendatasci.agents.agents import Invocation
+from opendatasci.configs import OpenDataSciConfig
 
 # ---------------------------------------------------------------------------
 # Helpers

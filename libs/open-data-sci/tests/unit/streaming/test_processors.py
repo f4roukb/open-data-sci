@@ -1,13 +1,12 @@
 """Unit tests for opendatasci.streaming.processors (and format_stream_error)."""
 
-import asyncio
 from unittest.mock import MagicMock
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from opendatasci.streaming import AgentTurnStreamProcessor
 from opendatasci._utils.streaming_utils import format_stream_error
+from opendatasci.streaming import AgentTurnStreamProcessor
 from opendatasci.streaming.processors import SUBAGENT_TAG
 
 # ---------------------------------------------------------------------------

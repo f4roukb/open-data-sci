@@ -1,9 +1,7 @@
-"""Unit tests for opendatasci._tui.message_queue.PendingMessageQueue."""
+"""Unit tests for opendatasci._tui.chat.message_queue.PendingMessageQueue."""
 
-import pytest
 
-from opendatasci._tui.message_queue import PendingMessage, PendingMessageQueue
-
+from opendatasci._tui.chat.message_queue import PendingMessage, PendingMessageQueue
 
 # ---------------------------------------------------------------------------
 # Enqueue

@@ -20,8 +20,7 @@ from textual.widgets import Input
 import opendatasci._tui.app as app_module
 from opendatasci._tui.adapter import SubmitAction
 from opendatasci._tui.app import OpenDataSciApp, _get_version, main
-from opendatasci._tui.config.startup_wizard_screen import StartupWizardScreen
-from opendatasci._tui.widgets import (
+from opendatasci._tui.chat.widgets import (
     AppHeader,
     ChatPane,
     CompletionPopup,
@@ -33,6 +32,7 @@ from opendatasci._tui.widgets import (
     TurnStatusBar,
     WorkspacePanel,
 )
+from opendatasci._tui.screens.startup_wizard_screen import StartupWizardScreen
 from opendatasci.configs import DEFAULT_MODEL, OpenDataSciConfig
 from opendatasci.models.providers import Provider
 
@@ -362,7 +362,7 @@ class TestStartupWizard:
     async def test_wizard_complete_applies_theme_and_boots_when_nothing_else_missing(
         self, tmp_path, datasci_config
     ) -> None:
-        from opendatasci._tui import theme as _theme
+        from opendatasci._tui.style import theme as _theme
 
         stub = _make_controller_stub(str(tmp_path))
         stub.base_config = datasci_config
@@ -378,7 +378,7 @@ class TestStartupWizard:
                 try:
                     app._on_wizard_complete(
                         {
-                            "theme": "dracula",
+                            "theme": "light",
                             "provider": "anthropic",
                             "model": "claude-sonnet-4-6",
                             "secondary_provider": "anthropic",
@@ -386,11 +386,11 @@ class TestStartupWizard:
                         }
                     )
                     await pilot.pause()
-                    assert _theme.active_name == "dracula"
+                    assert _theme.active_name == "light"
                     stub.apply_config_updates.assert_called_once()
                     stub.boot.assert_awaited_once()
                 finally:
-                    _theme.set_active("default")
+                    _theme.set_active("default (dark, colorblind)")
 
 
 # ---------------------------------------------------------------------------

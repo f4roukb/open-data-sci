@@ -1,6 +1,6 @@
-"""Unit tests for opendatasci._tui.commands — pure string-formatting logic."""
+"""Unit tests for opendatasci._tui.chat.commands — pure string-formatting logic."""
 
-from opendatasci._tui.commands import (
+from opendatasci._tui.chat.commands import (
     SLASH_COMMAND_DESCRIPTIONS,
     SLASH_COMMANDS,
     format_help_message,

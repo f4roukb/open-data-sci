@@ -1,11 +1,10 @@
-"""Unit tests for opendatasci._tui.tools_display."""
+"""Unit tests for opendatasci._tui.chat.tools_display."""
 
 import types
 
 import pytest
 
-from opendatasci._tui.tools_display import REGISTRY, ToolDisplay, _registry, register
-
+from opendatasci._tui.chat.tools_display import REGISTRY, ToolDisplay, _registry, register
 
 # ---------------------------------------------------------------------------
 # ToolDisplay dataclass

@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from opendatasci._tui import theme as _theme
 from opendatasci._tui.controller import CLIController, UIAdapter
+from opendatasci._tui.style import theme as _theme
 from opendatasci.configs import OpenDataSciConfig
 
 

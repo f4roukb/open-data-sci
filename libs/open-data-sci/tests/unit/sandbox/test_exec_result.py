@@ -1,6 +1,5 @@
 """Unit tests for SandboxExecResult (opendatasci.sandbox.base)."""
 
-from datetime import datetime
 
 from opendatasci.sandbox.base import SandboxExecResult
 

@@ -23,8 +23,7 @@ from textual.widgets import Input, Static
 from textual.widgets import Markdown as TUIMarkdown
 
 import opendatasci._tui as _tui_pkg
-from opendatasci._tui import theme as _theme
-from opendatasci._tui.widgets import (
+from opendatasci._tui.chat.widgets import (
     AppHeader,
     AttachmentBar,
     ChatPane,
@@ -36,11 +35,11 @@ from opendatasci._tui.widgets import (
     PendingMessagePanel,
     SmartInput,
     ThinkingBlock,
-    ToolCallBlock,
     TurnStatusBar,
     WorkspacePanel,
     _scroll_is_at_bottom,
 )
+from opendatasci._tui.style import theme as _theme
 
 
 def _plain(widget: Static) -> str:
@@ -66,7 +65,7 @@ def _markdown_plain(bubble: "MessageBubble") -> str:
 class _Harness(App[None]):
     """Minimal app hosting the production ChatPane + AppHeader."""
 
-    CSS_PATH = str(Path(_tui_pkg.__file__).parent / "styles.tcss")
+    CSS_PATH = str(Path(_tui_pkg.__file__).parent / "style" / "styles.tcss")
 
     def __init__(self) -> None:
         super().__init__()

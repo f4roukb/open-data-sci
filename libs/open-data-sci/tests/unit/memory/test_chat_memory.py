@@ -13,22 +13,22 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 
 from opendatasci._utils.message_utils import get_message_text_content, to_text_content_blocks
 from opendatasci._utils.mixins import LLMDigestibleMixin
+from opendatasci.agents.chat_history import ChatHistoryBuilder
+from opendatasci.context.plans import Plan
+from opendatasci.memory.chat_memory import (
+    ChatHistoryCompaction,
+    ChatHistoryCompactor,
+    ChatTurnContext,
+    ChatTurnSummarizer,
+    ChatTurnSummary,
+    TurnStepBatchSummary,
+)
 from opendatasci.memory.messages import (
     AgentMessage,
     PlanMessage,
     SummaryMessage,
     UserMessage,
 )
-from opendatasci.memory.chat_memory import (
-    ChatHistoryCompaction,
-    ChatHistoryCompactor,
-    ChatTurnContext,
-    ChatTurnSummary,
-    ChatTurnSummarizer,
-    TurnStepBatchSummary,
-)
-from opendatasci.agents.chat_history import ChatHistoryBuilder
-from opendatasci.context.plans import Plan
 
 _TS1 = datetime(2024, 6, 1, tzinfo=timezone.utc)
 _TS2 = datetime(2024, 6, 2, tzinfo=timezone.utc)

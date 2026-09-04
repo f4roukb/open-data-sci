@@ -16,27 +16,8 @@ from textual.containers import Horizontal
 from textual.timer import Timer
 from textual.widgets import Footer, Input
 
-from opendatasci.configs import DEFAULT_MODEL, OpenDataSciConfig
-
-from . import theme as _theme
-from .adapter import SubmitAction
-from .config.config_screen import ConfigScreen
-from .config.config_tree import (
-    ConfigLeaf,
-    ConfigNode,
-    build_model_leaf,
-    build_provider_leaf,
-    build_theme_leaf,
-)
-from .config.config_tree import (
-    initial_values as build_initial_values,
-)
-from .config.global_config import load_global_config
-from .config.onboarding import compute_missing_fields, compute_missing_selection_fields
-from .config.onboarding_screen import OnboardingScreen
-from .config.startup_wizard_screen import StartupWizardScreen
-from .controller import CLIController
-from .widgets import (
+from opendatasci._tui.adapter import SubmitAction
+from opendatasci._tui.chat.widgets import (
     AppHeader,
     ChatPane,
     CommandApprovalPrompt,
@@ -48,6 +29,27 @@ from .widgets import (
     ToolCallBlock,
     TurnStatusBar,
 )
+from opendatasci._tui.config.config_tree import (
+    ConfigLeaf,
+    ConfigNode,
+    build_model_leaf,
+    build_provider_leaf,
+    build_theme_leaf,
+)
+from opendatasci._tui.config.config_tree import (
+    initial_values as build_initial_values,
+)
+from opendatasci._tui.config.global_config import load_global_config
+from opendatasci._tui.config.onboarding import (
+    compute_missing_fields,
+    compute_missing_selection_fields,
+)
+from opendatasci._tui.controller import CLIController
+from opendatasci._tui.screens.config_screen import ConfigScreen
+from opendatasci._tui.screens.onboarding_screen import OnboardingScreen
+from opendatasci._tui.screens.startup_wizard_screen import StartupWizardScreen
+from opendatasci._tui.style import theme as _theme
+from opendatasci.configs import DEFAULT_MODEL, OpenDataSciConfig
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +91,7 @@ def _get_version() -> str:
 class OpenDataSciApp(App[None]):
     """OpenDataSci — full TUI for AI-powered data science."""
 
-    CSS_PATH = "styles.tcss"
+    CSS_PATH = "style/styles.tcss"
 
     BINDINGS = [
         Binding("ctrl+c", "request_quit", "Stop/Quit"),
@@ -219,6 +221,9 @@ class OpenDataSciApp(App[None]):
 
     def set_background_tasks(self, description: str) -> None:
         self.query_one(AppHeader).set_background_tasks(description)
+
+    def set_model_info(self, description: str) -> None:
+        self.query_one(AppHeader).set_model_info(description)
 
     def show_workspace_panel(self, files: list[str]) -> None:
         self.query_one(ChatPane).show_workspace_panel(files)

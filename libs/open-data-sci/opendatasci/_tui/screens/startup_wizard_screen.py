@@ -19,9 +19,20 @@ from textual.screen import ModalScreen
 from textual.widgets import Input, OptionList, Static
 from textual.widgets.option_list import Option
 
-from .. import theme as _theme
-from ..theme import active as theme
-from .config_tree import ConfigLeaf
+from opendatasci._tui.config.config_tree import ConfigLeaf
+from opendatasci._tui.style import theme as _theme
+from opendatasci._tui.style.theme import active as theme
+
+
+def _progress_dots(index: int, total: int) -> str:
+    """A "●●○○"-style progress row — filled for the current step and every step before it."""
+    return "".join("●" if i <= index else "○" for i in range(total))
+
+
+def _hint_chip(key: str, label: str) -> str:
+    """A small "key + label" hint chip, styled like the footer's key hints."""
+    chip_style = f"{theme['text_primary']} on {theme['separator']}"
+    return f"[{chip_style}] {key} [/{chip_style}]  [{theme['text_muted']}]{label}[/{theme['text_muted']}]"
 
 
 class StartupWizardScreen(ModalScreen[None]):
@@ -35,16 +46,19 @@ class StartupWizardScreen(ModalScreen[None]):
         width: 64;
         height: auto;
         border: round $ods-accent;
-        padding: 1 2;
         background: $ods-surface;
+    }
+    StartupWizardScreen #wizard-title {
+        background: $ods-surface-alt;
+        border-bottom: solid $ods-separator;
+        padding: 1 2;
+    }
+    StartupWizardScreen #wizard-body {
+        padding: 1 2;
     }
     StartupWizardScreen OptionList {
         height: auto;
         max-height: 14;
-        margin-top: 1;
-    }
-    StartupWizardScreen Input {
-        margin-top: 1;
     }
     """
 
@@ -74,11 +88,13 @@ class StartupWizardScreen(ModalScreen[None]):
 
     def _render_step(self) -> None:
         title, leaf = self._current
-        text = (
-            f"[bold {theme['text_primary']}]{escape(title)}[/bold {theme['text_primary']}]"
-            f" [{theme['text_muted']}]({self._index + 1}/{len(self._steps)})[/{theme['text_muted']}]"
-        )
-        self.query_one("#wizard-title", Static).update(text)
+        dots = _progress_dots(self._index, len(self._steps))
+        lines = [
+            f"[bold {theme['accent']}]{escape(title)}[/bold {theme['accent']}]"
+            f"  [{theme['accent']}]{dots}[/{theme['accent']}]",
+            _hint_chip("↑↓", "move") + "    " + _hint_chip("Enter", "select"),
+        ]
+        self.query_one("#wizard-title", Static).update("\n".join(lines))
 
         body = self.query_one("#wizard-body", Vertical)
         body.remove_children()

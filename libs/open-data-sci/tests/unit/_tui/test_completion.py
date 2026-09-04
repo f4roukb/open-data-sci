@@ -1,4 +1,4 @@
-"""Unit tests for opendatasci._tui.completion.CompletionState.
+"""Unit tests for opendatasci._tui.chat.completion.CompletionState.
 
 CompletionState is pure Python with no Textual dependency — it delegates all
 UI updates through UIAdapter.  Tests supply a mock UIAdapter so the logic is
@@ -7,8 +7,8 @@ exercised without any widget tree.
 
 from unittest.mock import MagicMock, patch
 
-from opendatasci._tui.commands import SLASH_COMMANDS
-from opendatasci._tui.completion import CompletionState
+from opendatasci._tui.chat.commands import SLASH_COMMANDS
+from opendatasci._tui.chat.completion import CompletionState
 
 # ---------------------------------------------------------------------------
 # Test helpers
@@ -159,14 +159,14 @@ class TestCompletionStateOnInputChangedAtMode:
     def test_at_fragment_with_matching_files_shows_popup(self) -> None:
         state = CompletionState()
         ui = _make_ui()
-        with patch("opendatasci._tui.completion._discover_files", return_value=["data.csv"]):
+        with patch("opendatasci._tui.chat.completion._discover_files", return_value=["data.csv"]):
             state.on_input_changed("@data", ui)
         ui.show_completion.assert_called_once()
 
     def test_at_fragment_with_no_matches_does_not_show_popup(self) -> None:
         state = CompletionState()
         ui = _make_ui()
-        with patch("opendatasci._tui.completion._discover_files", return_value=[]):
+        with patch("opendatasci._tui.chat.completion._discover_files", return_value=[]):
             state.on_input_changed("@no_match_xyz", ui)
         ui.show_completion.assert_not_called()
         assert state.has_matches is False
@@ -174,7 +174,7 @@ class TestCompletionStateOnInputChangedAtMode:
     def test_at_mode_is_set_when_file_matches_found(self) -> None:
         state = CompletionState()
         ui = _make_ui()
-        with patch("opendatasci._tui.completion._discover_files", return_value=["data.csv"]):
+        with patch("opendatasci._tui.chat.completion._discover_files", return_value=["data.csv"]):
             state.on_input_changed("@d", ui)
         assert state._mode == "file"
 
@@ -182,7 +182,7 @@ class TestCompletionStateOnInputChangedAtMode:
         state = CompletionState()
         ui = _make_ui()
         with patch(
-            "opendatasci._tui.completion._discover_files", return_value=["data.csv"]
+            "opendatasci._tui.chat.completion._discover_files", return_value=["data.csv"]
         ) as mock_discover:
             state.on_input_changed("@data", ui)
             state.on_input_changed("@data", ui)  # same fragment → should use cache
@@ -192,7 +192,7 @@ class TestCompletionStateOnInputChangedAtMode:
         state = CompletionState()
         ui = _make_ui()
         with patch(
-            "opendatasci._tui.completion._discover_files", return_value=["data.csv"]
+            "opendatasci._tui.chat.completion._discover_files", return_value=["data.csv"]
         ) as mock_discover:
             state.on_input_changed("@da", ui)
             state.on_input_changed("@dat", ui)  # fragment changed
@@ -201,7 +201,7 @@ class TestCompletionStateOnInputChangedAtMode:
     def test_at_position_stored_correctly(self) -> None:
         state = CompletionState()
         ui = _make_ui()
-        with patch("opendatasci._tui.completion._discover_files", return_value=["data.csv"]):
+        with patch("opendatasci._tui.chat.completion._discover_files", return_value=["data.csv"]):
             state.on_input_changed("describe @d", ui)
         # "@" is at index 9 in "describe @d"
         assert state._at_pos == 9

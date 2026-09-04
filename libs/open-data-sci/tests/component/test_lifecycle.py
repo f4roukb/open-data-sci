@@ -5,7 +5,6 @@ RuntimeError guards, and context-manager cleanup — each exercising
 the real integration between OpenDataSci, Session, and Agent state.
 """
 
-import pytest
 
 
 def _seed_messages(agent, messages):

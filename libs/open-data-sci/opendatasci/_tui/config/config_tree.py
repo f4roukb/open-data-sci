@@ -9,11 +9,10 @@ unit-testable without a running app.
 from dataclasses import dataclass, field
 from typing import Callable
 
+from opendatasci._tui.chat.commands import _PROVIDER_DISPLAY
+from opendatasci._tui.style import theme as _theme
 from opendatasci.configs import DEFAULT_MODEL, DEFAULT_SECONDARY_MODEL, OpenDataSciConfig
 from opendatasci.models.providers import Provider
-
-from .. import theme as _theme
-from ..commands import _PROVIDER_DISPLAY
 
 # Providers with no fixed model catalog — the model is whatever the user's
 # self-hosted endpoint exposes, so picking one always falls back to free text.

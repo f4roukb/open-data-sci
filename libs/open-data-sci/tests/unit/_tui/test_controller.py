@@ -8,9 +8,7 @@ from uuid import uuid4
 
 import pytest
 
-from opendatasci._tui import theme as _theme
-from opendatasci._tui.controller import CLIController
-from opendatasci._tui.file_refs import (
+from opendatasci._tui.chat.file_refs import (
     PasteAttachment,
     _build_agent_query,
     _build_user_display,
@@ -21,6 +19,8 @@ from opendatasci._tui.file_refs import (
     _parse_file_refs,
     _split_existing_file_refs,
 )
+from opendatasci._tui.controller import CLIController
+from opendatasci._tui.style import theme as _theme
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.memory.messages import MessageOrigin
 from opendatasci.streaming import (
@@ -407,7 +407,7 @@ class TestOnInputChanged:
         self, controller: CLIController, mock_ui: MagicMock, tmp_path: Path
     ) -> None:
         (tmp_path / "data.csv").write_text("")
-        with patch("opendatasci._tui.completion._discover_files", return_value=["data.csv"]):
+        with patch("opendatasci._tui.chat.completion._discover_files", return_value=["data.csv"]):
             controller.on_input_changed("@data")
         mock_ui.show_completion.assert_called_once()
         assert controller.has_completion_matches
@@ -420,11 +420,11 @@ class TestOnInputChanged:
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         # Popup visible from a previous @-scan that had results.
-        with patch("opendatasci._tui.completion._discover_files", return_value=["data.csv"]):
+        with patch("opendatasci._tui.chat.completion._discover_files", return_value=["data.csv"]):
             controller.on_input_changed("@data")
         assert controller.has_completion_matches
         mock_ui.reset_mock()
-        with patch("opendatasci._tui.completion._discover_files", return_value=[]):
+        with patch("opendatasci._tui.chat.completion._discover_files", return_value=[]):
             controller.on_input_changed("@nonexistent")
         mock_ui.hide_completion.assert_called()
 
@@ -432,7 +432,7 @@ class TestOnInputChanged:
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         # Popup visible before the user switches to plain text.
-        with patch("opendatasci._tui.completion._discover_files", return_value=["data.csv"]):
+        with patch("opendatasci._tui.chat.completion._discover_files", return_value=["data.csv"]):
             controller.on_input_changed("@data")
         assert controller.has_completion_matches
         mock_ui.reset_mock()
@@ -491,7 +491,7 @@ class TestCompletion:
     def test_cycle_completion_file_mode_updates_input(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        with patch("opendatasci._tui.completion._discover_files", return_value=["data.csv"]):
+        with patch("opendatasci._tui.chat.completion._discover_files", return_value=["data.csv"]):
             controller.on_input_changed("@")  # "@" at position 0
         controller.cycle_completion("@", direction=1)
         mock_ui.set_input_value.assert_called_once_with("@data.csv", 9)
@@ -1840,13 +1840,13 @@ class TestOpenConfigPanel:
     def test_initial_values_reflect_the_active_config_and_theme(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        _theme.active_name = "dracula"
+        _theme.active_name = "light"
         try:
             controller.open_config_panel()
         finally:
-            _theme.active_name = "default"
+            _theme.active_name = "default (dark, colorblind)"
         values = mock_ui.open_config_panel.call_args[0][1]
-        assert values["theme"] == "dracula"
+        assert values["theme"] == "light"
         assert values["provider"] == "anthropic"
         assert values["model"] == "claude-sonnet-4-6"
 
@@ -1865,12 +1865,12 @@ class TestApplyConfigChangesTheme:
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         try:
-            error = await controller._apply_config_changes({"theme": "dracula"})
+            error = await controller._apply_config_changes({"theme": "light"})
             assert error is None
-            assert _theme.active_name == "dracula"
+            assert _theme.active_name == "light"
             mock_ui.refresh_theme.assert_called_once()
         finally:
-            _theme.active_name = "default"
+            _theme.active_name = "default (dark, colorblind)"
 
     async def test_theme_only_change_does_not_touch_the_agent(
         self, controller: CLIController, mock_ui: MagicMock
@@ -1878,7 +1878,7 @@ class TestApplyConfigChangesTheme:
         try:
             await controller._apply_config_changes({"theme": "light"})
         finally:
-            _theme.active_name = "default"
+            _theme.active_name = "default (dark, colorblind)"
         assert controller._service is None  # never rebuilt
 
 

@@ -6,7 +6,7 @@ palettes are exported as Textual CSS variables via
 widget ``DEFAULT_CSS`` — no color literal should appear outside this module.
 """
 
-# Default dark theme — deeper backgrounds, muted accents
+# Default dark theme — deeper backgrounds, muted blue accents
 DARK: dict[str, str] = {
     "background": "#060a10",  # screen background
     "surface": "#0d1117",  # header / input / popup / code-fence background
@@ -27,25 +27,25 @@ DARK: dict[str, str] = {
     "tool_done": "#3fb950",
 }
 
-# Color-blind safe theme — Okabe-Ito palette
-VISIBLE: dict[str, str] = {
-    "background": "#060a10",
-    "surface": "#0d1117",
-    "surface_alt": "#0a1520",
-    "warning_bg": "#1c1608",
-    "accent": "#56b4e9",  # sky blue
-    "success": "#009e73",  # bluish green / teal
-    "error": "#d55e00",  # vermilion
-    "warning": "#e69f00",  # orange
-    "text_primary": "#f5f5f5",
-    "text_secondary": "#a0b0c0",
-    "text_muted": "#8090a0",
-    "text_dim": "#3d4a5c",
-    "separator": "#1e2d40",
-    "logo": "#e69f00",
-    "timer": "cyan",
-    "tool_running": "#56b4e9",
-    "tool_done": "#009e73",
+# Neutral dark grey — no colour tint, just greys
+DARK_GREY: dict[str, str] = {
+    "background": "#121212",
+    "surface": "#1e1e1e",
+    "surface_alt": "#262626",
+    "warning_bg": "#2a2318",
+    "accent": "#8ab4f8",
+    "success": "#81c995",
+    "error": "#f28b82",
+    "warning": "#fdd663",
+    "text_primary": "#e8e8e8",
+    "text_secondary": "#b0b0b0",
+    "text_muted": "#808080",
+    "text_dim": "#333333",
+    "separator": "#3a3a3a",
+    "logo": "#c9a86c",
+    "timer": "bright_white",
+    "tool_running": "#8ab4f8",
+    "tool_done": "#81c995",
 }
 
 # Light theme — light background, dark text (GitHub-inspired)
@@ -69,74 +69,78 @@ LIGHT: dict[str, str] = {
     "tool_done": "#1a7f37",
 }
 
-# Solarized Dark — Ethan Schoonover palette
-SOLARIZED: dict[str, str] = {
-    "background": "#002b36",  # base03
-    "surface": "#073642",  # base02
-    "surface_alt": "#08404e",
-    "warning_bg": "#2c2d10",
-    "accent": "#268bd2",  # blue
-    "success": "#859900",  # green
-    "error": "#dc322f",  # red
-    "warning": "#b58900",  # yellow
-    "text_primary": "#fdf6e3",  # base3
-    "text_secondary": "#93a1a1",  # base1
-    "text_muted": "#586e75",  # base01
-    "text_dim": "#073642",  # base02
-    "separator": "#0e4653",  # lighter than base02 so borders read against it
-    "logo": "#cb4b16",  # orange
-    "timer": "bright_cyan",
-    "tool_running": "#268bd2",
-    "tool_done": "#2aa198",  # cyan
+# Dark, colour-blind safe — Okabe-Ito palette on a dark background
+DARK_COLORBLIND: dict[str, str] = {
+    "background": "#060a10",
+    "surface": "#0d1117",
+    "surface_alt": "#0a1520",
+    "warning_bg": "#1c1608",
+    "accent": "#56b4e9",  # sky blue
+    "success": "#009e73",  # bluish green / teal
+    "error": "#d55e00",  # vermilion
+    "warning": "#e69f00",  # orange
+    "text_primary": "#f5f5f5",
+    "text_secondary": "#a0b0c0",
+    "text_muted": "#8090a0",
+    "text_dim": "#3d4a5c",
+    "separator": "#1e2d40",
+    "logo": "#e69f00",
+    "timer": "cyan",
+    "tool_running": "#56b4e9",
+    "tool_done": "#009e73",
 }
 
-# Dracula — popular dark palette
-DRACULA: dict[str, str] = {
-    "background": "#21222c",
-    "surface": "#282a36",  # canonical Dracula background
-    "surface_alt": "#2f3140",
-    "warning_bg": "#3b3223",
-    "accent": "#bd93f9",  # purple
-    "success": "#50fa7b",  # green
-    "error": "#ff5555",  # red
-    "warning": "#ffb86c",  # orange
-    "text_primary": "#f8f8f2",  # foreground
-    "text_secondary": "#6272a4",  # comment
-    "text_muted": "#44475a",
-    "text_dim": "#282a36",
-    "separator": "#44475a",  # Dracula current-line — visible against both backgrounds
-    "logo": "#f1fa8c",  # yellow
-    "timer": "bright_magenta",
-    "tool_running": "#8be9fd",  # cyan
-    "tool_done": "#50fa7b",
+# Light, colour-blind safe — same Okabe-Ito hues as DARK_COLORBLIND, darkened
+# where needed for contrast against a white background (mirrors how LIGHT
+# darkens DARK's colors).
+LIGHT_COLORBLIND: dict[str, str] = {
+    "background": "#ffffff",
+    "surface": "#f6f8fa",
+    "surface_alt": "#eaeef2",
+    "warning_bg": "#fff3e0",
+    "accent": "#0072b2",  # Okabe-Ito blue, darkened for contrast on white
+    "success": "#009e73",  # bluish green / teal
+    "error": "#d55e00",  # vermilion
+    "warning": "#9a5b00",  # Okabe-Ito orange, darkened for contrast on white
+    "text_primary": "#1f2328",
+    "text_secondary": "#656d76",
+    "text_muted": "#8c959f",
+    "text_dim": "#d0d7de",
+    "separator": "#d8dee4",
+    "logo": "#9a5b00",
+    "timer": "blue",
+    "tool_running": "#0072b2",
+    "tool_done": "#009e73",
 }
 
 # The keys every palette must define — styles.tcss and widget DEFAULT_CSS
 # reference each of these as a $ods-* CSS variable.
 REQUIRED_KEYS: frozenset[str] = frozenset(DARK)
 
-# Registry of selectable themes. Keys are the names users pass to --theme
-# and to the /themes command.
+# Registry of selectable themes, in display order. Keys are never typed by
+# the user — they're picked from a list in /config ▸ Display ▸ Theme — so
+# they double as the display label.
 THEMES: dict[str, dict[str, str]] = {
-    "default": DARK,
-    "accessible": VISIBLE,
+    "default (dark, colorblind)": DARK_COLORBLIND,
+    "dark": DARK,
+    "dark-grey": DARK_GREY,
     "light": LIGHT,
-    "solarized": SOLARIZED,
-    "dracula": DRACULA,
+    "light (colorblind)": LIGHT_COLORBLIND,
 }
 
 THEME_DESCRIPTIONS: dict[str, str] = {
-    "default": "Dark background with muted accents (built-in default)",
-    "accessible": "Okabe-Ito palette — colour-blind safe",
+    "default (dark, colorblind)": "Dark background, Okabe-Ito colour-blind safe palette",
+    "dark": "Dark background with muted blue accents",
+    "dark-grey": "Neutral dark grey, no colour tint",
     "light": "Light background with dark text",
-    "solarized": "Solarized Dark by Ethan Schoonover",
-    "dracula": "Dracula — vivid pastels on near-black",
+    "light (colorblind)": "Light background, Okabe-Ito colour-blind safe palette",
 }
 
-# Mutated at startup by OpenDataSciApp based on --theme flag, and at runtime
-# by set_active() when the user switches themes with /theme <name>.
-active: dict[str, str] = dict(DARK)
-active_name: str = "default"
+# Mutated at runtime by set_active() when the user switches themes via
+# /config ▸ Display ▸ Theme (and once, for the initial pick, by the
+# mandatory startup wizard).
+active: dict[str, str] = dict(DARK_COLORBLIND)
+active_name: str = "default (dark, colorblind)"
 
 
 def set_active(name: str) -> bool:

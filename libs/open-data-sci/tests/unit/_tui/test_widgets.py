@@ -1,4 +1,4 @@
-"""Unit tests for opendatasci._tui.widgets — pure logic only (no Textual app context)."""
+"""Unit tests for opendatasci._tui.chat.widgets — pure logic only (no Textual app context)."""
 
 import asyncio
 import time
@@ -10,8 +10,8 @@ from textual import events as textual_events
 from textual.widgets import Markdown as TUIMarkdown
 from textual.widgets import Static
 
-from opendatasci._tui.models import SPINNER, SPINNER_INTERVAL
-from opendatasci._tui.widgets import (
+from opendatasci._tui.chat.models import SPINNER, SPINNER_INTERVAL
+from opendatasci._tui.chat.widgets import (
     AppHeader,
     AttachmentBar,
     ChatPane,
@@ -19,13 +19,13 @@ from opendatasci._tui.widgets import (
     CommandHighlighter,
     CompletionPopup,
     MessageBubble,
+    MessagesContainer,
     PendingMessageBubble,
     PendingMessagePanel,
     SmartInput,
     ThinkingBlock,
     ToolCallBlock,
     TurnStatusBar,
-    MessagesContainer,
     WorkspacePanel,
     _InputHistory,
     _scroll_is_at_bottom,
@@ -530,7 +530,7 @@ class TestChatPaneAddTurnStatusBar:
         pane, input_bar = self._setup_pane()
         bar = MagicMock()
 
-        with patch("opendatasci._tui.widgets.TurnStatusBar", return_value=bar):
+        with patch("opendatasci._tui.chat.widgets.TurnStatusBar", return_value=bar):
             result = pane.add_turn_status_bar()
 
         pane.mount.assert_called_once_with(bar, after=input_bar)
@@ -540,7 +540,7 @@ class TestChatPaneAddTurnStatusBar:
         stale_a, stale_b = MagicMock(), MagicMock()
         pane, _ = self._setup_pane(existing_bars=[stale_a, stale_b])
 
-        with patch("opendatasci._tui.widgets.TurnStatusBar", return_value=MagicMock()):
+        with patch("opendatasci._tui.chat.widgets.TurnStatusBar", return_value=MagicMock()):
             pane.add_turn_status_bar()
 
         stale_a.remove.assert_called_once()
@@ -550,7 +550,7 @@ class TestChatPaneAddTurnStatusBar:
         pane, input_bar = self._setup_pane()
         bar = MagicMock()
 
-        with patch("opendatasci._tui.widgets.TurnStatusBar", return_value=bar):
+        with patch("opendatasci._tui.chat.widgets.TurnStatusBar", return_value=bar):
             pane.add_turn_status_bar()
 
         pane.mount.assert_called_once_with(bar, after=input_bar)
@@ -559,7 +559,7 @@ class TestChatPaneAddTurnStatusBar:
         pane, _ = self._setup_pane()
         bar = MagicMock()
 
-        with patch("opendatasci._tui.widgets.TurnStatusBar", return_value=bar):
+        with patch("opendatasci._tui.chat.widgets.TurnStatusBar", return_value=bar):
             result = pane.add_turn_status_bar()
 
         assert result is bar
@@ -1142,7 +1142,7 @@ class TestThinkingBlock:
         assert "Thought for 5s" in rendered.plain
 
     def test_finish_uses_text_muted_color(self) -> None:
-        from opendatasci._tui import theme as _theme
+        from opendatasci._tui.style import theme as _theme
 
         block = self._make_block()
         block._spin_timer = None
@@ -1820,7 +1820,7 @@ class TestPendingMessagePanelAddPending:
         panel.mount = MagicMock()
         bubble_sentinel = MagicMock()
 
-        with patch("opendatasci._tui.widgets.PendingMessageBubble", return_value=bubble_sentinel):
+        with patch("opendatasci._tui.chat.widgets.PendingMessageBubble", return_value=bubble_sentinel):
             panel.add_pending("queued message")
 
         panel.mount.assert_called_once_with(bubble_sentinel, before=0)
@@ -1829,7 +1829,7 @@ class TestPendingMessagePanelAddPending:
         panel = PendingMessagePanel.__new__(PendingMessagePanel)
         panel.mount = MagicMock()
 
-        with patch("opendatasci._tui.widgets.PendingMessageBubble") as mock_cls:
+        with patch("opendatasci._tui.chat.widgets.PendingMessageBubble") as mock_cls:
             mock_cls.return_value = MagicMock()
             panel.add_pending("text to queue")
 
@@ -1840,7 +1840,7 @@ class TestPendingMessagePanelAddPending:
         panel.mount = MagicMock()
         sentinel = MagicMock()
 
-        with patch("opendatasci._tui.widgets.PendingMessageBubble", return_value=sentinel):
+        with patch("opendatasci._tui.chat.widgets.PendingMessageBubble", return_value=sentinel):
             result = panel.add_pending("msg")
 
         assert result is sentinel

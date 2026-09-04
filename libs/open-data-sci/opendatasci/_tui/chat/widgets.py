@@ -28,9 +28,9 @@ try:
 except ImportError:
     _TUIImage = None
 
-from .commands import SLASH_COMMANDS
-from .models import SPINNER, SPINNER_INTERVAL
-from .theme import active as theme
+from opendatasci._tui.chat.commands import SLASH_COMMANDS
+from opendatasci._tui.chat.models import SPINNER, SPINNER_INTERVAL
+from opendatasci._tui.style.theme import active as theme
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ class AppHeader(Widget):
     """Docked top bar: logo left, version/workspace info right."""
 
     DEFAULT_CSS = """
-    #header-layout { layout: horizontal; height: 4; }
+    #header-layout { layout: horizontal; height: 6; }
     """
 
     def __init__(
@@ -80,8 +80,9 @@ class AppHeader(Widget):
         self._workspace = workspace
         self._workspace_name = workspace_name
         self._file_count: str = ""
+        self._model_info: str = ""
         self._background_tasks: str = ""
-        _logo_path = Path(__file__).parents[4] / "docs" / "logo.png"
+        _logo_path = Path(__file__).parents[5] / "docs" / "logo.png"
         self._use_image = _TUIImage is not None and _logo_path.exists()
         self._logo_path = _logo_path
 
@@ -118,6 +119,10 @@ class AppHeader(Widget):
         if self._workspace_name:
             t.append("   Workspace  ", style=lbl)
             t.append(self._workspace_name, style=theme["accent"])
+        if self._model_info:
+            t.append("\n")
+            t.append("Model      ", style=lbl)
+            t.append(self._model_info, style=theme["accent"])
         if self._background_tasks:
             t.append("\n")
             t.append("Background ", style=lbl)
@@ -130,6 +135,10 @@ class AppHeader(Widget):
 
     def set_file_count(self, description: str) -> None:
         self._file_count = description
+        self._render_info()
+
+    def set_model_info(self, description: str) -> None:
+        self._model_info = description
         self._render_info()
 
     def set_background_tasks(self, description: str) -> None:

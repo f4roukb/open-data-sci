@@ -12,11 +12,10 @@ that involves several real subsystems wired together:
 import asyncio
 from unittest.mock import AsyncMock, patch
 
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage
 
 from opendatasci.agents.agents import Invocation
 from opendatasci.agents.states import AgentState
-from opendatasci.tools.factory import ToolName
 
 
 def _ai_with_tool_call(name: str, args: dict, call_id: str = "call_1") -> AIMessage:

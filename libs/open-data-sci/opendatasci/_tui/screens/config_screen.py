@@ -15,6 +15,7 @@ prompting Save/Discard first if anything was changed.
 from typing import Awaitable, Callable, Literal
 
 from rich.markup import escape
+from rich.text import Text
 from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -24,11 +25,21 @@ from textual.screen import ModalScreen
 from textual.widgets import Input, OptionList, Static
 from textual.widgets.option_list import Option
 
-from ..theme import active as theme
-from .config_tree import ConfigLeaf, ConfigNode, diff_values
+from opendatasci._tui.config.config_tree import ConfigLeaf, ConfigNode, diff_values
+from opendatasci._tui.style.theme import active as theme
 
 _SAVE = "Save changes"
 _DISCARD = "Discard changes"
+
+
+def _hint_chip(key: str, label: str) -> str:
+    """A small "key + label" hint chip, styled like the footer's key hints."""
+    chip_style = f"{theme['text_primary']} on {theme['separator']}"
+    return f"[{chip_style}] {key} [/{chip_style}]  [{theme['text_muted']}]{label}[/{theme['text_muted']}]"
+
+
+def _hint_bar(pairs: list[tuple[str, str]]) -> str:
+    return "    ".join(_hint_chip(key, label) for key, label in pairs)
 
 
 class _NavigateBack(Message):
@@ -78,16 +89,19 @@ class ConfigScreen(ModalScreen[None]):
         height: auto;
         max-height: 80%;
         border: round $ods-accent;
-        padding: 1 2;
         background: $ods-surface;
     }
     ConfigScreen #config-breadcrumb {
-        margin-bottom: 1;
+        background: $ods-surface-alt;
+        border-bottom: solid $ods-separator;
+        padding: 1 2;
+    }
+    ConfigScreen #config-body {
+        padding: 1 2;
     }
     ConfigScreen OptionList {
         height: auto;
         max-height: 16;
-        background: $ods-surface;
     }
     """
 
@@ -136,13 +150,13 @@ class ConfigScreen(ModalScreen[None]):
     def _breadcrumb_text(self) -> None:
         crumbs = " › ".join(n.label for n in self._path)
         hint = (
-            "↑↓ move  Enter/→ select  ← back  Esc close"
+            _hint_bar([("↑↓", "move"), ("Enter/→", "select"), ("←", "back"), ("Esc", "close")])
             if self._mode != "confirm"
-            else "↑↓ move  Enter select  Esc keep editing"
+            else _hint_bar([("↑↓", "move"), ("Enter", "select"), ("Esc", "keep editing")])
         )
         lines = [
-            f"[bold {theme['text_primary']}]{escape(crumbs)}[/bold {theme['text_primary']}]",
-            f"[dim {theme['text_muted']}]{hint}[/dim {theme['text_muted']}]",
+            f"[bold {theme['accent']}]{escape(crumbs)}[/bold {theme['accent']}]",
+            hint,
         ]
         if self._error:
             lines.append(f"[{theme['error']}]{escape(self._error)}[/{theme['error']}]")
@@ -200,7 +214,16 @@ class ConfigScreen(ModalScreen[None]):
         self._breadcrumb_text()
         self._clear_body()
         body = self.query_one("#config-body", Vertical)
-        options = [Option(_SAVE, id=_SAVE), Option(_DISCARD, id=_DISCARD)]
+        options = [
+            Option(
+                Text.from_markup(f"[bold {theme['success']}]{_SAVE}[/bold {theme['success']}]"),
+                id=_SAVE,
+            ),
+            Option(
+                Text.from_markup(f"[{theme['text_secondary']}]{_DISCARD}[/{theme['text_secondary']}]"),
+                id=_DISCARD,
+            ),
+        ]
         option_list = _ConfigOptionList(*options)
         body.mount(option_list)
         option_list.focus()

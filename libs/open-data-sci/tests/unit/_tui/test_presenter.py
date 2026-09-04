@@ -1,20 +1,20 @@
-"""Unit tests for _TurnPresenter (opendatasci._tui.presenter)."""
+"""Unit tests for _TurnPresenter (opendatasci._tui.chat.presenter)."""
 
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from opendatasci._tui.chat.presenter import _TurnPresenter, apply_usage_event
 from opendatasci.streaming.events import (
     ReasoningEvent,
     SubagentEvent,
+    TaskDoneEvent,
     TokenEvent,
     ToolCallEvent,
     ToolCommunicationEvent,
     ToolResultEvent,
     UsageEvent,
-    TaskDoneEvent,
 )
-from opendatasci._tui.presenter import _TurnPresenter, apply_usage_event
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -637,7 +637,7 @@ class TestSubagentEventActivityFallbacks:
         """When the subagent event carries no summary but the tool has a
         ToolDisplay in REGISTRY, the row activity must surface the registry
         label instead of the raw tool name."""
-        from opendatasci._tui.tools_display import ToolDisplay, _registry, register
+        from opendatasci._tui.chat.tools_display import ToolDisplay, _registry, register
 
         original = _registry.get("fake_demo_tool")
         register("fake_demo_tool", ToolDisplay(label="Demo Tool"))
@@ -695,7 +695,7 @@ class TestMakeLabel:
         assert label == "My Mcp Tool Name"
 
     def test_registered_tool_uses_display_label(self) -> None:
-        from opendatasci._tui.tools_display import ToolDisplay
+        from opendatasci._tui.chat.tools_display import ToolDisplay
 
         td = ToolDisplay(label="Run Code")
         event = ToolCallEvent(tool="execute_python_code", tool_call_id="tc1", summary="")
@@ -765,6 +765,6 @@ class TestUncorrelatedToolResult:
 
         ui = _make_ui()
         p = _TurnPresenter(ui)
-        with caplog.at_level(logging.WARNING, logger="opendatasci._tui.presenter"):
+        with caplog.at_level(logging.WARNING, logger="opendatasci._tui.chat.presenter"):
             p.handle_tool_result(ToolResultEvent(tool_call_id="ghost-id"))
         assert any("uncorrelated" in r.message for r in caplog.records)

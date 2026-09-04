@@ -9,12 +9,15 @@ Concerns deliberately kept here:
   - The /config, /models, /providers config panel (open_config_panel + _apply_config_changes)
 
 Everything else has been extracted into focused sibling modules:
-  - adapter.py     — UIAdapter + handle ABCs
-  - commands.py    — SLASH_COMMANDS registry + display formatters
-  - completion.py  — CompletionState (tab-completion logic)
-  - config/         — data model + screens behind /config, /models, /providers, onboarding
-  - file_refs.py   — @file-ref parsing helpers
-  - presenter.py   — _TurnPresenter (streaming event dispatch)
+  - adapter.py — UIAdapter + handle ABCs
+  - chat/      — the chat screen: widgets, streaming presenter, pending-message
+                 queue, @file-refs, tab-completion, tool-display metadata, and
+                 the SLASH_COMMANDS registry
+  - config/    — pure-logic data model behind /config, /models, /providers and
+                 the onboarding/secrets schema (no Textual)
+  - screens/   — the ModalScreens that render config/'s data (ConfigScreen,
+                 OnboardingScreen, StartupWizardScreen)
+  - style/     — theme palettes + styles.tcss
 """
 
 import asyncio
@@ -29,8 +32,33 @@ from uuid import UUID
 
 from rich.markup import escape as escape_markup
 
+from opendatasci._tui.adapter import (
+    PendingMessageHandle,
+    SubmitAction,
+    TurnStatusHandle,
+    UIAdapter,
+)
+from opendatasci._tui.chat.commands import (
+    _PROVIDER_DISPLAY,
+    format_help_message,
+    format_missing_api_key_message,
+)
+from opendatasci._tui.chat.completion import CompletionState
+from opendatasci._tui.chat.file_refs import (
+    PasteAttachment,
+    _build_agent_query,
+    _build_user_display,
+    _parse_file_refs,
+    _split_existing_file_refs,
+)
+from opendatasci._tui.chat.message_queue import PendingMessageQueue
+from opendatasci._tui.chat.presenter import _TurnPresenter, apply_usage_event
+from opendatasci._tui.config.config_tree import build_config_tree
+from opendatasci._tui.config.config_tree import initial_values as build_initial_values
 from opendatasci._tui.service import OpenDataSciTuiService
 from opendatasci._tui.session import CLISessionInfo
+from opendatasci._tui.style import theme as _theme
+from opendatasci._tui.style.theme import active as theme
 from opendatasci._utils.background_tasks_utils import merge_task_updates
 from opendatasci.agents.agents import Invocation
 from opendatasci.agents.agents_factory import create_agent
@@ -54,28 +82,6 @@ from opendatasci.streaming.events import (
 )
 from opendatasci.tasks.base import BackgroundTaskStatus, BackgroundTaskUpdate
 from opendatasci.tools.mcp import load_mcp_servers
-
-from . import theme as _theme
-from .adapter import (
-    PendingMessageHandle,
-    SubmitAction,
-    TurnStatusHandle,
-    UIAdapter,
-)
-from .commands import format_help_message, format_missing_api_key_message
-from .completion import CompletionState
-from .config.config_tree import build_config_tree
-from .config.config_tree import initial_values as build_initial_values
-from .file_refs import (
-    PasteAttachment,
-    _build_agent_query,
-    _build_user_display,
-    _parse_file_refs,
-    _split_existing_file_refs,
-)
-from .message_queue import PendingMessageQueue
-from .presenter import _TurnPresenter, apply_usage_event
-from .theme import active as theme
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +205,7 @@ class CLIController:
 
             info = CLISessionInfo.from_path(self._workspace_path, workspace_path, cfg)
             ui.set_file_count(self._describe_data(info))
+            ui.set_model_info(self._describe_model(cfg))
             self._background_watcher_task = asyncio.create_task(self._watch_background_tasks())
             self._background_status_task = asyncio.create_task(self._poll_background_task_status())
         except FileNotFoundError:
@@ -241,6 +248,15 @@ class CLIController:
             count = getattr(info, "workspace_count", 0)
             return f"{count} file{'s' if count != 1 else ''}"
         return ""
+
+    @staticmethod
+    def _describe_model(cfg: OpenDataSciConfig) -> str:
+        """Short "Provider  model-id" label shown in the header."""
+        try:
+            provider_label = _PROVIDER_DISPLAY[Provider(cfg.provider)]
+        except (KeyError, ValueError):
+            provider_label = str(cfg.provider).title()
+        return f"{provider_label}  {cfg.model}"
 
     # ── Input change ──────────────────────────────────────────────────────────
 

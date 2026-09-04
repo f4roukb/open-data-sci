@@ -9,9 +9,9 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, Static
 
-from ..theme import active as theme
-from .global_config import save_global_config_value
-from .onboarding import RequiredField
+from opendatasci._tui.config.global_config import save_global_config_value
+from opendatasci._tui.config.onboarding import RequiredField
+from opendatasci._tui.style.theme import active as theme
 
 
 class OnboardingScreen(ModalScreen[None]):
