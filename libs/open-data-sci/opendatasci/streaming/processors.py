@@ -7,7 +7,9 @@ from langgraph.errors import GraphBubbleUp
 
 from opendatasci._utils.message_utils import get_message_text_content
 from opendatasci.streaming.events import (
+    IMAGE_ARTIFACT_KIND,
     AgentStreamEvent,
+    ImageRenderEvent,
     MessageEvent,
     ReasoningEvent,
     SubagentEvent,
@@ -384,6 +386,15 @@ class AgentTurnStreamProcessor:
                 is_error=is_error,
             )
         )
+        artifact = getattr(output, "artifact", None)
+        if isinstance(artifact, dict) and artifact.get("kind") == IMAGE_ARTIFACT_KIND:
+            out.append(
+                ImageRenderEvent(
+                    path=artifact.get("path", ""),
+                    caption=artifact.get("caption", ""),
+                    tool_call_id=tool_call_id,
+                )
+            )
         return out
 
     def _handle_tool_error(self, event: dict[str, Any]) -> list[AgentStreamEvent]:

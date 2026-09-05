@@ -6,6 +6,7 @@ import pytest
 
 from opendatasci._tui.chat.presenter import _TurnPresenter, apply_usage_event
 from opendatasci.streaming.events import (
+    ImageRenderEvent,
     ReasoningEvent,
     SubagentEvent,
     TaskDoneEvent,
@@ -764,3 +765,24 @@ class TestUncorrelatedToolResult:
         with caplog.at_level(logging.WARNING, logger="opendatasci._tui.chat.presenter"):
             p.handle_tool_result(ToolResultEvent(tool_call_id="ghost-id"))
         assert any("uncorrelated" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# handle_image_render
+# ---------------------------------------------------------------------------
+
+
+class TestHandleImageRender:
+    def test_delegates_path_and_caption_to_ui(self) -> None:
+        ui = _make_ui()
+        p = _TurnPresenter(ui)
+        p.handle_image_render(
+            ImageRenderEvent(path="/ws/chart.png", caption="Revenue", tool_call_id="tc1")
+        )
+        ui.add_image_block.assert_called_once_with("/ws/chart.png", "Revenue")
+
+    def test_empty_caption_forwarded_as_is(self) -> None:
+        ui = _make_ui()
+        p = _TurnPresenter(ui)
+        p.handle_image_render(ImageRenderEvent(path="/ws/chart.png", caption=""))
+        ui.add_image_block.assert_called_once_with("/ws/chart.png", "")

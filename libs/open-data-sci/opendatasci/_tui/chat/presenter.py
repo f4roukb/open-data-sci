@@ -18,6 +18,7 @@ from opendatasci._tui.adapter import (
 from opendatasci._tui.chat.tools_display import REGISTRY, ToolDisplay
 from opendatasci.streaming.events import (
     ErrorEvent,
+    ImageRenderEvent,
     ReasoningEvent,
     ResponseEvent,
     SubagentEvent,
@@ -207,6 +208,9 @@ class _TurnPresenter:
             self._ephemerals.append(block)
             if tool_call_id:
                 self._ephemerals_by_id[tool_call_id] = block
+
+    def handle_image_render(self, event: ImageRenderEvent) -> None:
+        self._ui.add_image_block(event.path, event.caption)
 
     def handle_task_done(self, event: TaskDoneEvent) -> None:
         if self._task_block is not None and event.task_idx is not None:

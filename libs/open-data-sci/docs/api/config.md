@@ -79,7 +79,7 @@ config = OpenDataSciConfig.from_yaml("opendatasci_config.yaml")
 | Field | Env var | Default | Description |
 |-------|---------|---------|-------------|
 | `name` | `NAME` | `"Sai"` | Agent display name, injected into all system prompts |
-| `midturn_compaction_threshold` | `MIDTURN_COMPACTION_THRESHOLD` | `96000` | Token count after which the agent's context is compacted mid-turn |
+| `autocompaction_threshold` | `AUTOCOMPACTION_THRESHOLD` | `96000` | Token count after which the agent's context is compacted mid-turn |
 | `worker_timeout_seconds` | `WORKER_TIMEOUT_SECONDS` | `300.0` | Max seconds for all spawned workers to finish (`null` = no timeout) |
 
 ### Skills
@@ -133,7 +133,7 @@ primary_temperature: 0.1
 name: Sai
 
 worker_timeout_seconds: 600
-midturn_compaction_threshold: 80000
+autocompaction_threshold: 80000
 ```
 
 ```python

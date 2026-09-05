@@ -274,6 +274,62 @@ class TestStreamEventProcessor:
         assert len(tool_results) == 1
         assert tool_results[0].tool_call_id == "msg-tc"
 
+    def test_process_tool_end_image_artifact_emits_image_render_event(self) -> None:
+        p = self._proc()
+        tool_msg = ToolMessage(
+            content="Displayed image: /ws/chart.png",
+            tool_call_id="tc-img",
+            artifact={"kind": "image", "path": "/ws/chart.png", "caption": "Revenue"},
+        )
+        event = {"event": "on_tool_end", "data": {"output": tool_msg}}
+        results = p.process_event(event)
+        image_events = [e for e in results if e.type == "image_render"]
+        assert len(image_events) == 1
+        assert image_events[0].path == "/ws/chart.png"
+        assert image_events[0].caption == "Revenue"
+        assert image_events[0].tool_call_id == "tc-img"
+
+    def test_process_tool_end_image_artifact_still_emits_tool_result(self) -> None:
+        """The image_render event is additional — the ordinary tool_result must still fire."""
+        p = self._proc()
+        tool_msg = ToolMessage(
+            content="Displayed image: /ws/chart.png",
+            tool_call_id="tc-img",
+            artifact={"kind": "image", "path": "/ws/chart.png", "caption": ""},
+        )
+        event = {"event": "on_tool_end", "data": {"output": tool_msg}}
+        results = p.process_event(event)
+        tool_results = [e for e in results if e.type == "tool_result"]
+        assert len(tool_results) == 1
+        assert tool_results[0].content == "Displayed image: /ws/chart.png"
+
+    def test_process_tool_end_non_image_artifact_kind_ignored(self) -> None:
+        p = self._proc()
+        tool_msg = ToolMessage(
+            content="result", tool_call_id="tc1", artifact={"kind": "something_else"}
+        )
+        event = {"event": "on_tool_end", "data": {"output": tool_msg}}
+        results = p.process_event(event)
+        assert not any(e.type == "image_render" for e in results)
+
+    def test_process_tool_end_no_artifact_emits_no_image_render_event(self) -> None:
+        p = self._proc()
+        tool_msg = ToolMessage(content="result", tool_call_id="tc1")
+        event = {"event": "on_tool_end", "data": {"output": tool_msg}}
+        results = p.process_event(event)
+        assert not any(e.type == "image_render" for e in results)
+
+    def test_process_tool_end_failed_render_image_artifact_none_emits_no_event(self) -> None:
+        """render_image returns (error_message, None) on validation failure —
+        no image_render event should fire when there is nothing to render."""
+        p = self._proc()
+        tool_msg = ToolMessage(
+            content="'bad.png' is not a valid image file.", tool_call_id="tc1", artifact=None
+        )
+        event = {"event": "on_tool_end", "data": {"output": tool_msg}}
+        results = p.process_event(event)
+        assert not any(e.type == "image_render" for e in results)
+
     def test_process_tool_error_emits_error_tool_result(self) -> None:
         """When a tool raises instead of returning, LangChain emits on_tool_error
         rather than on_tool_end. Without a handler, no tool_result is ever

@@ -178,6 +178,12 @@ class TestRegistryContents:
     def test_list_workspace_files_label(self) -> None:
         assert REGISTRY["list_workspace_files"].label == "Listing workspace files"
 
+    def test_render_image_label(self) -> None:
+        assert REGISTRY["render_image"].label == "Displaying image"
+
+    def test_render_image_summary_arg(self) -> None:
+        assert REGISTRY["render_image"].summary_arg == "summary"
+
     # ── Web ───────────────────────────────────────────────────────────────────
 
     def test_web_search_label(self) -> None:

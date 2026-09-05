@@ -22,6 +22,7 @@ from opendatasci.tools.coding import (
     create_coding_tools,
 )
 from opendatasci.tools.dataset_info import create_data_context_tools
+from opendatasci.tools.media import create_media_tools
 from opendatasci.tools.modes import create_mode_tools
 from opendatasci.tools.skills import create_skill_tools
 from opendatasci.tools.tasks import create_task_management_tools, create_task_tools
@@ -52,6 +53,7 @@ class ToolName(StrEnum):
     UPDATE_DATASET_INFO = auto()
     PROFILE_DATASET = auto()
     LIST_WORKSPACE_FILES = auto()
+    RENDER_IMAGE = auto()
     WEB_SEARCH = auto()
     FETCH_URL = auto()
     ASK_USER_MCQ = auto()
@@ -66,6 +68,7 @@ def _base_tools(
     persist: bool = True,
     approval_manager: HumanApprovalBaseManager | None = None,
     background_task_manager: BackgroundTaskManagerBase | None = None,
+    enable_image_rendering: bool = False,
 ) -> list[BaseTool]:
     tools: list[BaseTool] = [
         *create_coding_tools(sandbox, background_task_manager=background_task_manager),
@@ -74,7 +77,10 @@ def _base_tools(
         *create_skill_tools(skill_store),
     ]
     if isinstance(workspace, LocalWorkspace):
-        tools.extend(create_workspace_tools(Path(workspace.get_reference())))
+        workspace_path = Path(workspace.get_reference())
+        tools.extend(create_workspace_tools(workspace_path))
+        if enable_image_rendering:
+            tools.extend(create_media_tools(workspace_path))
     return tools
 
 
@@ -83,12 +89,14 @@ def create_worker_agent_tools(
     context_store: BaseContextStore | None,
     sandbox: BaseSandbox | None = None,
     skill_store: BaseSkillStore | None = None,
+    datasci_config: OpenDataSciConfig | None = None,
 ) -> list[BaseTool]:
     """Return the tool list for a worker agent.
 
     Workers share the same core tools as the main agent but cannot spawn
     further sub-workers, plan, or access the web.
     """
+    datasci_config = datasci_config or OpenDataSciConfig()
     if sandbox is None:
         from opendatasci.sandbox.srt import SRTSandbox
 
@@ -102,7 +110,14 @@ def create_worker_agent_tools(
             [user_skills_dir] if user_skills_dir is not None else None,
             [user_domains_dir] if user_domains_dir is not None else None,
         )
-    return _base_tools(workspace, sandbox, context_store, skill_store, persist=False)
+    return _base_tools(
+        workspace,
+        sandbox,
+        context_store,
+        skill_store,
+        persist=False,
+        enable_image_rendering=datasci_config.enable_image_rendering,
+    )
 
 
 def create_execution_mode_tools(
@@ -156,6 +171,7 @@ def create_execution_mode_tools(
         skill_store,
         approval_manager=approval_manager,
         background_task_manager=background_task_manager,
+        enable_image_rendering=datasci_config.enable_image_rendering,
     )
     tools.extend(create_code_verification_tools(datasci_config))
     tools.extend(create_mode_tools(skill_store, context_store, session_id))

@@ -3,6 +3,7 @@
 import asyncio
 import time
 from collections.abc import Callable
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
@@ -10,6 +11,7 @@ from rich.text import Text
 from textual import events as textual_events
 from textual.widgets import Markdown as TUIMarkdown
 from textual.widgets import Static
+from textual_image.widget import AutoImage
 
 from opendatasci._tui.chat.models import SPINNER, SPINNER_INTERVAL
 from opendatasci._tui.chat.widgets import (
@@ -19,6 +21,7 @@ from opendatasci._tui.chat.widgets import (
     CommandApprovalPrompt,
     CommandHighlighter,
     CompletionPopup,
+    ImageBlock,
     MessageBubble,
     MessagesContainer,
     PendingMessageBubble,
@@ -2077,3 +2080,174 @@ class TestChatPaneMountAutoScroll:
         pane._mount_in_messages = MagicMock()
         block = pane.add_ephemeral_block("comm", "label", "summary")
         pane._mount_in_messages.assert_called_once_with(block)
+
+    def test_add_image_block_uses_autoscroll_mount(self) -> None:
+        pane = _make_chat_pane()
+        pane._mount_in_messages = MagicMock()
+        pane.add_image_block("/ws/chart.png", "Revenue")
+        mounted = pane._mount_in_messages.call_args.args[0]
+        assert isinstance(mounted, ImageBlock)
+        assert mounted._path == "/ws/chart.png"
+        assert mounted._caption == "Revenue"
+
+
+# ---------------------------------------------------------------------------
+# ImageBlock — rendering (no DOM)
+# ---------------------------------------------------------------------------
+
+
+def _make_image_block(path: str = "/ws/chart.png", caption: str = "") -> ImageBlock:
+    """Instantiate ImageBlock bypassing Textual Widget.__init__."""
+    block = ImageBlock.__new__(ImageBlock)
+    block._path = path
+    block._caption = caption
+    return block
+
+
+def _write_png(path) -> str:  # noqa: ANN001 - tmp_path fixture-typed Path
+    """AutoImage reads the file eagerly at construction, so tests exercising
+    the success path need a real image on disk rather than a fake path."""
+    from PIL import Image as PILImage
+
+    png_path = path / "chart.png"
+    PILImage.new("RGB", (4, 4), color="red").save(png_path, format="PNG")
+    return str(png_path)
+
+
+class TestImageBlockComposition:
+    def test_valid_image_yields_auto_image_when_graphics_supported(self, tmp_path) -> None:  # noqa: ANN001
+        image_path = _write_png(tmp_path)
+        block = _make_image_block(image_path)
+        with (
+            patch("opendatasci._tui.image_render.validate_static_image"),
+            patch(
+                "opendatasci._tui.graphics_utils.terminal_supports_image_graphics",
+                return_value=True,
+            ),
+        ):
+            children = list(block.compose())
+        assert len(children) == 1
+        assert isinstance(children[0], AutoImage)
+        assert children[0].image == image_path
+
+    def test_valid_image_with_caption_yields_auto_image_and_caption(self, tmp_path) -> None:  # noqa: ANN001
+        image_path = _write_png(tmp_path)
+        block = _make_image_block(image_path, caption="Monthly revenue")
+        with (
+            patch("opendatasci._tui.image_render.validate_static_image"),
+            patch(
+                "opendatasci._tui.graphics_utils.terminal_supports_image_graphics",
+                return_value=True,
+            ),
+        ):
+            children = list(block.compose())
+        assert len(children) == 2
+        assert isinstance(children[0], AutoImage)
+        caption_widget = children[1]
+        assert isinstance(caption_widget, Static)
+        assert "image-caption" in caption_widget.classes
+        assert "Monthly revenue" in str(caption_widget.render())
+
+    def test_valid_image_without_caption_yields_only_auto_image(self, tmp_path) -> None:  # noqa: ANN001
+        image_path = _write_png(tmp_path)
+        block = _make_image_block(image_path, caption="")
+        with (
+            patch("opendatasci._tui.image_render.validate_static_image"),
+            patch(
+                "opendatasci._tui.graphics_utils.terminal_supports_image_graphics",
+                return_value=True,
+            ),
+        ):
+            children = list(block.compose())
+        assert len(children) == 1
+        assert isinstance(children[0], AutoImage)
+
+    def test_unsupported_image_falls_back_to_text_notice(self) -> None:
+        from opendatasci._tui.image_render import UnsupportedImageError
+
+        block = _make_image_block()
+        with patch(
+            "opendatasci._tui.image_render.validate_static_image",
+            side_effect=UnsupportedImageError("not a recognized image file"),
+        ):
+            children = list(block.compose())
+        assert len(children) == 1
+        assert isinstance(children[0], Static)
+        message = str(children[0].render())
+        assert "Could not display image" in message
+        assert "not a recognized image file" in message
+
+    def test_unsupported_image_never_yields_auto_image(self) -> None:
+        from opendatasci._tui.image_render import UnsupportedImageError
+
+        block = _make_image_block()
+        with patch(
+            "opendatasci._tui.image_render.validate_static_image",
+            side_effect=UnsupportedImageError("bad"),
+        ):
+            children = list(block.compose())
+        assert not any(isinstance(c, AutoImage) for c in children)
+
+
+# ---------------------------------------------------------------------------
+# ImageBlock — browser-link fallback (no native graphics protocol)
+# ---------------------------------------------------------------------------
+
+
+class TestImageBlockBrowserLinkFallback:
+    def _compose_without_graphics(self, block: ImageBlock, preview_uri: str) -> list:
+        with (
+            patch("opendatasci._tui.image_render.validate_static_image"),
+            patch(
+                "opendatasci._tui.graphics_utils.terminal_supports_image_graphics",
+                return_value=False,
+            ),
+            patch(
+                "opendatasci._tui.image_render.build_browser_preview",
+                return_value=preview_uri,
+            ) as mock_build,
+        ):
+            children = list(block.compose())
+        return children, mock_build
+
+    def test_no_graphics_support_yields_link_instead_of_auto_image(self, tmp_path) -> None:  # noqa: ANN001
+        image_path = _write_png(tmp_path)
+        block = _make_image_block(image_path)
+        children, _ = self._compose_without_graphics(block, "file:///tmp/preview.html")
+        assert not any(isinstance(c, AutoImage) for c in children)
+        assert isinstance(children[0], Static)
+        assert "image-link" in children[0].classes
+
+    def test_link_style_points_at_generated_preview_uri(self, tmp_path) -> None:  # noqa: ANN001
+        image_path = _write_png(tmp_path)
+        block = _make_image_block(image_path)
+        preview_uri = "file:///tmp/opendatasci-image-xyz.html"
+        children, _ = self._compose_without_graphics(block, preview_uri)
+        link_text = children[0].render()
+        assert any(preview_uri in str(span.style) for span in link_text.spans)
+
+    def test_link_label_includes_caption_when_present(self, tmp_path) -> None:  # noqa: ANN001
+        image_path = _write_png(tmp_path)
+        block = _make_image_block(image_path, caption="Monthly revenue")
+        children, _ = self._compose_without_graphics(block, "file:///tmp/preview.html")
+        assert "Monthly revenue" in children[0].render().plain
+
+    def test_link_label_omits_dash_when_no_caption(self, tmp_path) -> None:  # noqa: ANN001
+        image_path = _write_png(tmp_path)
+        block = _make_image_block(image_path, caption="")
+        children, _ = self._compose_without_graphics(block, "file:///tmp/preview.html")
+        assert "View image" in children[0].render().plain
+        assert "—" not in children[0].render().plain
+
+    def test_caption_still_rendered_separately_below_the_link(self, tmp_path) -> None:  # noqa: ANN001
+        image_path = _write_png(tmp_path)
+        block = _make_image_block(image_path, caption="Monthly revenue")
+        children, _ = self._compose_without_graphics(block, "file:///tmp/preview.html")
+        assert len(children) == 2
+        assert "image-caption" in children[1].classes
+
+    def test_build_browser_preview_called_with_path_and_caption(self, tmp_path) -> None:  # noqa: ANN001
+        image_path = _write_png(tmp_path)
+        block = _make_image_block(image_path, caption="Monthly revenue")
+        _, mock_build = self._compose_without_graphics(block, "file:///tmp/preview.html")
+        mock_build.assert_called_once_with(Path(image_path), "Monthly revenue")
