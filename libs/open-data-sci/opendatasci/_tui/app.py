@@ -250,6 +250,9 @@ class OpenDataSciApp(App[None]):
     def hide_attachment(self) -> None:
         self.query_one(ChatPane).hide_attachment()
 
+    def add_image_block(self, path: str, caption: str) -> None:
+        self.query_one(ChatPane).add_image_block(path, caption)
+
     def open_config_panel(
         self,
         root: ConfigNode,
