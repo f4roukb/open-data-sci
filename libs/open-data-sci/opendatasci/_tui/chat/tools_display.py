@@ -104,6 +104,10 @@ register(
     ToolDisplay(label="Listing workspace files", summary_arg="summary"),
 )
 register(
+    "render_image",
+    ToolDisplay(label="Displaying image", summary_arg="summary"),
+)
+register(
     "web_search",
     ToolDisplay(label="Searching the web", summary_arg="summary"),
 )

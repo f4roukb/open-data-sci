@@ -946,6 +946,40 @@ class MessagesContainer(ScrollableContainer):
         self.anchor()
 
 
+class ImageBlock(Static):
+    """Renders a static image inline as truecolor half-block ANSI art.
+
+    The path only ever reaches this widget as a string (see
+    ``ImageRenderEvent``) — decoding and rendering happen here, independently
+    of whatever produced the path, so a stale or invalid path degrades to a
+    plain text notice instead of failing the whole turn.
+    """
+
+    DEFAULT_CSS = """
+    ImageBlock {
+        height: auto;
+        margin-bottom: 1;
+    }
+    """
+
+    def __init__(self, path: str, caption: str = "") -> None:
+        super().__init__("")
+        self._path = path
+        self._caption = caption
+
+    def on_mount(self) -> None:
+        from opendatasci._tui.image_render import UnsupportedImageError, render_image_to_text
+
+        try:
+            rendered = render_image_to_text(Path(self._path))
+        except UnsupportedImageError as exc:
+            self.update(f"[{theme['error']}]🖼️  Could not display image: {exc}[/{theme['error']}]")
+            return
+        if self._caption:
+            rendered.append(f"\n{self._caption}", style=theme["text_secondary"])
+        self.update(rendered)
+
+
 class ChatPane(Widget):
     """Left pane: scrollable message history + input bar."""
 
@@ -1007,6 +1041,9 @@ class ChatPane(Widget):
         widget = ToolCallBlock(communication, "", "", task_summaries=task_summaries)
         self._mount_in_messages(widget)
         return widget
+
+    def add_image_block(self, path: str, caption: str) -> None:
+        self._mount_in_messages(ImageBlock(path, caption))
 
     def show_workspace_panel(self, files: list[str]) -> None:
         self.query_one("#workspace-panel", WorkspacePanel).show_files(files)
