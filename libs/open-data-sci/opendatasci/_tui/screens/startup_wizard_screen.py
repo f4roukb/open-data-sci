@@ -106,18 +106,22 @@ class StartupWizardScreen(ModalScreen[None]):
             current = self._staged.get(leaf.field)
             # Pad every label to the widest one in this step so descriptions
             # start in the same column regardless of how long their label is
-            # (e.g. "dark" vs. "default (dark, colorblind)").
+            # (e.g. "dark" vs. "dark, colorblind").
             widest_label = max((len(choice.label) for choice in choices), default=0)
             options = []
-            for choice in choices:
+            current_index = 0
+            for i, choice in enumerate(choices):
                 marker = "●" if choice.value == current else "○"
                 label = f"{marker} {choice.label}"
                 if choice.description:
                     label += " " * (widest_label - len(choice.label))
                     label += f"  [dim]{choice.description}[/dim]"
                 options.append(Option(label, id=choice.value))
+                if choice.value == current:
+                    current_index = i
             option_list = OptionList(*options)
             body.mount(option_list)
+            option_list.highlighted = current_index
             option_list.focus()
         else:
             text_input = Input(

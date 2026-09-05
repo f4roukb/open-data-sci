@@ -12,7 +12,12 @@ from typing import Callable, Literal
 from opendatasci._tui import tips as _tips
 from opendatasci._tui.chat.commands import _PROVIDER_DISPLAY
 from opendatasci._tui.style import theme as _theme
-from opendatasci.configs import DEFAULT_MODEL, DEFAULT_SECONDARY_MODEL, OpenDataSciConfig
+from opendatasci.configs import (
+    DEFAULT_MODEL,
+    DEFAULT_SECONDARY_MODEL,
+    PRIMARY_INCOMPATIBLE_MODELS,
+    OpenDataSciConfig,
+)
 from opendatasci.models.providers import Provider
 
 # Providers with no fixed model catalog — the model is whatever the user's
@@ -84,7 +89,9 @@ def _provider_options(_staged: dict[str, str]) -> list[ConfigOption]:
     return sorted(options, key=lambda o: o.label.lower())
 
 
-def _model_options_for(provider_field: str) -> Callable[[dict[str, str]], list[ConfigOption]]:
+def _model_options_for(
+    provider_field: str, role: Literal["primary", "secondary"]
+) -> Callable[[dict[str, str]], list[ConfigOption]]:
     def resolve(staged: dict[str, str]) -> list[ConfigOption]:
         try:
             provider = Provider(staged.get(provider_field, ""))
@@ -93,6 +100,8 @@ def _model_options_for(provider_field: str) -> Callable[[dict[str, str]], list[C
         if provider in _NO_CATALOG_PROVIDERS:
             return []
         candidates = {DEFAULT_MODEL.get(provider), DEFAULT_SECONDARY_MODEL.get(provider)}
+        if role == "primary":
+            candidates -= PRIMARY_INCOMPATIBLE_MODELS.get(provider, frozenset())
         return [ConfigOption(m, m) for m in sorted(c for c in candidates if c)]
 
     return resolve
@@ -143,10 +152,12 @@ def build_provider_leaf(field_name: str, linked_field: str) -> ConfigLeaf:
     )
 
 
-def build_model_leaf(field_name: str, provider_field: str) -> ConfigLeaf:
+def build_model_leaf(
+    field_name: str, provider_field: str, role: Literal["primary", "secondary"]
+) -> ConfigLeaf:
     return ConfigLeaf(
         field=field_name,
-        options_provider=_model_options_for(provider_field),
+        options_provider=_model_options_for(provider_field, role),
         text_placeholder="Model name",
     )
 
@@ -228,7 +239,7 @@ def build_config_tree() -> ConfigNode:
                     ConfigNode(
                         key="primary_model",
                         label="Model",
-                        leaf=build_model_leaf("model", "provider"),
+                        leaf=build_model_leaf("model", "provider", "primary"),
                     ),
                     ConfigNode(
                         key="primary_temperature",
@@ -239,7 +250,7 @@ def build_config_tree() -> ConfigNode:
                     ConfigNode(
                         key="secondary_model",
                         label="Model",
-                        leaf=build_model_leaf("secondary_model", "secondary_provider"),
+                        leaf=build_model_leaf("secondary_model", "secondary_provider", "secondary"),
                     ),
                 ],
             ),

@@ -165,14 +165,17 @@ class OpenDataSciApp(App[None]):
         if "provider" in self._missing_selection:
             steps.append(("Provider", build_provider_leaf("provider", "model")))
         if "model" in self._missing_selection:
-            steps.append(("Model", build_model_leaf("model", "provider")))
+            steps.append(("Model", build_model_leaf("model", "provider", "primary")))
         if "secondary_provider" in self._missing_selection:
             steps.append(
                 ("Secondary provider", build_provider_leaf("secondary_provider", "secondary_model"))
             )
         if "secondary_model" in self._missing_selection:
             steps.append(
-                ("Secondary model", build_model_leaf("secondary_model", "secondary_provider"))
+                (
+                    "Secondary model",
+                    build_model_leaf("secondary_model", "secondary_provider", "secondary"),
+                )
             )
         return steps
 
