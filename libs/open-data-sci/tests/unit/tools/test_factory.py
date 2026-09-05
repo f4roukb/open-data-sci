@@ -150,16 +150,31 @@ class TestCreateWorkerAgentTools:
         names = {t.name for t in tools}
         assert "list_workspace_files" not in names
 
-    def test_includes_render_image_when_path_set(self) -> None:
+    def test_excludes_render_image_by_default_even_with_path(self) -> None:
+        """enable_image_rendering defaults to False — the tool is only offered
+        when the TUI has detected real terminal graphics support."""
         tools = create_worker_agent_tools(
             _make_workspace(has_workspace=True), None, sandbox=_make_sandbox()
         )
         names = {t.name for t in tools}
+        assert "render_image" not in names
+
+    def test_includes_render_image_when_enabled_and_path_set(self) -> None:
+        tools = create_worker_agent_tools(
+            _make_workspace(has_workspace=True),
+            None,
+            sandbox=_make_sandbox(),
+            datasci_config=OpenDataSciConfig(enable_image_rendering=True),
+        )
+        names = {t.name for t in tools}
         assert "render_image" in names
 
-    def test_excludes_render_image_when_no_path(self) -> None:
+    def test_excludes_render_image_when_enabled_but_no_path(self) -> None:
         tools = create_worker_agent_tools(
-            _make_workspace(has_workspace=False), None, sandbox=_make_sandbox()
+            _make_workspace(has_workspace=False),
+            None,
+            sandbox=_make_sandbox(),
+            datasci_config=OpenDataSciConfig(enable_image_rendering=True),
         )
         names = {t.name for t in tools}
         assert "render_image" not in names
@@ -199,6 +214,18 @@ class TestWorkerToolSetExact:
             t.name
             for t in create_worker_agent_tools(
                 _make_workspace(has_workspace=True), None, sandbox=_make_sandbox()
+            )
+        }
+        assert names == self._BASE | {"list_workspace_files"}
+
+    def test_exact_set_with_workspace_and_image_rendering_enabled(self) -> None:
+        names = {
+            t.name
+            for t in create_worker_agent_tools(
+                _make_workspace(has_workspace=True),
+                None,
+                sandbox=_make_sandbox(),
+                datasci_config=OpenDataSciConfig(enable_image_rendering=True),
             )
         }
         assert names == self._BASE | {"list_workspace_files", "render_image"}

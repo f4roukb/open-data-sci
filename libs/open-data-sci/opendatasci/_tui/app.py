@@ -46,7 +46,7 @@ from opendatasci._tui.config.onboarding import (
     compute_missing_selection_fields,
 )
 from opendatasci._tui.controller import CLIController
-from opendatasci._tui.image_render import terminal_supports_image_graphics
+from opendatasci._utils.graphics_utils import terminal_supports_image_graphics
 from opendatasci._tui.screens.config_screen import ConfigScreen
 from opendatasci._tui.screens.onboarding_screen import OnboardingScreen
 from opendatasci._tui.screens.startup_wizard_screen import StartupWizardScreen

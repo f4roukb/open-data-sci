@@ -10,6 +10,7 @@ from rich.text import Text
 from textual import events as textual_events
 from textual.widgets import Markdown as TUIMarkdown
 from textual.widgets import Static
+from textual_image.widget import AutoImage
 
 from opendatasci._tui.chat.models import SPINNER, SPINNER_INTERVAL
 from opendatasci._tui.chat.widgets import (
@@ -2099,49 +2100,71 @@ def _make_image_block(path: str = "/ws/chart.png", caption: str = "") -> ImageBl
     block = ImageBlock.__new__(ImageBlock)
     block._path = path
     block._caption = caption
-    block.update = MagicMock()  # type: ignore[assignment]
     return block
 
 
-class TestImageBlockRendering:
-    def test_successful_render_calls_update_with_rendered_text(self) -> None:
-        block = _make_image_block()
-        rendered = Text("▀▀")
-        with patch(
-            "opendatasci._tui.image_render.render_image_to_text", return_value=rendered
-        ):
-            block.on_mount()
-        block.update.assert_called_once_with(rendered)
+def _write_png(path) -> str:  # noqa: ANN001 - tmp_path fixture-typed Path
+    """AutoImage reads the file eagerly at construction, so tests exercising
+    the success path need a real image on disk rather than a fake path."""
+    from PIL import Image as PILImage
 
-    def test_caption_appended_to_rendered_text(self) -> None:
-        block = _make_image_block(caption="Monthly revenue")
-        rendered = Text("▀▀")
-        with patch(
-            "opendatasci._tui.image_render.render_image_to_text", return_value=rendered
-        ):
-            block.on_mount()
-        (passed_text,) = block.update.call_args.args
-        assert "Monthly revenue" in passed_text.plain
+    png_path = path / "chart.png"
+    PILImage.new("RGB", (4, 4), color="red").save(png_path, format="PNG")
+    return str(png_path)
 
-    def test_no_caption_leaves_rendered_text_unchanged(self) -> None:
-        block = _make_image_block(caption="")
-        rendered = Text("▀▀")
-        with patch(
-            "opendatasci._tui.image_render.render_image_to_text", return_value=rendered
-        ):
-            block.on_mount()
-        (passed_text,) = block.update.call_args.args
-        assert passed_text.plain == "▀▀"
+
+class TestImageBlockComposition:
+    def test_valid_image_yields_auto_image(self, tmp_path) -> None:  # noqa: ANN001
+        image_path = _write_png(tmp_path)
+        block = _make_image_block(image_path)
+        with patch("opendatasci._tui.image_render.validate_static_image"):
+            children = list(block.compose())
+        assert len(children) == 1
+        assert isinstance(children[0], AutoImage)
+        assert children[0].image == image_path
+
+    def test_valid_image_with_caption_yields_auto_image_and_caption(self, tmp_path) -> None:  # noqa: ANN001
+        image_path = _write_png(tmp_path)
+        block = _make_image_block(image_path, caption="Monthly revenue")
+        with patch("opendatasci._tui.image_render.validate_static_image"):
+            children = list(block.compose())
+        assert len(children) == 2
+        assert isinstance(children[0], AutoImage)
+        caption_widget = children[1]
+        assert isinstance(caption_widget, Static)
+        assert "image-caption" in caption_widget.classes
+        assert "Monthly revenue" in str(caption_widget.render())
+
+    def test_valid_image_without_caption_yields_only_auto_image(self, tmp_path) -> None:  # noqa: ANN001
+        image_path = _write_png(tmp_path)
+        block = _make_image_block(image_path, caption="")
+        with patch("opendatasci._tui.image_render.validate_static_image"):
+            children = list(block.compose())
+        assert len(children) == 1
+        assert isinstance(children[0], AutoImage)
 
     def test_unsupported_image_falls_back_to_text_notice(self) -> None:
         from opendatasci._tui.image_render import UnsupportedImageError
 
         block = _make_image_block()
         with patch(
-            "opendatasci._tui.image_render.render_image_to_text",
+            "opendatasci._tui.image_render.validate_static_image",
             side_effect=UnsupportedImageError("not a recognized image file"),
         ):
-            block.on_mount()
-        (message,) = block.update.call_args.args
+            children = list(block.compose())
+        assert len(children) == 1
+        assert isinstance(children[0], Static)
+        message = str(children[0].render())
         assert "Could not display image" in message
         assert "not a recognized image file" in message
+
+    def test_unsupported_image_never_yields_auto_image(self) -> None:
+        from opendatasci._tui.image_render import UnsupportedImageError
+
+        block = _make_image_block()
+        with patch(
+            "opendatasci._tui.image_render.validate_static_image",
+            side_effect=UnsupportedImageError("bad"),
+        ):
+            children = list(block.compose())
+        assert not any(isinstance(c, AutoImage) for c in children)
