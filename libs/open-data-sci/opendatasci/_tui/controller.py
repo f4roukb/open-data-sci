@@ -82,7 +82,11 @@ from opendatasci.streaming.events import (
     UsageEvent,
 )
 from opendatasci.tasks.base import BackgroundTaskStatus, BackgroundTaskUpdate
-from opendatasci.tools.mcp import MCPServerSpec, load_workspace_mcp_servers, save_workspace_mcp_servers
+from opendatasci.tools.mcp import (
+    MCPServerSpec,
+    load_workspace_mcp_servers,
+    save_workspace_mcp_servers,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +96,33 @@ _CHOICE_CANCELLED_QUERY = "cancel"
 
 # How often the header's "running background tasks" line refreshes.
 _BACKGROUND_STATUS_POLL_SECONDS = 2
+
+
+def _coerce_config_values(raw_changes: dict[str, str]) -> tuple[dict[str, object], str | None]:
+    """Coerce staged string values into the types ``OpenDataSciConfig`` expects.
+
+    ``model_copy(update=...)`` skips validation, so any caller that stamps raw
+    strings from a staged-values dict onto the config (skills_directory,
+    temperature, worker_timeout_seconds) must convert them itself first.
+    Returns the coerced dict, or an error string if a value is invalid.
+    """
+    config_changes: dict[str, object] = dict(raw_changes)
+    if "skills_directory" in raw_changes:
+        value = raw_changes["skills_directory"].strip()
+        config_changes["skills_directory"] = Path(value) if value else None
+    if "temperature" in raw_changes:
+        value = raw_changes["temperature"].strip()
+        config_changes["temperature"] = float(value) if value else 0.0
+    if "worker_timeout_seconds" in raw_changes:
+        value = raw_changes["worker_timeout_seconds"].strip()
+        if value:
+            try:
+                config_changes["worker_timeout_seconds"] = float(value)
+            except ValueError:
+                return config_changes, f"Worker timeout must be a number: {value!r}"
+        else:
+            config_changes["worker_timeout_seconds"] = None
+    return config_changes, None
 
 
 class CLIController:
@@ -180,7 +211,11 @@ class CLIController:
 
     def apply_config_updates(self, values: dict[str, str]) -> None:
         """Merge onboarding-collected *values* into the base config before boot."""
-        self._base_config = self._base_config.model_copy(update=values)
+        config_changes, error = _coerce_config_values(values)
+        if error is not None:
+            logger.warning("Dropping invalid onboarding config value: %s", error)
+            config_changes.pop("worker_timeout_seconds", None)
+        self._base_config = self._base_config.model_copy(update=config_changes)
 
     # ── Boot ──────────────────────────────────────────────────────────────────
 
@@ -837,22 +872,10 @@ class CLIController:
             _tips.set_enabled(changes["tips"] == "on")
             self._ui.refresh_tips()
 
-        config_changes = {k: v for k, v in changes.items() if k not in ("theme", "tips")}
-        if "skills_directory" in config_changes:
-            value = config_changes["skills_directory"].strip()
-            config_changes["skills_directory"] = Path(value) if value else None
-        if "temperature" in config_changes:
-            value = config_changes["temperature"].strip()
-            config_changes["temperature"] = float(value) if value else 0.0
-        if "worker_timeout_seconds" in config_changes:
-            value = config_changes["worker_timeout_seconds"].strip()
-            if value:
-                try:
-                    config_changes["worker_timeout_seconds"] = float(value)
-                except ValueError:
-                    return f"Worker timeout must be a number: {value!r}"
-            else:
-                config_changes["worker_timeout_seconds"] = None
+        raw_changes = {k: v for k, v in changes.items() if k not in ("theme", "tips")}
+        config_changes, coerce_error = _coerce_config_values(raw_changes)
+        if coerce_error is not None:
+            return coerce_error
 
         if not config_changes and mcp_servers is None:
             return None
@@ -862,7 +885,7 @@ class CLIController:
 
         changed_providers = {
             field: value
-            for field, value in config_changes.items()
+            for field, value in raw_changes.items()
             if field in ("provider", "secondary_provider")
         }
         for field, provider_name in changed_providers.items():
