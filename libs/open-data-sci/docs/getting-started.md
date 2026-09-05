@@ -299,7 +299,7 @@ secondary_model: gpt-5.6-luna
 primary_temperature: 0.1
 
 worker_timeout_seconds: 600
-midturn_compaction_threshold: 80000
+autocompaction_threshold: 80000
 ```
 
 ```python

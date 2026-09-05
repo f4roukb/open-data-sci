@@ -263,7 +263,7 @@ class Agent(BaseOpenDataSciAgent):
         self._chat_history_builder = ChatHistoryBuilder(
             summarizer_llm=self._summarizer_llm,
             loop_compactor_llm=self._llm,
-            midturn_compaction_threshold=self._config.midturn_compaction_threshold,
+            autocompaction_threshold=self._config.autocompaction_threshold,
             context_store=self._context_store,
             session_id=self._session_id,
         )

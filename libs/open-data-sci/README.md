@@ -367,7 +367,7 @@ async with create_agent("data.parquet", config=config) as agent:
 | `skill_domains_directory` | Path to a directory of custom skill domains, loaded in addition to built-ins (env: `SKILL_DOMAINS_DIRECTORY`) |
 | `builtin_skill_domains_directory` | Path to the built-in skill domains directory — override only to replace defaults entirely (env: `BUILTIN_SKILL_DOMAINS_DIRECTORY`) |
 | `worker_timeout_seconds` | Max seconds to wait for spawned workers to finish — `null` disables the timeout, default `300` (env: `WORKER_TIMEOUT_SECONDS`) |
-| `midturn_compaction_threshold` | Token count at which context is compacted mid-turn — default `96000` (env: `MIDTURN_COMPACTION_THRESHOLD`) |
+| `autocompaction_threshold` | Token count at which context is compacted mid-turn — default `96000` (env: `AUTOCOMPACTION_THRESHOLD`) |
 | `local_code_exec_timeout` | Max seconds for a single sandboxed code-execution run — default `1800` (env: `CODE_EXEC_TIMEOUT`) |
 
 Note that `OpenDataSciConfig` itself never prompts for anything — it's a plain `pydantic-settings` model. The setup wizard is a TUI-only affair (`opendatasci/_tui/`); code built on the SDK directly is responsible for supplying whatever the chosen provider needs, same as any other library.
@@ -582,7 +582,7 @@ async with create_agent("data.csv", config=config) as agent:
 | `SKILL_DOMAINS_DIRECTORY` | Path to a directory of user-defined skill domains |
 | `BUILTIN_SKILL_DOMAINS_DIRECTORY` | Path to the built-in skill domains directory (defaults to the bundled domains) |
 | `WORKER_TIMEOUT_SECONDS` | Max seconds to wait for spawned workers (default: `300`) |
-| `MIDTURN_COMPACTION_THRESHOLD` | Token count at which context is compacted mid-turn (default: `96000`) |
+| `AUTOCOMPACTION_THRESHOLD` | Token count at which context is compacted mid-turn (default: `96000`) |
 | `CODE_EXEC_TIMEOUT` | Max seconds for a single sandboxed code execution (default: `1800`) |
 
 A `.env` file in the working directory is loaded automatically at startup. Anything set here (or exported directly) always overrides both a `--config` YAML file's corresponding field and whatever the setup wizard has saved to `~/.opendatasci/config.yaml`.

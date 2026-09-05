@@ -66,6 +66,7 @@ dependencies = [
     # TUI / TUI
     "rich>=15.0.0,<16.0.0",
     "textual>=8.0.0,<9.0.0",
+    "textual-image>=0.13.0,<1.0.0",
     # Fast hashing
     "xxhash>=3.5.0,<4.0.0",
     # Web search & fetching

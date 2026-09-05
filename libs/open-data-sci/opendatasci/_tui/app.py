@@ -46,6 +46,7 @@ from opendatasci._tui.config.onboarding import (
     compute_missing_selection_fields,
 )
 from opendatasci._tui.controller import CLIController
+from opendatasci._tui.image_render import terminal_supports_image_graphics
 from opendatasci._tui.screens.config_screen import ConfigScreen
 from opendatasci._tui.screens.onboarding_screen import OnboardingScreen
 from opendatasci._tui.screens.startup_wizard_screen import StartupWizardScreen
@@ -489,8 +490,8 @@ Examples:
 
     overrides: dict[str, object] = {}
     _apply_global_config_fallback(overrides, global_cfg)
-    if overrides:
-        datasci_config = datasci_config.model_copy(update=overrides)
+    overrides["enable_image_rendering"] = terminal_supports_image_graphics()
+    datasci_config = datasci_config.model_copy(update=overrides)
 
     missing_selection = compute_missing_selection_fields(yaml_data)
     session_id = uuid.uuid4().hex

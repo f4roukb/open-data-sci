@@ -63,7 +63,7 @@ class ChatHistoryBuilder(BaseChatHistoryBuilder):
     optionally compacts an oversized ongoing turn, prepends summary and plan recall
     messages, then renders everything for the LLM.
 
-    Pass a *loop_compactor_llm* and a *midturn_compaction_threshold* to enable
+    Pass a *loop_compactor_llm* and an *autocompaction_threshold* to enable
     mid-turn compaction; omit either to disable it. Pass *context_store* and
     *session_id* to include the session's current plan; omit either to skip it.
     """
@@ -72,7 +72,7 @@ class ChatHistoryBuilder(BaseChatHistoryBuilder):
         self,
         summarizer_llm: BaseChatModel | None,
         loop_compactor_llm: Any | None = None,
-        midturn_compaction_threshold: int | None = None,
+        autocompaction_threshold: int | None = None,
         context_store: BaseContextStore | None = None,
         session_id: str | None = None,
         window_size: int = _CHAT_TURN_SUMMARY_WINDOW_SIZE,
@@ -86,7 +86,7 @@ class ChatHistoryBuilder(BaseChatHistoryBuilder):
         self._loop_compactor = (
             AgentLoopCompactor(llm=loop_compactor_llm) if loop_compactor_llm is not None else None
         )
-        self._midturn_compaction_threshold = midturn_compaction_threshold
+        self._autocompaction_threshold = autocompaction_threshold
         self._context_store = context_store
         self._session_id = session_id
         self._window_size = window_size
@@ -176,9 +176,9 @@ class ChatHistoryBuilder(BaseChatHistoryBuilder):
         messages = list(messages)
         if (
             self._loop_compactor is not None
-            and self._midturn_compaction_threshold is not None
+            and self._autocompaction_threshold is not None
             and is_ongoing_turn(messages)
-            and self._loop_compactor.estimate_tokens(messages) > self._midturn_compaction_threshold
+            and self._loop_compactor.estimate_tokens(messages) > self._autocompaction_threshold
         ):
             messages = await self._loop_compactor.compact(messages)
 

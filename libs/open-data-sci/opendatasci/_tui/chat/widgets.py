@@ -22,6 +22,7 @@ from textual.widget import Widget
 from textual.widgets import Input, Static
 from textual.widgets import Markdown as TUIMarkdown
 from textual.widgets.markdown import MarkdownStream
+from textual_image.widget import AutoImage
 
 try:
     from textual.widgets import Image as _TUIImage  # type: ignore[attr-defined]
@@ -946,38 +947,56 @@ class MessagesContainer(ScrollableContainer):
         self.anchor()
 
 
-class ImageBlock(Static):
-    """Renders a static image inline as truecolor half-block ANSI art.
+class ImageBlock(Widget):
+    """Displays a static image inline, drawn through the terminal's native
+    graphics protocol via ``textual-image``'s ``AutoImage``.
 
-    The path only ever reaches this widget as a string (see
-    ``ImageRenderEvent``) — decoding and rendering happen here, independently
-    of whatever produced the path, so a stale or invalid path degrades to a
-    plain text notice instead of failing the whole turn.
+    Sized to 80% of the chat pane's width with its aspect ratio preserved
+    (``height: auto``), centered horizontally, with a caption — also
+    centered — directly beneath it. The path only ever reaches this widget
+    as a string (see ``ImageRenderEvent``) — validation and rendering happen
+    here, independently of whatever produced the path, so a stale or invalid
+    path degrades to a plain text notice instead of failing the whole turn.
     """
 
     DEFAULT_CSS = """
     ImageBlock {
         height: auto;
+        align-horizontal: center;
+        margin-top: 1;
         margin-bottom: 1;
+    }
+    ImageBlock AutoImage {
+        width: 80%;
+        height: auto;
+    }
+    ImageBlock .image-caption {
+        width: 80%;
+        text-align: center;
     }
     """
 
     def __init__(self, path: str, caption: str = "") -> None:
-        super().__init__("")
+        super().__init__()
         self._path = path
         self._caption = caption
 
-    def on_mount(self) -> None:
-        from opendatasci._tui.image_render import UnsupportedImageError, render_image_to_text
+    def compose(self) -> ComposeResult:
+        from opendatasci._tui.image_render import UnsupportedImageError, validate_static_image
 
         try:
-            rendered = render_image_to_text(Path(self._path))
+            validate_static_image(Path(self._path))
         except UnsupportedImageError as exc:
-            self.update(f"[{theme['error']}]🖼️  Could not display image: {exc}[/{theme['error']}]")
+            yield Static(
+                f"[{theme['error']}]🖼️  Could not display image: {exc}[/{theme['error']}]"
+            )
             return
+        yield AutoImage(self._path)
         if self._caption:
-            rendered.append(f"\n{self._caption}", style=theme["text_secondary"])
-        self.update(rendered)
+            yield Static(
+                f"[{theme['text_secondary']}]{escape(self._caption)}[/{theme['text_secondary']}]",
+                classes="image-caption",
+            )
 
 
 class ChatPane(Widget):
