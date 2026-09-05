@@ -2078,3 +2078,70 @@ class TestChatPaneMountAutoScroll:
         pane._mount_in_messages = MagicMock()
         block = pane.add_ephemeral_block("comm", "label", "summary")
         pane._mount_in_messages.assert_called_once_with(block)
+
+    def test_add_image_block_uses_autoscroll_mount(self) -> None:
+        pane = _make_chat_pane()
+        pane._mount_in_messages = MagicMock()
+        pane.add_image_block("/ws/chart.png", "Revenue")
+        mounted = pane._mount_in_messages.call_args.args[0]
+        assert isinstance(mounted, ImageBlock)
+        assert mounted._path == "/ws/chart.png"
+        assert mounted._caption == "Revenue"
+
+
+# ---------------------------------------------------------------------------
+# ImageBlock — rendering (no DOM)
+# ---------------------------------------------------------------------------
+
+
+def _make_image_block(path: str = "/ws/chart.png", caption: str = "") -> ImageBlock:
+    """Instantiate ImageBlock bypassing Textual Widget.__init__."""
+    block = ImageBlock.__new__(ImageBlock)
+    block._path = path
+    block._caption = caption
+    block.update = MagicMock()  # type: ignore[assignment]
+    return block
+
+
+class TestImageBlockRendering:
+    def test_successful_render_calls_update_with_rendered_text(self) -> None:
+        block = _make_image_block()
+        rendered = Text("▀▀")
+        with patch(
+            "opendatasci._tui.image_render.render_image_to_text", return_value=rendered
+        ):
+            block.on_mount()
+        block.update.assert_called_once_with(rendered)
+
+    def test_caption_appended_to_rendered_text(self) -> None:
+        block = _make_image_block(caption="Monthly revenue")
+        rendered = Text("▀▀")
+        with patch(
+            "opendatasci._tui.image_render.render_image_to_text", return_value=rendered
+        ):
+            block.on_mount()
+        (passed_text,) = block.update.call_args.args
+        assert "Monthly revenue" in passed_text.plain
+
+    def test_no_caption_leaves_rendered_text_unchanged(self) -> None:
+        block = _make_image_block(caption="")
+        rendered = Text("▀▀")
+        with patch(
+            "opendatasci._tui.image_render.render_image_to_text", return_value=rendered
+        ):
+            block.on_mount()
+        (passed_text,) = block.update.call_args.args
+        assert passed_text.plain == "▀▀"
+
+    def test_unsupported_image_falls_back_to_text_notice(self) -> None:
+        from opendatasci._tui.image_render import UnsupportedImageError
+
+        block = _make_image_block()
+        with patch(
+            "opendatasci._tui.image_render.render_image_to_text",
+            side_effect=UnsupportedImageError("not a recognized image file"),
+        ):
+            block.on_mount()
+        (message,) = block.update.call_args.args
+        assert "Could not display image" in message
+        assert "not a recognized image file" in message

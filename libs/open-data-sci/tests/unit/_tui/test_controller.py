@@ -27,6 +27,7 @@ from opendatasci.streaming import (
     AgentStreamEvent,
     ApprovalRequiredEvent,
     ErrorEvent,
+    ImageRenderEvent,
     ReasoningEvent,
     ResponseEvent,
     TaskDoneEvent,
@@ -597,6 +598,21 @@ class TestOnSubmit:
         action, payload = await controller.on_submit("A")
         assert action == "resume_input"
         assert payload == "yes"
+
+
+# ---------------------------------------------------------------------------
+# CLIController — image_render dispatch
+# ---------------------------------------------------------------------------
+
+
+class TestImageRenderDispatch:
+    async def test_dispatches_to_presenter_handle_image_render(
+        self, controller: CLIController
+    ) -> None:
+        event = ImageRenderEvent(path="/ws/chart.png", caption="Revenue", tool_call_id="tc1")
+        presenter = MagicMock()
+        await controller._dispatch_stream_event(event, presenter)
+        presenter.handle_image_render.assert_called_once_with(event)
 
 
 # ---------------------------------------------------------------------------
