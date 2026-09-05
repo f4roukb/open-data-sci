@@ -139,14 +139,6 @@ class CompletionState:
         self._completing = True
         ui.set_input_value(new_value, cursor)
 
-        if match.endswith("/"):
-            # Selected a directory: descend into it immediately so the next
-            # Tab press round-robins over *its* contents, without requiring
-            # the user to type "/" themselves first.
-            self._matches = _discover_files(match)
-            self._last_at_fragment = match
-            self._cached_at_matches = self._matches
-            self._idx = -1
         ui.show_completion(self._matches, self._idx)
         return True
 
