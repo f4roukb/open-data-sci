@@ -52,6 +52,7 @@ class TestToolName:
             "update_dataset_info",
             "profile_dataset",
             "list_workspace_files",
+            "render_image",
             "list_python_libs",
             "web_search",
             "fetch_url",
@@ -149,6 +150,20 @@ class TestCreateWorkerAgentTools:
         names = {t.name for t in tools}
         assert "list_workspace_files" not in names
 
+    def test_includes_render_image_when_path_set(self) -> None:
+        tools = create_worker_agent_tools(
+            _make_workspace(has_workspace=True), None, sandbox=_make_sandbox()
+        )
+        names = {t.name for t in tools}
+        assert "render_image" in names
+
+    def test_excludes_render_image_when_no_path(self) -> None:
+        tools = create_worker_agent_tools(
+            _make_workspace(has_workspace=False), None, sandbox=_make_sandbox()
+        )
+        names = {t.name for t in tools}
+        assert "render_image" not in names
+
 
 # ---------------------------------------------------------------------------
 # Worker tool set — exhaustive
@@ -186,7 +201,7 @@ class TestWorkerToolSetExact:
                 _make_workspace(has_workspace=True), None, sandbox=_make_sandbox()
             )
         }
-        assert names == self._BASE | {"list_workspace_files"}
+        assert names == self._BASE | {"list_workspace_files", "render_image"}
 
     def test_excludes_update_dataset_info(self) -> None:
         names = {

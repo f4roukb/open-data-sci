@@ -70,6 +70,7 @@ from opendatasci.streaming import AgentStreamEvent, BaseAgentStreamEvent
 from opendatasci.streaming.events import (
     ApprovalRequiredEvent,
     ErrorEvent,
+    ImageRenderEvent,
     InputRequiredEvent,
     ReasoningEvent,
     ResponseEvent,
@@ -621,6 +622,8 @@ class CLIController:
             presenter.handle_subagent_event(event)
         elif isinstance(event, ToolResultEvent):
             presenter.handle_tool_result(event)
+        elif isinstance(event, ImageRenderEvent):
+            presenter.handle_image_render(event)
         elif isinstance(event, UsageEvent):
             apply_usage_event(event, self._active_turn_status)
         elif isinstance(event, InputRequiredEvent):

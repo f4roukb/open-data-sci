@@ -22,6 +22,7 @@ from opendatasci.tools.coding import (
     create_coding_tools,
 )
 from opendatasci.tools.dataset_info import create_data_context_tools
+from opendatasci.tools.media import create_media_tools
 from opendatasci.tools.modes import create_mode_tools
 from opendatasci.tools.skills import create_skill_tools
 from opendatasci.tools.tasks import create_task_management_tools, create_task_tools
@@ -52,6 +53,7 @@ class ToolName(StrEnum):
     UPDATE_DATASET_INFO = auto()
     PROFILE_DATASET = auto()
     LIST_WORKSPACE_FILES = auto()
+    RENDER_IMAGE = auto()
     WEB_SEARCH = auto()
     FETCH_URL = auto()
     ASK_USER_MCQ = auto()
@@ -74,7 +76,9 @@ def _base_tools(
         *create_skill_tools(skill_store),
     ]
     if isinstance(workspace, LocalWorkspace):
-        tools.extend(create_workspace_tools(Path(workspace.get_reference())))
+        workspace_path = Path(workspace.get_reference())
+        tools.extend(create_workspace_tools(workspace_path))
+        tools.extend(create_media_tools(workspace_path))
     return tools
 
 
