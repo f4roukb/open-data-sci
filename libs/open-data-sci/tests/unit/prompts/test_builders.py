@@ -11,9 +11,9 @@ from functools import partial
 import pytest
 from langchain_core.messages import SystemMessage
 
-from opendatasci.prompts.prompt_templates import PLAN_MODE_SYSTEM_PROMPT, MAIN_SYSTEM_PROMPT
-from opendatasci.prompts.builders import SystemContextBuilder as SystemPromptBuilder
 from opendatasci.configs import OpenDataSciConfig
+from opendatasci.prompts.builders import SystemContextBuilder as SystemPromptBuilder
+from opendatasci.prompts.prompt_templates import MAIN_SYSTEM_PROMPT, PLAN_MODE_SYSTEM_PROMPT
 from opendatasci.skills.base import Skill, SkillDomain
 
 

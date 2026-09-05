@@ -5,14 +5,19 @@ Concerns deliberately kept here:
   - Input routing (on_input_changed, on_submit)
   - Slash-command dispatch
   - Choice-prompt state machine
-  - Action methods (reset, clear, compact, show_models, show_help, stop, ls_workspace)
+  - Action methods (reset, clear, compact, show_help, stop, ls_workspace)
+  - The /config, /models, /providers config panel (open_config_panel + _apply_config_changes)
 
 Everything else has been extracted into focused sibling modules:
-  - adapter.py   — UIAdapter + handle ABCs
-  - commands.py  — SLASH_COMMANDS registry + display formatters
-  - completion.py — CompletionState (tab-completion logic)
-  - file_refs.py  — @file-ref parsing helpers
-  - presenter.py  — _TurnPresenter (streaming event dispatch)
+  - adapter.py — UIAdapter + handle ABCs
+  - chat/      — the chat screen: widgets, streaming presenter, pending-message
+                 queue, @file-refs, tab-completion, tool-display metadata, and
+                 the SLASH_COMMANDS registry
+  - config/    — pure-logic data model behind /config, /models, /providers and
+                 the onboarding/secrets schema (no Textual)
+  - screens/   — the ModalScreens that render config/'s data (ConfigScreen,
+                 OnboardingScreen, StartupWizardScreen)
+  - style/     — theme palettes + styles.tcss
 """
 
 import asyncio
@@ -27,13 +32,40 @@ from uuid import UUID
 
 from rich.markup import escape as escape_markup
 
+from opendatasci._tui import tips as _tips
+from opendatasci._tui.adapter import (
+    PendingMessageHandle,
+    SubmitAction,
+    TurnStatusHandle,
+    UIAdapter,
+)
+from opendatasci._tui.chat.commands import (
+    _PROVIDER_DISPLAY,
+    format_help_message,
+    format_missing_api_key_message,
+)
+from opendatasci._tui.chat.completion import CompletionState
+from opendatasci._tui.chat.file_refs import (
+    PasteAttachment,
+    _build_agent_query,
+    _build_user_display,
+    _parse_file_refs,
+    _split_existing_file_refs,
+)
+from opendatasci._tui.chat.message_queue import PendingMessageQueue
+from opendatasci._tui.chat.presenter import _TurnPresenter, apply_usage_event
+from opendatasci._tui.config.config_tree import build_config_tree
+from opendatasci._tui.config.config_tree import initial_values as build_initial_values
 from opendatasci._tui.service import OpenDataSciTuiService
 from opendatasci._tui.session import CLISessionInfo
+from opendatasci._tui.style import theme as _theme
+from opendatasci._tui.style.theme import active as theme
 from opendatasci._utils.background_tasks_utils import merge_task_updates
 from opendatasci.agents.agents import Invocation
 from opendatasci.agents.agents_factory import create_agent
-from opendatasci.configs import OpenDataSciConfig
+from opendatasci.configs import PROVIDER_KEY_FIELD, OpenDataSciConfig
 from opendatasci.memory.messages import MessageOrigin
+from opendatasci.models.providers import Provider
 from opendatasci.streaming import AgentStreamEvent, BaseAgentStreamEvent
 from opendatasci.streaming.events import (
     ApprovalRequiredEvent,
@@ -50,31 +82,11 @@ from opendatasci.streaming.events import (
     UsageEvent,
 )
 from opendatasci.tasks.base import BackgroundTaskStatus, BackgroundTaskUpdate
-from opendatasci.tools.mcp import load_mcp_servers
-
-from . import theme as _theme
-from .adapter import (
-    PendingMessageHandle,
-    SubmitAction,
-    TurnStatusHandle,
-    UIAdapter,
+from opendatasci.tools.mcp import (
+    MCPServerSpec,
+    load_workspace_mcp_servers,
+    save_workspace_mcp_servers,
 )
-from .commands import (
-    format_help_message,
-    format_models_message,
-    format_themes_message,
-)
-from .completion import CompletionState
-from .file_refs import (
-    PasteAttachment,
-    _build_agent_query,
-    _build_user_display,
-    _parse_file_refs,
-    _split_existing_file_refs,
-)
-from .message_queue import PendingMessageQueue
-from .presenter import _TurnPresenter, apply_usage_event
-from .theme import active as theme
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +96,33 @@ _CHOICE_CANCELLED_QUERY = "cancel"
 
 # How often the header's "running background tasks" line refreshes.
 _BACKGROUND_STATUS_POLL_SECONDS = 2
+
+
+def _coerce_config_values(raw_changes: dict[str, str]) -> tuple[dict[str, object], str | None]:
+    """Coerce staged string values into the types ``OpenDataSciConfig`` expects.
+
+    ``model_copy(update=...)`` skips validation, so any caller that stamps raw
+    strings from a staged-values dict onto the config (skills_directory,
+    primary_temperature, worker_timeout_seconds) must convert them itself first.
+    Returns the coerced dict, or an error string if a value is invalid.
+    """
+    config_changes: dict[str, object] = dict(raw_changes)
+    if "skills_directory" in raw_changes:
+        value = raw_changes["skills_directory"].strip()
+        config_changes["skills_directory"] = Path(value) if value else None
+    if "primary_temperature" in raw_changes:
+        value = raw_changes["primary_temperature"].strip()
+        config_changes["primary_temperature"] = float(value) if value else 0.0
+    if "worker_timeout_seconds" in raw_changes:
+        value = raw_changes["worker_timeout_seconds"].strip()
+        if value:
+            try:
+                config_changes["worker_timeout_seconds"] = float(value)
+            except ValueError:
+                return config_changes, f"Worker timeout must be a number: {value!r}"
+        else:
+            config_changes["worker_timeout_seconds"] = None
+    return config_changes, None
 
 
 class CLIController:
@@ -115,11 +154,14 @@ class CLIController:
         self._pending_handles: dict[int, PendingMessageHandle] = {}
         self._background_watcher_task: asyncio.Task[None] | None = None
         self._background_status_task: asyncio.Task[None] | None = None
+        self._last_background_status: str = ""
         self._cfg: OpenDataSciConfig | None = None
-        self._completion = (
-            completion if completion is not None else CompletionState(extra_commands=[])
-        )
+        self._completion = completion if completion is not None else CompletionState()
         self._paste_attachment: PasteAttachment | None = None
+
+    @property
+    def base_config(self) -> OpenDataSciConfig:
+        return self._base_config
 
     @property
     def provider(self) -> str:
@@ -167,15 +209,21 @@ class CLIController:
             await self._service.close()
         await self._exit_stack.aclose()
 
+    def apply_config_updates(self, values: dict[str, str]) -> None:
+        """Merge onboarding-collected *values* into the base config before boot."""
+        config_changes, error = _coerce_config_values(values)
+        if error is not None:
+            logger.warning("Dropping invalid onboarding config value: %s", error)
+            config_changes.pop("worker_timeout_seconds", None)
+        self._base_config = self._base_config.model_copy(update=config_changes)
+
     # ── Boot ──────────────────────────────────────────────────────────────────
 
     async def boot(self) -> None:
         ui = self._ui
 
         try:
-            resolved_path = Path(self._workspace_path).resolve()
-            config_search_path = resolved_path if resolved_path.is_dir() else resolved_path.parent
-            mcp_servers = load_mcp_servers(config_search_path)
+            mcp_servers = load_workspace_mcp_servers(self._config_search_path())
 
             cfg = self._base_config.model_copy(update={"mcp_servers": mcp_servers})
             self._cfg = cfg
@@ -192,23 +240,27 @@ class CLIController:
 
             info = CLISessionInfo.from_path(self._workspace_path, workspace_path, cfg)
             ui.set_file_count(self._describe_data(info))
+            ui.set_model_info(self._describe_model(cfg))
             self._background_watcher_task = asyncio.create_task(self._watch_background_tasks())
             self._background_status_task = asyncio.create_task(self._poll_background_task_status())
         except FileNotFoundError:
             hint = self._did_you_mean(self._workspace_path)
             await self._fail_boot(
                 ui,
-                f"❌ File not found: `{escape_markup(self._workspace_path)}`\n\n"
+                f"File not found: `{escape_markup(self._workspace_path)}`\n\n"
                 f"Check the path and try again.{hint}",
             )
         except PermissionError:
-            await self._fail_boot(
-                ui, f"❌ Permission denied: `{escape_markup(self._workspace_path)}`"
-            )
+            await self._fail_boot(ui, f"Permission denied: `{escape_markup(self._workspace_path)}`")
         except ValueError as exc:
-            await self._fail_boot(ui, f"❌ Provider error: {exc}")
+            await self._fail_boot(ui, f"Provider error: {exc}")
         except Exception as exc:
-            await self._fail_boot(ui, f"❌ Failed to load: {exc}")
+            await self._fail_boot(ui, f"Failed to load: {exc}")
+
+    def _config_search_path(self) -> Path:
+        """Directory to look for ``.opendatasci/mcp.json`` in for this workspace."""
+        resolved_path = Path(self._workspace_path).resolve()
+        return resolved_path if resolved_path.is_dir() else resolved_path.parent
 
     async def _fail_boot(self, ui: UIAdapter, msg_text: str) -> None:
         self._boot_failed = True
@@ -237,6 +289,15 @@ class CLIController:
             return f"{count} file{'s' if count != 1 else ''}"
         return ""
 
+    @staticmethod
+    def _describe_model(cfg: OpenDataSciConfig) -> str:
+        """Short "Provider  model-id" label shown in the header."""
+        try:
+            provider_label = _PROVIDER_DISPLAY[Provider(cfg.provider)]
+        except (KeyError, ValueError):
+            provider_label = str(cfg.provider).title()
+        return f"{provider_label}  {cfg.model}"
+
     # ── Input change ──────────────────────────────────────────────────────────
 
     def on_input_changed(self, value: str) -> bool:
@@ -260,6 +321,10 @@ class CLIController:
 
     def hide_completion(self) -> None:
         self._completion.hide(self._ui)
+
+    def accept_completion(self) -> bool:
+        """Close the popup on Enter without submitting. True if it was showing."""
+        return self._completion.try_accept(self._ui)
 
     # ── Paste attachment ──────────────────────────────────────────────────────
 
@@ -322,7 +387,7 @@ class CLIController:
         valid_refs, missing_refs = _split_existing_file_refs(refs)
         for ref in missing_refs:
             await self._ui.add_message(
-                "agent", f"⚠️ File not found: {escape_markup(ref._path)}"
+                "agent", f"File not found: {escape_markup(ref._path)}"
             ).finish()
 
         if refs and not clean_text and not valid_refs and attachment is None:
@@ -357,13 +422,13 @@ class CLIController:
         if self._boot_failed:
             await self._ui.add_message(
                 "agent",
-                "❌ Startup failed, so queries can't run in this session. "
+                "Startup failed, so queries can't run in this session. "
                 "Fix the problem shown above and restart the app "
                 "(type `/exit` to quit).",
             ).finish()
         else:
             await self._ui.add_message(
-                "agent", "⚠️ Still loading — please wait a moment and try again."
+                "agent", "Still loading — please wait a moment and try again."
             ).finish()
         return False
 
@@ -477,17 +542,21 @@ class CLIController:
         """Refresh the header's "running background tasks" line every few seconds.
 
         Purely a status display of already-in-memory state — not the
-        completion-delivery mechanism (``_watch_background_tasks`` is).
+        completion-delivery mechanism (``_watch_background_tasks`` is). Only
+        touches the UI when the description actually changed, so an idle
+        session (the common case) doesn't re-render the header every couple
+        of seconds for no visible difference.
         """
         assert self._service is not None
         while True:
             await asyncio.sleep(_BACKGROUND_STATUS_POLL_SECONDS)
             records = await self._service.task_manager.list_tasks()
             running = [r for r in records if r.status == BackgroundTaskStatus.RUNNING]
-            if not running:
-                self._ui.set_background_tasks("")
+            description = "; ".join(r.summary for r in running)
+            if description == self._last_background_status:
                 continue
-            self._ui.set_background_tasks("; ".join(r.summary for r in running))
+            self._last_background_status = description
+            self._ui.set_background_tasks(description)
 
     def _drain_pending_batch(self) -> list[Invocation]:
         """Drain every queued user message, surface each in the UI, and return the batch.
@@ -533,7 +602,6 @@ class CLIController:
                 self._active_turn_status = None
             if not self._awaiting_choice and not self._awaiting_approval:
                 self._ui.set_input_placeholder("Ask a question about your data…")
-            self._ui.add_divider()
 
     async def _dispatch_stream_event(
         self, event: BaseAgentStreamEvent, presenter: _TurnPresenter
@@ -574,12 +642,13 @@ class CLIController:
             else None
         )
         lines = [
-            f"[bold {theme['warning']}]❓[/bold {theme['warning']}]  "
-            f"[bold {theme['text_primary']}]{question}[/bold {theme['text_primary']}]\n"
+            f"[bold {theme['text_primary']}]{escape_markup(question)}"
+            f"[/bold {theme['text_primary']}]\n"
         ]
         for label, choice_text in zip(labels, choices):
             lines.append(
-                f"  [bold {theme['warning']}]{label}[/bold {theme['warning']}]  {choice_text}"
+                f"  [bold {theme['warning']}]{label}[/bold {theme['warning']}]  "
+                f"{escape_markup(choice_text)}"
             )
         if other_label is not None:
             lines.append(
@@ -691,115 +760,193 @@ class CLIController:
             await self.compact()
         elif cmd == "/ls-workspace":
             await self.ls_workspace()
-        elif cmd == "/models":
-            await self.show_models()
-        elif cmd == "/stop":
-            await self.stop_agent()
         elif cmd == "/cancel-all-messages":
-            await self.cancel_pending_messages()
+            self.cancel_pending_messages()
         elif cmd == "/cancel-message":
-            await self.cancel_last_pending_message()
+            self.cancel_last_pending_message()
         elif cmd == "/help":
             await self.show_help()
-        elif cmd == "/themes":
-            await self.show_themes()
+        elif cmd == "/config":
+            self.open_config_panel()
+        elif cmd == "/models":
+            self.open_config_panel(["models"])
+        elif cmd == "/providers":
+            self.open_config_panel(["providers"])
         elif cmd == "/vars":
             await self._ui.add_message(
                 "agent",
-                "⚠️ `/vars` has been removed. Use `/help` to see available commands.",
+                "`/vars` has been removed. Use `/help` to see available commands.",
             ).finish()
         else:
             await self._ui.add_message(
                 "agent",
-                f"⚠️ Unknown command: `{cmd}`\n\nType `/help` to see all available commands.",
+                f"Unknown command: `{cmd}`\n\nType `/help` to see all available commands.",
             ).finish()
         return False
 
     # ── Actions ───────────────────────────────────────────────────────────────
 
     async def reset(self) -> None:
-        """Reset agent session and reload data from disk."""
+        """Reset agent session and reload data from disk.
+
+        No confirmation output: the conversation is cleared and the sole
+        remaining message is the "/reset" the user just entered, so they can
+        see what they ran without it competing with the (now-empty) chat.
+        """
         self._awaiting_approval = False  # the prompt widget is removed with the messages
         self._clear_pending_queue()
-        self._ui.clear_messages()
         if self._service is not None:
             try:
                 await self._service.reset_session()
-                await self._ui.add_message("agent", "✓ Session reset.").finish()
-            except Exception as exc:
-                await self._ui.add_message("agent", f"❌ Reset failed: {exc}").finish()
-        else:
-            await self._ui.add_message("agent", "Not loaded yet.").finish()
+            except Exception:
+                logger.exception("Failed to reset session")
+        self._ui.clear_messages()
+        await self._ui.add_message("user", "/reset").finish()
 
     async def clear_conv(self) -> None:
-        """Clear all conversation context."""
+        """Clear all conversation context.
+
+        No confirmation output — same rationale as ``reset()``.
+        """
         if self._agent_running:
             # A still-running turn would write the cleared conversation back
             # into state (and schedule its summarization) when it finishes.
             self._ui.stop_agent()
         self._awaiting_approval = False  # the prompt widget is removed with the messages
         self._clear_pending_queue()
-        self._ui.clear_messages()
         if self._service is not None:
             try:
                 await self._service.clear_context()
-            except Exception as exc:
+            except Exception:
                 logger.exception("Failed to clear service context")
-                await self._ui.add_message("agent", f"❌ Clear failed: {exc}").finish()
-                return
-        await self._ui.add_message("agent", "✓ Context cleared.").finish()
+        self._ui.clear_messages()
+        await self._ui.add_message("user", "/clear").finish()
 
     async def compact(self) -> None:
-        """Summarize the conversation and replace it with a compact context preamble."""
+        """Summarize the conversation, then clear the UI down to just "/compact".
+
+        The compaction itself still runs against the agent's real memory; a
+        turn-status bar shows live progress the same way an agent turn does.
+        On failure, nothing is cleared and nothing further is shown, so a
+        stale success message can never be left behind.
+        """
         if self._service is None:
-            await self._ui.add_message("agent", "Not loaded yet.").finish()
             return
-        status = self._ui.add_message("agent", "Compacting conversation…")
-        await status.set_content("Compacting conversation…")
         compact_timer: TurnStatusHandle | None = self._ui.add_turn_status_bar()
         try:
             await self._service.compact_chat_history()
-        except Exception as exc:
-            await status.set_content(f"❌ Compact failed: {exc}")
-            if compact_timer is not None:
-                compact_timer.stop()
-            await status.finish()
+        except Exception:
+            logger.exception("Failed to compact chat history")
             return
-        try:
-            self._ui.clear_messages()
-            compact_timer = None  # removed from DOM by clear_messages()
-            await self._ui.add_message(
-                "agent",
-                "**✓ Compaction done.** You may continue the conversation.",
-            ).finish()
         finally:
-            await status.finish()
             if compact_timer is not None:
                 compact_timer.stop()
-
-    async def show_models(self) -> None:
-        """Display the primary and secondary model in use."""
-        cfg = self._cfg or self._base_config
-        await self._ui.add_message(
-            "agent",
-            format_models_message(
-                cfg.provider,
-                cfg.model,
-                cfg.secondary_provider,
-                cfg.secondary_model,
-            ),
-        ).finish()
+        self._ui.clear_messages()
+        await self._ui.add_message("user", "/compact").finish()
 
     async def show_help(self) -> None:
         """Display all available slash commands with descriptions."""
         await self._ui.add_message("agent", format_help_message()).finish()
 
-    async def show_themes(self) -> None:
-        """Display the list of available colour themes and mark the active one."""
-        await self._ui.add_message(
-            "agent",
-            format_themes_message(_theme.active_name, _theme.THEME_DESCRIPTIONS),
-        ).finish()
+    # ── Config panel (/config, /models, /providers) ──────────────────────────
+
+    def open_config_panel(self, start_path: list[str] | None = None) -> None:
+        """Open the selection-driven config panel, optionally jumping to a sub-node."""
+        cfg = self._cfg or self._base_config
+        root = build_config_tree()
+        values = build_initial_values(cfg, _theme.active_name)
+        initial_mcp_servers = load_workspace_mcp_servers(self._config_search_path())
+        self._ui.open_config_panel(
+            root, values, start_path or [], self._apply_config_changes, initial_mcp_servers
+        )
+
+    async def _apply_config_changes(
+        self, changes: dict[str, str], mcp_servers: list[MCPServerSpec] | None = None
+    ) -> str | None:
+        """Apply staged changes from the config panel. Returns an error string, or None."""
+        if "theme" in changes:
+            _theme.set_active(changes["theme"])
+            self._ui.refresh_theme()
+
+        if "tips" in changes:
+            _tips.set_enabled(changes["tips"] == "on")
+            self._ui.refresh_tips()
+
+        raw_changes = {k: v for k, v in changes.items() if k not in ("theme", "tips")}
+        config_changes, coerce_error = _coerce_config_values(raw_changes)
+        if coerce_error is not None:
+            return coerce_error
+
+        if not config_changes and mcp_servers is None:
+            return None
+
+        if self._agent_running:
+            return "Agent is running — stop it first."
+
+        changed_providers = {
+            field: value
+            for field, value in raw_changes.items()
+            if field in ("provider", "secondary_provider")
+        }
+        for field, provider_name in changed_providers.items():
+            try:
+                provider = Provider(provider_name)
+            except ValueError:
+                return f"Unknown provider: {provider_name}"
+            key_field = PROVIDER_KEY_FIELD.get(provider)
+            if key_field and not getattr(self._base_config, key_field, None):
+                return format_missing_api_key_message(provider, key_field)
+
+        new_cfg = self._base_config.model_copy(update=config_changes)
+        error = await self._rebuild_agent(new_cfg, mcp_servers)
+        if error is None and mcp_servers is not None:
+            save_workspace_mcp_servers(self._config_search_path(), mcp_servers)
+        return error
+
+    async def _rebuild_agent(
+        self, new_base_config: OpenDataSciConfig, mcp_servers: list[MCPServerSpec] | None = None
+    ) -> str | None:
+        """Boot a fresh agent from *new_base_config*, swapping it in only on success.
+
+        The current session (service + exit stack) is left completely
+        untouched until the new agent has booted successfully, so a bad
+        model/provider switch never leaves the user without a working
+        session. Returns an error string on failure, or ``None`` on success.
+
+        *mcp_servers*, when given, overrides the workspace file's MCP
+        servers for this rebuild (used by the /config panel to apply staged
+        additions/removals before they're persisted to disk).
+        """
+        exit_stack = AsyncExitStack()
+        try:
+            if mcp_servers is None:
+                mcp_servers = load_workspace_mcp_servers(self._config_search_path())
+            cfg = new_base_config.model_copy(update={"mcp_servers": mcp_servers})
+            agent = await exit_stack.enter_async_context(
+                create_agent(self._workspace_path, config=cfg)
+            )
+            workspace_path = Path(agent._workspace.get_reference())
+            service = OpenDataSciTuiService(
+                agent=agent, sandbox=agent._sandbox, workspace_path=workspace_path
+            )
+        except Exception as exc:
+            await exit_stack.aclose()
+            return str(exc)
+
+        old_service = self._service
+        old_exit_stack = self._exit_stack
+        self._service = service
+        self._exit_stack = exit_stack
+        self._base_config = new_base_config
+        self._cfg = cfg
+        if old_service is not None:
+            await old_service.close()
+        await old_exit_stack.aclose()
+
+        info = CLISessionInfo.from_path(self._workspace_path, workspace_path, cfg)
+        self._ui.set_file_count(self._describe_data(info))
+        self._ui.set_model_info(self._describe_model(new_base_config))
+        return None
 
     async def stop_agent(self) -> None:
         """Stop the currently running agent turn."""
@@ -809,29 +956,21 @@ class CLIController:
         self._ui.stop_agent()
         if self._service is not None:
             await self._service.rewind_turn()
-        await self._ui.add_message("agent", "⏹ Agent stopped. You can continue from here.").finish()
+        await self._ui.add_message("agent", "Agent stopped. You can continue from here.").finish()
 
-    async def cancel_pending_messages(self) -> None:
-        """Discard every message currently queued behind a running agent turn."""
-        removed = self._pending_queue.cancel_all()
-        for message in removed:
+    def cancel_pending_messages(self) -> None:
+        """Discard every message currently queued behind a running agent turn.
+
+        No output: the queued pills disappearing from the UI is the feedback.
+        """
+        for message in self._pending_queue.cancel_all():
             self._discard_pending_handle(message.id)
-        if removed:
-            count = len(removed)
-            await self._ui.add_message(
-                "agent", f"✓ Cancelled {count} pending message{'s' if count != 1 else ''}."
-            ).finish()
-        else:
-            await self._ui.add_message("agent", "No pending messages to cancel.").finish()
 
-    async def cancel_last_pending_message(self) -> None:
-        """Discard only the most recently queued message."""
+    def cancel_last_pending_message(self) -> None:
+        """Discard only the most recently queued message. No output — see above."""
         message = self._pending_queue.cancel_last()
-        if message is None:
-            await self._ui.add_message("agent", "No pending messages to cancel.").finish()
-            return
-        self._discard_pending_handle(message.id)
-        await self._ui.add_message("agent", "✓ Cancelled last pending message.").finish()
+        if message is not None:
+            self._discard_pending_handle(message.id)
 
     def _discard_pending_handle(self, message_id: int) -> None:
         handle = self._pending_handles.pop(message_id, None)
@@ -850,6 +989,6 @@ class CLIController:
         try:
             files = self._service.get_workspace_files()
         except Exception as exc:
-            await self._ui.add_message("agent", f"❌ {exc}").finish()
+            await self._ui.add_message("agent", f"✗ {exc}").finish()
             return
         self._ui.show_workspace_panel(files)

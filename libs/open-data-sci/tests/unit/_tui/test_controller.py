@@ -1,26 +1,14 @@
 """Unit tests for opendatasci._tui.controller."""
 
 import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
-from opendatasci.streaming import (
-    AgentStreamEvent,
-    ApprovalRequiredEvent,
-    ErrorEvent,
-    ReasoningEvent,
-    ResponseEvent,
-    TokenEvent,
-    ToolCallEvent,
-    ToolResultEvent,
-    UsageEvent,
-    TaskDoneEvent,
-)
-from opendatasci._tui.controller import CLIController
-from opendatasci._tui.file_refs import (
+from opendatasci._tui.chat.file_refs import (
     PasteAttachment,
     _build_agent_query,
     _build_user_display,
@@ -31,8 +19,22 @@ from opendatasci._tui.file_refs import (
     _parse_file_refs,
     _split_existing_file_refs,
 )
+from opendatasci._tui.controller import CLIController
+from opendatasci._tui.style import theme as _theme
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.memory.messages import MessageOrigin
+from opendatasci.streaming import (
+    AgentStreamEvent,
+    ApprovalRequiredEvent,
+    ErrorEvent,
+    ReasoningEvent,
+    ResponseEvent,
+    TaskDoneEvent,
+    TokenEvent,
+    ToolCallEvent,
+    ToolResultEvent,
+    UsageEvent,
+)
 
 # ---------------------------------------------------------------------------
 # Pure parsing helpers
@@ -291,7 +293,7 @@ class TestPasteAttachment:
 # ---------------------------------------------------------------------------
 
 
-class TestPasteAttachment_Controller:
+class TestPasteAttachmentController:
     def test_on_paste_stores_attachment(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
@@ -405,7 +407,7 @@ class TestOnInputChanged:
         self, controller: CLIController, mock_ui: MagicMock, tmp_path: Path
     ) -> None:
         (tmp_path / "data.csv").write_text("")
-        with patch("opendatasci._tui.completion._discover_files", return_value=["data.csv"]):
+        with patch("opendatasci._tui.chat.completion._discover_files", return_value=["data.csv"]):
             controller.on_input_changed("@data")
         mock_ui.show_completion.assert_called_once()
         assert controller.has_completion_matches
@@ -418,11 +420,11 @@ class TestOnInputChanged:
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         # Popup visible from a previous @-scan that had results.
-        with patch("opendatasci._tui.completion._discover_files", return_value=["data.csv"]):
+        with patch("opendatasci._tui.chat.completion._discover_files", return_value=["data.csv"]):
             controller.on_input_changed("@data")
         assert controller.has_completion_matches
         mock_ui.reset_mock()
-        with patch("opendatasci._tui.completion._discover_files", return_value=[]):
+        with patch("opendatasci._tui.chat.completion._discover_files", return_value=[]):
             controller.on_input_changed("@nonexistent")
         mock_ui.hide_completion.assert_called()
 
@@ -430,7 +432,7 @@ class TestOnInputChanged:
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         # Popup visible before the user switches to plain text.
-        with patch("opendatasci._tui.completion._discover_files", return_value=["data.csv"]):
+        with patch("opendatasci._tui.chat.completion._discover_files", return_value=["data.csv"]):
             controller.on_input_changed("@data")
         assert controller.has_completion_matches
         mock_ui.reset_mock()
@@ -482,13 +484,14 @@ class TestCompletion:
     ) -> None:
         controller.on_input_changed("/c")
         controller.cycle_completion("/c", direction=-1)
-        # Wrapping up from the start selects the last of the 4 matches.
-        mock_ui.set_input_value.assert_called_once_with("/compact", len("/compact"))
+        # Wrapping up from the start selects the last of the "/c" matches:
+        # cancel-all-messages, cancel-message, clear, compact, config.
+        mock_ui.set_input_value.assert_called_once_with("/config", len("/config"))
 
     def test_cycle_completion_file_mode_updates_input(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        with patch("opendatasci._tui.completion._discover_files", return_value=["data.csv"]):
+        with patch("opendatasci._tui.chat.completion._discover_files", return_value=["data.csv"]):
             controller.on_input_changed("@")  # "@" at position 0
         controller.cycle_completion("@", direction=1)
         mock_ui.set_input_value.assert_called_once_with("@data.csv", 9)
@@ -666,35 +669,37 @@ class TestApprovalFlow:
 
 
 class TestReset:
-    async def test_reset_no_service_shows_not_loaded(
+    async def test_reset_with_no_service_still_clears_and_shows_command(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         await controller.reset()
-        mock_ui.add_message.assert_called_with("agent", "Not loaded yet.")
+        mock_ui.clear_messages.assert_called_once()
+        mock_ui.add_message.assert_called_once_with("user", "/reset")
 
     async def test_reset_with_service_resets(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
         await loaded_controller.reset()
         mock_service.reset_session.assert_awaited_once()
-        msg_calls = [c[0][1] for c in mock_ui.add_message.call_args_list]
-        assert any("reset" in m.lower() for m in msg_calls)
+        mock_ui.clear_messages.assert_called_once()
+        mock_ui.add_message.assert_called_once_with("user", "/reset")
 
-    async def test_reset_failure_shows_error(
+    async def test_reset_failure_still_clears_and_shows_command(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
         mock_service.reset_session.side_effect = RuntimeError("disk full")
-        await loaded_controller.reset()
-        msg_calls = [c[0][1] for c in mock_ui.add_message.call_args_list]
-        assert any("Reset failed" in m for m in msg_calls)
+        await loaded_controller.reset()  # should not raise
+        mock_ui.clear_messages.assert_called_once()
+        mock_ui.add_message.assert_called_once_with("user", "/reset")
 
 
 class TestClearConv:
-    async def test_clear_conv_always_clears_messages(
+    async def test_clear_conv_always_clears_messages_and_shows_command(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         await controller.clear_conv()
         mock_ui.clear_messages.assert_called_once()
+        mock_ui.add_message.assert_called_once_with("user", "/clear")
 
     async def test_clear_conv_calls_service_clear_context(
         self, loaded_controller: CLIController, mock_service: MagicMock
@@ -724,30 +729,35 @@ class TestClearConv:
 
 
 class TestCompact:
-    async def test_compact_no_service_shows_not_loaded(
+    async def test_compact_no_service_does_nothing(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         await controller.compact()
-        mock_ui.add_message.assert_called_with("agent", "Not loaded yet.")
+        mock_ui.clear_messages.assert_not_called()
+        mock_ui.add_message.assert_not_called()
 
-    async def test_compact_success_shows_confirmation_without_summary(
+    async def test_compact_success_clears_and_shows_command(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
         mock_service.compact_chat_history = AsyncMock(return_value="key findings")
         await loaded_controller.compact()
-        msg_calls = [c[0][1] for c in mock_ui.add_message.call_args_list]
-        assert not any("key findings" in m for m in msg_calls)
-        assert any("Compaction done" in m for m in msg_calls)
+        mock_ui.clear_messages.assert_called_once()
+        mock_ui.add_message.assert_called_once_with("user", "/compact")
 
-    async def test_compact_failure_shows_error(
+    async def test_compact_failure_does_not_clear_or_show_anything(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
         mock_service.compact_chat_history = AsyncMock(side_effect=RuntimeError("timeout"))
-        status_handle = mock_ui.add_message.return_value
+        await loaded_controller.compact()  # should not raise
+        mock_ui.clear_messages.assert_not_called()
+        mock_ui.add_message.assert_not_called()
+
+    async def test_compact_stops_turn_status_bar(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        timer = mock_ui.add_turn_status_bar.return_value
         await loaded_controller.compact()
-        # The error is set via set_content on the existing status bubble, not add_message
-        calls = [str(c) for c in status_handle.set_content.call_args_list]
-        assert any("Compact failed" in c for c in calls)
+        timer.stop.assert_called_once()
 
 
 class TestShowHelp:
@@ -762,55 +772,12 @@ class TestShowHelp:
             "/compact",
             "/ls-workspace",
             "/models",
+            "/providers",
+            "/config",
             "/exit",
             "/reset",
-            "/stop",
-            "/themes",
         ]:
             assert cmd in content
-
-
-class TestShowThemes:
-    async def test_show_themes_lists_all_palettes_and_marks_active(
-        self, controller: CLIController, mock_ui: MagicMock
-    ) -> None:
-        from opendatasci._tui import theme as _theme
-
-        _theme.active_name = "dracula"
-        try:
-            await controller.show_themes()
-        finally:
-            _theme.active_name = "default"
-        content = mock_ui.add_message.call_args[0][1]
-        for name in _theme.THEMES:
-            assert name in content
-        assert "*(active)*" in content
-        # The active marker must sit on the dracula line specifically.
-        dracula_line = next(line for line in content.splitlines() if "dracula" in line)
-        assert "*(active)*" in dracula_line
-
-
-class TestShowModels:
-    async def test_show_models_shows_model_info(
-        self, controller: CLIController, mock_ui: MagicMock
-    ) -> None:
-        await controller.show_models()
-        content = mock_ui.add_message.call_args[0][1]
-        assert "Model" in content
-        assert "Secondary Model" in content
-
-    async def test_show_models_uses_stored_cfg(
-        self, controller: CLIController, mock_ui: MagicMock
-    ) -> None:
-        cfg = MagicMock(spec=OpenDataSciConfig)
-        cfg.provider = "anthropic"
-        cfg.model = "claude-sonnet-4-6"
-        cfg.secondary_provider = "anthropic"
-        cfg.secondary_model = "claude-haiku-4-5"
-        controller._cfg = cfg
-        await controller.show_models()
-        content = mock_ui.add_message.call_args[0][1]
-        assert "Claude" in content
 
 
 class TestLsWorkspace:
@@ -1043,9 +1010,10 @@ class TestBackgroundTaskStatusPoll:
 
         mock_ui.set_background_tasks.assert_any_call("crunching numbers")
 
-    async def test_no_running_tasks_clears_header(
+    async def test_no_running_tasks_clears_header_once_something_was_shown(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
+        loaded_controller._last_background_status = "crunching numbers"  # previously shown
         mock_service.task_manager = MagicMock()
         mock_service.task_manager.list_tasks = AsyncMock(return_value=[])
 
@@ -1059,6 +1027,47 @@ class TestBackgroundTaskStatusPoll:
                 pass
 
         mock_ui.set_background_tasks.assert_any_call("")
+
+    async def test_no_running_tasks_on_an_idle_session_never_touches_the_header(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        """Nothing changed (idle session, nothing ever ran) — skip the redundant re-render."""
+        mock_service.task_manager = MagicMock()
+        mock_service.task_manager.list_tasks = AsyncMock(return_value=[])
+
+        with patch("opendatasci._tui.controller._BACKGROUND_STATUS_POLL_SECONDS", 0):
+            task = asyncio.create_task(loaded_controller._poll_background_task_status())
+            await asyncio.sleep(0.01)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        mock_ui.set_background_tasks.assert_not_called()
+
+    async def test_unchanged_running_tasks_only_render_once(
+        self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
+    ) -> None:
+        """The same running-task summary across multiple polls should not re-render each time."""
+        from opendatasci.tasks.base import BackgroundTaskRecord, BackgroundTaskStatus
+
+        running = BackgroundTaskRecord(
+            task_id=uuid4(), summary="crunching numbers", status=BackgroundTaskStatus.RUNNING
+        )
+        mock_service.task_manager = MagicMock()
+        mock_service.task_manager.list_tasks = AsyncMock(return_value=[running])
+
+        with patch("opendatasci._tui.controller._BACKGROUND_STATUS_POLL_SECONDS", 0):
+            task = asyncio.create_task(loaded_controller._poll_background_task_status())
+            await asyncio.sleep(0.03)  # several poll iterations, same result each time
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        assert mock_ui.set_background_tasks.call_count == 1
 
 
 class TestRunAgent:
@@ -1090,10 +1099,10 @@ class TestRunAgent:
     ) -> None:
         event = ErrorEvent(content="something went wrong")
         mock_service.astream.return_value = _aiter(event)
-        handle = mock_ui.add_message.return_value
         await loaded_controller.run_agent("query")
-        appended = "".join(str(c) for c in handle.append.call_args_list)
-        assert "something went wrong" in appended
+        call = mock_ui.add_message.call_args
+        assert call[0][0] == "error"
+        assert "something went wrong" in call[0][1]
 
     async def test_run_agent_exception_sets_error_content(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
@@ -1103,11 +1112,10 @@ class TestRunAgent:
             yield  # make it a generator
 
         mock_service.astream.return_value = _raise()
-        handle = mock_ui.add_message.return_value
         await loaded_controller.run_agent("query")
-        handle.set_content.assert_called()
-        content = handle.set_content.call_args[0][0]
-        assert "boom" in content
+        call = mock_ui.add_message.call_args
+        assert call[0][0] == "error"
+        assert "boom" in call[0][1]
 
     async def test_run_agent_resets_agent_running_flag_on_finish(
         self, loaded_controller: CLIController, mock_service: MagicMock
@@ -1163,12 +1171,13 @@ class TestRunAgent:
         await loaded_controller.run_agent("q")
         mock_ui.add_thinking_block.assert_called()
 
-    async def test_run_agent_adds_divider_at_end(
+    async def test_run_agent_does_not_add_a_divider_at_end(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
     ) -> None:
+        """No line between turns — the user/agent bubbles alone separate them."""
         mock_service.astream.return_value = _aiter()
         await loaded_controller.run_agent("q")
-        mock_ui.add_divider.assert_called_once()
+        mock_ui.add_divider.assert_not_called()
 
     async def test_run_agent_task_block_marked_done_on_tool_result(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
@@ -1354,23 +1363,6 @@ class TestStopAgent:
         await controller.stop_agent()
         mock_ui.stop_agent.assert_called_once()
 
-    async def test_slash_stop_dispatched_when_agent_running(
-        self, loaded_controller: CLIController, mock_ui: MagicMock
-    ) -> None:
-        loaded_controller._agent_running = True
-        action, _ = await loaded_controller.on_submit("/stop")
-        assert action == ""
-        mock_ui.stop_agent.assert_called_once()
-
-    async def test_slash_stop_dispatched_when_agent_idle(
-        self, controller: CLIController, mock_ui: MagicMock
-    ) -> None:
-        controller._agent_running = False
-        action, _ = await controller.on_submit("/stop")
-        assert action == ""
-        content = mock_ui.add_message.call_args[0][1]
-        assert "No agent is currently running" in content
-
 
 # ---------------------------------------------------------------------------
 # CLIController — lifecycle
@@ -1445,7 +1437,7 @@ class TestSessionId:
             patch("opendatasci._tui.controller.create_agent", mock_create_agent),
             patch("opendatasci._tui.controller.OpenDataSciTuiService", mock_service_cls),
             patch("opendatasci._tui.session.CLISessionInfo.from_path", return_value=fake_info),
-            patch("opendatasci.tools.mcp.load_mcp_servers", return_value=[]),
+            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
         ):
             await ctrl.boot()
@@ -1464,7 +1456,7 @@ class TestSessionId:
 # ---------------------------------------------------------------------------
 
 _BOOT_PATCHES = (
-    "opendatasci.tools.mcp.load_mcp_servers",
+    "opendatasci.tools.mcp.load_workspace_mcp_servers",
     "pathlib.Path.resolve",
     "pathlib.Path.is_dir",
 )
@@ -1488,7 +1480,7 @@ class TestBootFailures:
             patch("opendatasci._tui.controller.create_agent", side_effect=FileNotFoundError()),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
             patch("opendatasci._tui.session.CLISessionInfo.from_path"),
-            patch("opendatasci.tools.mcp.load_mcp_servers", return_value=[]),
+            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
             patch("opendatasci._tui.controller.CLIController._did_you_mean", return_value=""),
         ):
@@ -1513,7 +1505,7 @@ class TestBootFailures:
             patch("opendatasci._tui.controller.create_agent", side_effect=FileNotFoundError()),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
             patch("opendatasci._tui.session.CLISessionInfo.from_path"),
-            patch("opendatasci.tools.mcp.load_mcp_servers", return_value=[]),
+            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path(typo)),
         ):
             await ctrl.boot()
@@ -1535,7 +1527,7 @@ class TestBootFailures:
             patch("opendatasci._tui.controller.create_agent", side_effect=FileNotFoundError()),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
             patch("opendatasci._tui.session.CLISessionInfo.from_path"),
-            patch("opendatasci.tools.mcp.load_mcp_servers", return_value=[]),
+            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path(typo)),
         ):
             await ctrl.boot()
@@ -1551,7 +1543,7 @@ class TestBootFailures:
             patch("opendatasci._tui.controller.create_agent", side_effect=PermissionError()),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
             patch("opendatasci._tui.session.CLISessionInfo.from_path"),
-            patch("opendatasci.tools.mcp.load_mcp_servers", return_value=[]),
+            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
         ):
             await ctrl.boot()
@@ -1572,7 +1564,7 @@ class TestBootFailures:
             ),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
             patch("opendatasci._tui.session.CLISessionInfo.from_path"),
-            patch("opendatasci.tools.mcp.load_mcp_servers", return_value=[]),
+            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
         ):
             await ctrl.boot()
@@ -1594,7 +1586,7 @@ class TestBootFailures:
             ),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
             patch("opendatasci._tui.session.CLISessionInfo.from_path"),
-            patch("opendatasci.tools.mcp.load_mcp_servers", return_value=[]),
+            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
         ):
             await ctrl.boot()
@@ -1696,15 +1688,26 @@ class TestSlashDispatch:
         await loaded_controller.on_submit("/ls-workspace")
         mock_service.get_workspace_files.assert_called()
 
-    async def test_slash_models_renders_model_info(
+    async def test_slash_models_opens_config_panel_at_models_node(
         self, loaded_controller: CLIController, mock_ui: MagicMock
     ) -> None:
         await loaded_controller.on_submit("/models")
-        rendered = [c.args[1] for c in mock_ui.add_message.call_args_list]
-        assert any(
-            "claude-sonnet" in str(text).lower() or "model" in str(text).lower()
-            for text in rendered
-        )
+        mock_ui.open_config_panel.assert_called_once()
+        assert mock_ui.open_config_panel.call_args[0][2] == ["models"]
+
+    async def test_slash_providers_opens_config_panel_at_providers_node(
+        self, loaded_controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await loaded_controller.on_submit("/providers")
+        mock_ui.open_config_panel.assert_called_once()
+        assert mock_ui.open_config_panel.call_args[0][2] == ["providers"]
+
+    async def test_slash_config_opens_config_panel_at_root(
+        self, loaded_controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await loaded_controller.on_submit("/config")
+        mock_ui.open_config_panel.assert_called_once()
+        assert mock_ui.open_config_panel.call_args[0][2] == []
 
     async def test_slash_help_renders_help(
         self, loaded_controller: CLIController, mock_ui: MagicMock
@@ -1712,13 +1715,6 @@ class TestSlashDispatch:
         await loaded_controller.on_submit("/help")
         rendered = " ".join(str(c.args[1]) for c in mock_ui.add_message.call_args_list)
         assert "/help" in rendered or "command" in rendered.lower()
-
-    async def test_slash_themes_lists_themes(
-        self, loaded_controller: CLIController, mock_ui: MagicMock
-    ) -> None:
-        await loaded_controller.on_submit("/themes")
-        rendered = " ".join(str(c.args[1]) for c in mock_ui.add_message.call_args_list)
-        assert "default" in rendered and "accessible" in rendered and "dracula" in rendered
 
     async def test_slash_vars_shows_deprecation_message(
         self, loaded_controller: CLIController, mock_ui: MagicMock
@@ -1771,8 +1767,7 @@ class TestSlashCommandArguments:
         self, loaded_controller: CLIController, mock_ui: MagicMock
     ) -> None:
         await loaded_controller.on_submit("/models verbose")
-        content = mock_ui.add_message.call_args[0][1]
-        assert "Unknown command" not in content
+        mock_ui.open_config_panel.assert_called_once()
 
     async def test_unknown_command_with_args_reports_head_token(
         self, controller: CLIController, mock_ui: MagicMock
@@ -1807,7 +1802,7 @@ class TestBootFailedState:
             patch("opendatasci._tui.controller.create_agent", side_effect=FileNotFoundError()),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
             patch("opendatasci._tui.session.CLISessionInfo.from_path"),
-            patch("opendatasci.tools.mcp.load_mcp_servers", return_value=[]),
+            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
             patch("opendatasci._tui.controller.CLIController._did_you_mean", return_value=""),
         ):
@@ -1857,3 +1852,154 @@ class TestControllerStateProperties:
         assert controller.has_paste_attachment is True
         controller.clear_paste_attachment()
         assert controller.has_paste_attachment is False
+
+
+# ---------------------------------------------------------------------------
+# CLIController.open_config_panel / _apply_config_changes — /config, /models,
+# /providers
+# ---------------------------------------------------------------------------
+
+
+class TestOpenConfigPanel:
+    def test_builds_tree_and_opens_at_root_by_default(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        controller.open_config_panel()
+        mock_ui.open_config_panel.assert_called_once()
+        root, values, start_path, on_apply, _initial_mcp_servers = (
+            mock_ui.open_config_panel.call_args[0]
+        )
+        assert root.key == "root"
+        assert start_path == []
+        assert on_apply == controller._apply_config_changes
+
+    def test_jumps_to_the_requested_start_path(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        controller.open_config_panel(["providers"])
+        start_path = mock_ui.open_config_panel.call_args[0][2]
+        assert start_path == ["providers"]
+
+    def test_initial_values_reflect_the_active_config_and_theme(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        _theme.active_name = "light"
+        try:
+            controller.open_config_panel()
+        finally:
+            _theme.active_name = "default (dark, colorblind)"
+        values = mock_ui.open_config_panel.call_args[0][1]
+        assert values["theme"] == "light"
+        assert values["provider"] == "anthropic"
+        assert values["model"] == "claude-sonnet-4-6"
+
+    def test_uses_booted_cfg_over_base_config_once_available(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        controller._cfg = OpenDataSciConfig(provider="openai", model="gpt-4o")
+        controller.open_config_panel()
+        values = mock_ui.open_config_panel.call_args[0][1]
+        assert values["provider"] == "openai"
+        assert values["model"] == "gpt-4o"
+
+
+class TestApplyConfigChangesTheme:
+    async def test_theme_change_updates_active_name_and_refreshes_ui(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        try:
+            error = await controller._apply_config_changes({"theme": "light"})
+            assert error is None
+            assert _theme.active_name == "light"
+            mock_ui.refresh_theme.assert_called_once()
+        finally:
+            _theme.active_name = "default (dark, colorblind)"
+
+    async def test_theme_only_change_does_not_touch_the_agent(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        try:
+            await controller._apply_config_changes({"theme": "light"})
+        finally:
+            _theme.active_name = "default (dark, colorblind)"
+        assert controller._service is None  # never rebuilt
+
+
+class TestApplyConfigChangesModelProvider:
+    async def test_empty_changes_are_a_noop(self, controller: CLIController) -> None:
+        assert await controller._apply_config_changes({}) is None
+
+    async def test_agent_running_blocks_the_change(self, controller: CLIController) -> None:
+        controller._agent_running = True
+        error = await controller._apply_config_changes({"model": "claude-opus-4-8"})
+        assert error is not None
+        assert "running" in error.lower()
+
+    async def test_unknown_provider_is_rejected(self, controller: CLIController) -> None:
+        error = await controller._apply_config_changes({"provider": "not-a-real-provider"})
+        assert error is not None
+        assert "Unknown provider" in error
+
+    async def test_missing_api_key_is_reported_without_rebuilding(
+        self, controller: CLIController
+    ) -> None:
+        # base_config has no openai_api_key set.
+        error = await controller._apply_config_changes({"provider": "openai", "model": "gpt-4o"})
+        assert error is not None
+        assert "OpenAI" in error
+        assert controller._service is None
+
+    async def test_successful_rebuild_swaps_in_new_config(
+        self, controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        controller._cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        old_service = MagicMock()
+        old_service.close = AsyncMock()
+        controller._service = old_service
+
+        fake_agent = MagicMock()
+        fake_agent._workspace.get_reference.return_value = "/fake/data.csv"
+        fake_agent._sandbox = MagicMock()
+
+        @asynccontextmanager
+        async def _fake_create_agent(*args, **kwargs):
+            yield fake_agent
+
+        with (
+            patch("pathlib.Path.is_file", return_value=True),
+            patch("pathlib.Path.is_dir", return_value=False),
+            patch("opendatasci._tui.controller.create_agent", side_effect=_fake_create_agent),
+            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
+            patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
+            patch("opendatasci._tui.controller.OpenDataSciTuiService"),
+        ):
+            error = await controller._apply_config_changes({"model": "claude-opus-4-8"})
+
+        assert error is None
+        assert controller._base_config.model == "claude-opus-4-8"
+        old_service.close.assert_awaited_once()
+
+    async def test_failed_rebuild_keeps_old_service_and_reports_error(
+        self, controller: CLIController
+    ) -> None:
+        controller._cfg = OpenDataSciConfig(provider="anthropic", model="claude-sonnet-4-6")
+        old_service = MagicMock()
+        old_service.close = AsyncMock()
+        controller._service = old_service
+
+        with (
+            patch("pathlib.Path.is_file", return_value=True),
+            patch("pathlib.Path.is_dir", return_value=False),
+            patch(
+                "opendatasci._tui.controller.create_agent",
+                side_effect=RuntimeError("boom"),
+            ),
+            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
+            patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
+        ):
+            error = await controller._apply_config_changes({"model": "claude-opus-4-8"})
+
+        assert error is not None
+        assert "boom" in error
+        assert controller._service is old_service
+        old_service.close.assert_not_awaited()

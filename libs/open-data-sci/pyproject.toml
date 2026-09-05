@@ -70,6 +70,9 @@ dependencies = [
     # Web search & fetching
     "duckduckgo-search>=8.0.0,<9.0.0",
     "httpx>=0.27.0,<1.0.0",
+    # MCP client
+    "mcp>=2.0.0,<3.0.0",
+    "httpx2>=2.5.0,<3.0.0",
     # Sandbox runtime
     "sandbox-runtime>=0.2.0,<1.0.0",
 ]
@@ -112,6 +115,7 @@ dev = [
     "pyright>=1.1.390,<2.0.0",
     "pandas-stubs>=3.0.0,<4.0.0",
     "types-openpyxl>=3.1.0,<4.0.0",
+    "types-PyYAML>=6.0.0,<7.0.0",
     "vulture>=2.0.0,<3.0.0",
     "kaggle>=2.0.0,<3.0.0",
 ]
@@ -174,6 +178,9 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/component/conftest.py" = ["E402"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

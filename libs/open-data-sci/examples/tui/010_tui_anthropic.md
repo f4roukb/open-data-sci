@@ -114,12 +114,6 @@ after `@`, so you can browse your filesystem without typing full paths.
 > @src/etl_pipeline.py What does this script do and are there any obvious bugs?
 ```
 
-Line-range syntax keeps context focused on the relevant section:
-
-```
-> @src/etl_pipeline.py:L45-L80 Can you simplify this section?
-```
-
 Works for `.py`, `.sql`, `.md`, `.ipynb`, and plain text files.
 
 ---

@@ -6,9 +6,13 @@ widgets, so it can be unit-tested without a running app.
 
 import logging
 
-from .adapter import UIAdapter
-from .commands import SLASH_COMMAND_DESCRIPTIONS, SLASH_COMMANDS
-from .file_refs import _discover_files, _find_at_fragment, _find_slash_fragment
+from opendatasci._tui.adapter import UIAdapter
+from opendatasci._tui.chat.commands import SLASH_COMMAND_DESCRIPTIONS, SLASH_COMMANDS
+from opendatasci._tui.chat.file_refs import (
+    _discover_files,
+    _find_at_fragment,
+    _find_slash_fragment,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +138,20 @@ class CompletionState:
         cursor = self._at_pos + 1 + len(match)
         self._completing = True
         ui.set_input_value(new_value, cursor)
+
         ui.show_completion(self._matches, self._idx)
+        return True
+
+    def try_accept(self, ui: UIAdapter) -> bool:
+        """Accept the active completion popup as-is (Enter key).
+
+        Closes the popup without submitting, so Enter first confirms a
+        completion and only submits the message on a second press. Returns
+        True when a popup was showing and consumed the key press.
+        """
+        if not self._matches:
+            return False
+        self.hide(ui)
         return True
 
     def hide(self, ui: UIAdapter) -> None:

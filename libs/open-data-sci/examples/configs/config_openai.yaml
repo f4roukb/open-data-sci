@@ -17,7 +17,7 @@ secondary_provider: openai
 secondary_model: gpt-5.6-luna
 
 # ── Sampling ──────────────────────────────────────────────────────────────────
-temperature: 0.1
+primary_temperature: 0.1
 
 # ── Agent identity ────────────────────────────────────────────────────────────
 name: Sai

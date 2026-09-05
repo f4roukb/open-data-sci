@@ -1,11 +1,10 @@
-"""Unit tests for opendatasci._tui.tools_display."""
+"""Unit tests for opendatasci._tui.chat.tools_display."""
 
 import types
 
 import pytest
 
-from opendatasci._tui.tools_display import REGISTRY, ToolDisplay, _registry, register
-
+from opendatasci._tui.chat.tools_display import REGISTRY, ToolDisplay, _registry, register
 
 # ---------------------------------------------------------------------------
 # ToolDisplay dataclass
@@ -17,10 +16,6 @@ class TestToolDisplay:
         display = ToolDisplay(label="My Tool")
         assert display.label == "My Tool"
 
-    def test_icon_defaults_to_empty_string(self) -> None:
-        display = ToolDisplay(label="Tool")
-        assert display.icon == ""
-
     def test_summary_arg_defaults_to_none(self) -> None:
         display = ToolDisplay(label="Tool")
         assert display.summary_arg is None
@@ -28,10 +23,6 @@ class TestToolDisplay:
     def test_display_status_defaults_to_true(self) -> None:
         display = ToolDisplay(label="Tool")
         assert display.display_status is True
-
-    def test_custom_icon(self) -> None:
-        display = ToolDisplay(label="Python", icon="🐍")
-        assert display.icon == "🐍"
 
     def test_custom_summary_arg(self) -> None:
         display = ToolDisplay(label="Tool", summary_arg="summary")
@@ -47,7 +38,7 @@ class TestToolDisplay:
             display.label = "changed"  # type: ignore[misc]
 
     def test_equality_same_fields(self) -> None:
-        assert ToolDisplay(label="A", icon="X") == ToolDisplay(label="A", icon="X")
+        assert ToolDisplay(label="A", summary_arg="X") == ToolDisplay(label="A", summary_arg="X")
 
     def test_inequality_different_fields(self) -> None:
         assert ToolDisplay(label="A") != ToolDisplay(label="B")
@@ -117,9 +108,6 @@ class TestRegistryContents:
     def test_execute_python_label(self) -> None:
         assert REGISTRY["execute_python_code"].label == "Code"
 
-    def test_execute_python_icon(self) -> None:
-        assert REGISTRY["execute_python_code"].icon == "🐍"
-
     def test_execute_python_summary_arg(self) -> None:
         assert REGISTRY["execute_python_code"].summary_arg == "summary"
 
@@ -129,17 +117,11 @@ class TestRegistryContents:
     def test_execute_cli_label(self) -> None:
         assert REGISTRY["execute_cli_command"].label == "Command"
 
-    def test_execute_cli_icon(self) -> None:
-        assert REGISTRY["execute_cli_command"].icon == "💻"
-
     def test_execute_cli_summary_arg(self) -> None:
         assert REGISTRY["execute_cli_command"].summary_arg == "summary"
 
     def test_list_python_libs_label(self) -> None:
         assert REGISTRY["list_python_libs"].label == "Checking available libraries"
-
-    def test_list_python_libs_icon(self) -> None:
-        assert REGISTRY["list_python_libs"].icon == "📦"
 
     def test_list_python_libs_summary_arg(self) -> None:
         assert REGISTRY["list_python_libs"].summary_arg == "summary"
@@ -149,22 +131,13 @@ class TestRegistryContents:
     def test_switch_agentic_mode_label(self) -> None:
         assert REGISTRY["switch_agentic_mode"].label == "Switching mode"
 
-    def test_switch_agentic_mode_icon(self) -> None:
-        assert REGISTRY["switch_agentic_mode"].icon == "🔀"
-
     def test_exit_plan_mode_label(self) -> None:
         assert REGISTRY["exit_plan_mode"].label == "Planning complete"
-
-    def test_exit_plan_mode_icon(self) -> None:
-        assert REGISTRY["exit_plan_mode"].icon == "🏁"
 
     # ── Skills ────────────────────────────────────────────────────────────────
 
     def test_load_skill_label(self) -> None:
         assert REGISTRY["load_skill"].label == "Loading skill"
-
-    def test_load_skill_icon(self) -> None:
-        assert REGISTRY["load_skill"].icon == "🧠"
 
     def test_load_skill_summary_arg(self) -> None:
         assert REGISTRY["load_skill"].summary_arg == "summary"
@@ -180,9 +153,6 @@ class TestRegistryContents:
     def test_task_label(self) -> None:
         assert REGISTRY["task"].label == "Spawning workers"
 
-    def test_task_icon(self) -> None:
-        assert REGISTRY["task"].icon == "👥"
-
     def test_task_summary_arg(self) -> None:
         assert REGISTRY["task"].summary_arg == "summary"
 
@@ -190,9 +160,6 @@ class TestRegistryContents:
 
     def test_read_dataset_info_label(self) -> None:
         assert REGISTRY["read_dataset_info"].label == "Reading dataset information"
-
-    def test_read_dataset_info_icon(self) -> None:
-        assert REGISTRY["read_dataset_info"].icon == "📚"
 
     def test_read_dataset_info_summary_arg(self) -> None:
         assert REGISTRY["read_dataset_info"].summary_arg == "summary"
@@ -206,33 +173,21 @@ class TestRegistryContents:
     def test_profile_dataset_label(self) -> None:
         assert REGISTRY["profile_dataset"].label == "Profiling dataset"
 
-    def test_profile_dataset_icon(self) -> None:
-        assert REGISTRY["profile_dataset"].icon == "📊"
-
     # ── Workspace ─────────────────────────────────────────────────────────────
 
     def test_list_workspace_files_label(self) -> None:
         assert REGISTRY["list_workspace_files"].label == "Listing workspace files"
-
-    def test_list_workspace_files_icon(self) -> None:
-        assert REGISTRY["list_workspace_files"].icon == "📁"
 
     # ── Web ───────────────────────────────────────────────────────────────────
 
     def test_web_search_label(self) -> None:
         assert REGISTRY["web_search"].label == "Searching the web"
 
-    def test_web_search_icon(self) -> None:
-        assert REGISTRY["web_search"].icon == "🌐"
-
     def test_web_search_summary_arg(self) -> None:
         assert REGISTRY["web_search"].summary_arg == "summary"
 
     def test_fetch_url_label(self) -> None:
         assert REGISTRY["fetch_url"].label == "Fetching web content"
-
-    def test_fetch_url_icon(self) -> None:
-        assert REGISTRY["fetch_url"].icon == "🔗"
 
     def test_fetch_url_summary_arg(self) -> None:
         assert REGISTRY["fetch_url"].summary_arg == "summary"
@@ -252,9 +207,6 @@ class TestRegistryContents:
 
     def test_verify_python_code_label(self) -> None:
         assert REGISTRY["verify_python_code"].label == "Reviewing code"
-
-    def test_verify_python_code_icon(self) -> None:
-        assert REGISTRY["verify_python_code"].icon == "🧪"
 
 
 # ---------------------------------------------------------------------------

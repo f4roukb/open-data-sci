@@ -65,6 +65,7 @@ from opendatasci.tools.factory import (
     create_plan_mode_tools,
     create_self_review_mode_tools,
 )
+from opendatasci.tools.mcp import MCPTool, discover_mcp_tools
 from opendatasci.workspace.base import BaseWorkspace
 
 logger = logging.getLogger(__name__)
@@ -188,6 +189,10 @@ class Agent(BaseOpenDataSciAgent):
         self._session_id = session_id or uuid.uuid4().hex
         self._config = (config or OpenDataSciConfig()).model_copy(deep=True)
         self._tools = tools
+        # MCP tools are (re)discovered regularly rather than bound once at
+        # startup — but only when the caller didn't hand us a fixed list.
+        self._mcp_dynamic = tools is None
+        self._non_mcp_tools: list[BaseTool] = []
         self._sandbox_factory = sandbox_factory
         self._skill_store = skill_store
         self._background_task_manager = background_task_manager
@@ -216,6 +221,7 @@ class Agent(BaseOpenDataSciAgent):
                 session_id=self._session_id,
             )
         checkpointer = self._checkpointer or MemorySaver()
+        self._checkpointer_instance = checkpointer
 
         self._llm: BaseChatModel = create_model(self._config)
         self._summarizer_llm: BaseChatModel = create_secondary_model(self._config)
@@ -225,7 +231,7 @@ class Agent(BaseOpenDataSciAgent):
         )
 
         if self._tools is None:
-            self._tools = create_execution_mode_tools(
+            self._non_mcp_tools = create_execution_mode_tools(
                 self._workspace,
                 self._sandbox,
                 self._context_store,
@@ -235,6 +241,12 @@ class Agent(BaseOpenDataSciAgent):
                 datasci_config=self._config,
                 background_task_manager=self._background_task_manager,
             )
+            mcp_tools = (
+                await discover_mcp_tools(self._config.mcp_servers)
+                if self._config.mcp_servers
+                else []
+            )
+            self._tools = [*self._non_mcp_tools, *mcp_tools]
 
         self._tools_in_plan_mode: list[BaseTool] = create_plan_mode_tools(self._tools)
         self._tools_in_self_review_mode: list[BaseTool] = create_self_review_mode_tools(self._tools)
@@ -300,6 +312,40 @@ class Agent(BaseOpenDataSciAgent):
             is_plan_mode=state.is_plan_mode,
             is_self_review_mode=state.is_self_review_mode,
         )
+
+    async def _discover_mcp_tools(self) -> None:
+        """Re-discover MCP tools and rebind them if the available set changed.
+
+        Called at the start of every turn, not just once at startup — a
+        server can enable or disable tools between turns, so discovery has
+        to happen regularly to pick that up. A no-op when the caller
+        supplied a fixed ``tools=`` list or no MCP servers are configured.
+        A failed discovery pass logs and keeps the previous tool set rather
+        than breaking the turn.
+        """
+        if not self._mcp_dynamic or not self._config.mcp_servers:
+            return
+        try:
+            mcp_tools = await discover_mcp_tools(self._config.mcp_servers)
+        except Exception:
+            logger.exception("Failed to discover MCP tools; keeping the previous set")
+            return
+
+        assert self._tools is not None  # set in __aenter__ before any turn can run
+        current_names = {t.name for t in self._tools if isinstance(t, MCPTool)}
+        new_names = {t.name for t in mcp_tools}
+        if current_names == new_names:
+            return
+
+        self._tools = [*self._non_mcp_tools, *mcp_tools]
+        self._tools_in_plan_mode = create_plan_mode_tools(self._tools)
+        self._tools_in_self_review_mode = create_self_review_mode_tools(self._tools)
+        self._llm_with_tools = with_retry(self._llm.bind_tools(self._tools))
+        self._llm_with_tools_plan = with_retry(self._llm.bind_tools(self._tools_in_plan_mode))
+        self._llm_with_tools_self_review = with_retry(
+            self._llm.bind_tools(self._tools_in_self_review_mode)
+        )
+        self._graph = self._build_graph(self._checkpointer_instance)
 
     def _build_graph(self, checkpointer: BaseCheckpointSaver[Any] | None) -> AgentCompiledGraph:
         return AgentGraphFactory(
@@ -391,6 +437,7 @@ class Agent(BaseOpenDataSciAgent):
                 "the agent is awaiting a response to a pending question or approval "
                 "request; call resume_with_input() or resume_with_approval() instead"
             )
+        await self._discover_mcp_tools()
         thread_id = self._session_manager.get_or_create_thread()  # type: ignore[union-attr]
         config = self._thread_config(thread_id)
         items = invocation if isinstance(invocation, list) else [invocation]

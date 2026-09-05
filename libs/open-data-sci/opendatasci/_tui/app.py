@@ -1,8 +1,10 @@
 import argparse
 import importlib.metadata
 import logging
+import os
 import uuid
 from pathlib import Path
+from typing import Awaitable, Callable
 
 from dotenv import load_dotenv
 from rich.console import Console
@@ -14,13 +16,8 @@ from textual.containers import Horizontal
 from textual.timer import Timer
 from textual.widgets import Footer, Input
 
-from opendatasci.configs import DEFAULT_MODEL, DEFAULT_SECONDARY_MODEL, OpenDataSciConfig
-from opendatasci.models.providers import Provider
-
-from . import theme as _theme
-from .adapter import SubmitAction
-from .controller import CLIController
-from .widgets import (
+from opendatasci._tui.adapter import SubmitAction
+from opendatasci._tui.chat.widgets import (
     AppHeader,
     ChatPane,
     CommandApprovalPrompt,
@@ -29,9 +26,34 @@ from .widgets import (
     PendingMessageBubble,
     SmartInput,
     ThinkingBlock,
+    TipsBar,
     ToolCallBlock,
     TurnStatusBar,
 )
+from opendatasci._tui.config.config_tree import (
+    ConfigLeaf,
+    ConfigNode,
+    build_model_leaf,
+    build_provider_leaf,
+    build_theme_leaf,
+)
+from opendatasci._tui.config.config_tree import (
+    initial_values as build_initial_values,
+)
+from opendatasci._tui.config.global_config import load_global_config
+from opendatasci._tui.config.onboarding import (
+    compute_missing_fields,
+    compute_missing_selection_fields,
+)
+from opendatasci._tui.controller import CLIController
+from opendatasci._tui.screens.config_screen import ConfigScreen
+from opendatasci._tui.screens.onboarding_screen import OnboardingScreen
+from opendatasci._tui.screens.startup_wizard_screen import StartupWizardScreen
+from opendatasci._tui.screens.system_dependencies_screen import SystemDependenciesScreen
+from opendatasci._tui.style import theme as _theme
+from opendatasci.configs import DEFAULT_MODEL, OpenDataSciConfig
+from opendatasci.sandbox.srt import get_system_dependency_status
+from opendatasci.tools.mcp import MCPServerSpec
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +67,23 @@ def _print_providers() -> None:
     Console().print(table)
 
 
+def _apply_global_config_fallback(kwargs: dict[str, object], global_cfg: dict[str, object]) -> None:
+    """Fill *kwargs* in place from *global_cfg* for fields not set via CLI or env.
+
+    A real environment variable for the field always wins over the persisted
+    global config value.
+    """
+    for field_name, value in global_cfg.items():
+        if field_name in kwargs:
+            continue
+        model_field = OpenDataSciConfig.model_fields.get(field_name)
+        if model_field is None:
+            continue
+        if model_field.alias and os.environ.get(model_field.alias):
+            continue
+        kwargs[field_name] = value
+
+
 def _get_version() -> str:
     try:
         return importlib.metadata.version("open-data-sci")
@@ -56,7 +95,7 @@ def _get_version() -> str:
 class OpenDataSciApp(App[None]):
     """OpenDataSci — full TUI for AI-powered data science."""
 
-    CSS_PATH = "styles.tcss"
+    CSS_PATH = "style/styles.tcss"
 
     BINDINGS = [
         Binding("ctrl+c", "request_quit", "Stop/Quit"),
@@ -70,18 +109,17 @@ class OpenDataSciApp(App[None]):
         workspace_path: str,
         session_id: str,
         datasci_config: OpenDataSciConfig,
-        theme: str = "default",
+        missing_selection: list[str] | None = None,
     ) -> None:
-        palette = _theme.THEMES.get(theme, _theme.DARK)
-        _theme.active.update(palette)
-        _theme.active_name = theme if theme in _theme.THEMES else "default"
         super().__init__()
+        self._initial_datasci_config = datasci_config
         self._controller = CLIController(
             ui=self,  # type: ignore[arg-type]
             workspace_path=workspace_path,
             datasci_config=datasci_config,
             session_id=session_id,
         )
+        self._missing_selection = missing_selection or []
 
     def get_css_variables(self) -> dict[str, str]:
         """Expose the active theme palette as $ods-* CSS variables.
@@ -98,8 +136,6 @@ class OpenDataSciApp(App[None]):
     def compose(self) -> ComposeResult:
         yield AppHeader(
             version=_get_version(),
-            provider=self._controller.provider,
-            model=self._controller.model,
             workspace=str(Path(self._controller._workspace_path).resolve()),
         )
         with Horizontal(id="main"):
@@ -109,6 +145,55 @@ class OpenDataSciApp(App[None]):
     def on_mount(self) -> None:
         self._quit_requested = False
         self._quit_timer: Timer | None = None
+        self.query_one("#user-input", Input).focus()
+        dependency_status = get_system_dependency_status()
+        if dependency_status.supported and not dependency_status.satisfied:
+            self.push_screen(SystemDependenciesScreen(dependency_status, self._start_wizard))
+        else:
+            self._start_wizard()
+
+    def _start_wizard(self) -> None:
+        steps = self._build_wizard_steps()
+        values = build_initial_values(self._initial_datasci_config, _theme.active_name)
+        self.push_screen(StartupWizardScreen(steps, values, self._on_wizard_complete))
+
+    def _build_wizard_steps(self) -> list[tuple[str, ConfigLeaf]]:
+        """Always-shown theme step, plus whichever provider/model fields weren't
+        already resolved via --config/env (see ``compute_missing_selection_fields``)."""
+        steps: list[tuple[str, ConfigLeaf]] = [("Theme", build_theme_leaf())]
+        if "provider" in self._missing_selection:
+            steps.append(("Provider", build_provider_leaf("provider", "model")))
+        if "model" in self._missing_selection:
+            steps.append(("Model", build_model_leaf("model", "provider")))
+        if "secondary_provider" in self._missing_selection:
+            steps.append(
+                ("Secondary provider", build_provider_leaf("secondary_provider", "secondary_model"))
+            )
+        if "secondary_model" in self._missing_selection:
+            steps.append(
+                ("Secondary model", build_model_leaf("secondary_model", "secondary_provider"))
+            )
+        return steps
+
+    def _on_wizard_complete(self, values: dict[str, str]) -> None:
+        _theme.set_active(values["theme"])
+        self.refresh_css()
+        config_updates = {k: v for k, v in values.items() if k != "theme"}
+        self._controller.apply_config_updates(config_updates)
+        self.query_one("#user-input", Input).focus()
+
+        base_config = self._controller.base_config
+        global_cfg = load_global_config()
+        missing_fields = compute_missing_fields(
+            [base_config.provider, base_config.secondary_provider], {}, global_cfg
+        )
+        if missing_fields:
+            self.push_screen(OnboardingScreen(missing_fields, self._on_onboarding_complete))
+        else:
+            self._boot()
+
+    def _on_onboarding_complete(self, values: dict[str, str]) -> None:
+        self._controller.apply_config_updates(values)
         self.query_one("#user-input", Input).focus()
         self._boot()
 
@@ -150,6 +235,9 @@ class OpenDataSciApp(App[None]):
     def set_background_tasks(self, description: str) -> None:
         self.query_one(AppHeader).set_background_tasks(description)
 
+    def set_model_info(self, description: str) -> None:
+        self.query_one(AppHeader).set_model_info(description)
+
     def show_workspace_panel(self, files: list[str]) -> None:
         self.query_one(ChatPane).show_workspace_panel(files)
 
@@ -161,6 +249,26 @@ class OpenDataSciApp(App[None]):
 
     def hide_attachment(self) -> None:
         self.query_one(ChatPane).hide_attachment()
+
+    def open_config_panel(
+        self,
+        root: ConfigNode,
+        initial_values: dict[str, str],
+        start_path: list[str],
+        on_apply: Callable[[dict[str, str], list[MCPServerSpec] | None], Awaitable[str | None]],
+        initial_mcp_servers: list[MCPServerSpec] | None = None,
+    ) -> None:
+        self.push_screen(
+            ConfigScreen(root, initial_values, start_path, on_apply, initial_mcp_servers)
+        )
+
+    def refresh_theme(self) -> None:
+        """Recompute $ods-* CSS variables from the (just-switched) active palette."""
+        self.refresh_css()
+
+    def refresh_tips(self) -> None:
+        """Re-render the footer tips bar after tips.set_enabled() flips it."""
+        self.query_one(TipsBar).apply_settings()
 
     def stop_agent(self) -> None:
         self.workers.cancel_group(self, "agent")
@@ -198,6 +306,10 @@ class OpenDataSciApp(App[None]):
 
     @on(Input.Submitted, "#user-input")
     async def on_submit(self, event: Input.Submitted) -> None:
+        if self._controller.accept_completion():
+            # A completion popup was active: Enter confirms the selection
+            # (already written into the input text) instead of sending it.
+            return
         raw = event.value.strip()
         if raw:
             self.query_one("#user-input", SmartInput).push_history(raw)
@@ -311,18 +423,14 @@ class OpenDataSciApp(App[None]):
             self.action_focus_next()
 
 
-# Maps a provider name to the OpenDataSciConfig field that holds its API key.
-# Providers that use cloud-native auth (bedrock, vertexai, ollama) have no key field.
-_PROVIDER_KEY_FIELD: dict[Provider, str | None] = {
-    Provider.ANTHROPIC: "anthropic_api_key",
-    Provider.OPENAI: "openai_api_key",
-    Provider.GEMINI: "google_api_key",
-    Provider.AZURE: "azure_api_key",
-    Provider.OPENAI_COMPATIBLE_SERVER: "openai_api_key",
-    Provider.BEDROCK: None,
-    Provider.VERTEXAI: None,
-    Provider.OLLAMA: None,
-}
+def _load_yaml_dict(path: str) -> dict[str, object]:
+    """Raw contents of a --config YAML file, used only to detect which fields
+    it sets explicitly (OpenDataSciConfig.from_yaml doesn't expose that)."""
+    import yaml
+
+    with open(path) as fh:
+        data = yaml.safe_load(fh) or {}
+    return data if isinstance(data, dict) else {}
 
 
 def main() -> None:
@@ -334,9 +442,7 @@ def main() -> None:
         epilog="""
 Examples:
   opendatasci data.xlsx
-  opendatasci data.csv --provider bedrock
-  opendatasci ./data_folder --provider openai --model gpt-5.6-sol
-  opendatasci data.csv --secondary-provider openai --secondary-model gpt-5.6-luna
+  opendatasci ./data_folder
   opendatasci data.csv --config path/to/datasci_config.yaml
         """,
     )
@@ -347,53 +453,13 @@ Examples:
         help="Data file or directory containing data files to work with",
     )
     parser.add_argument(
-        "--provider",
-        default=None,
-        choices=list(Provider),
-        help="LLM provider for the primary model (default: anthropic)",
-    )
-    parser.add_argument(
-        "--model",
-        dest="model",
-        default=None,
-        help="Primary model name (provider-specific)",
-    )
-    parser.add_argument(
-        "--secondary-provider",
-        dest="secondary_provider",
-        default=None,
-        choices=list(Provider),
-        help="LLM provider for the secondary (auxiliary) model — may differ from --provider",
-    )
-    parser.add_argument(
-        "--secondary-model",
-        dest="secondary_model",
-        default=None,
-        help="Secondary model name (resolved against --secondary-provider or --provider)",
-    )
-    parser.add_argument(
-        "--api-key",
-        dest="api_key",
-        default=None,
-        help="API key for the primary provider (or set via environment variable)",
-    )
-    parser.add_argument(
-        "--theme",
-        choices=list(_theme.THEMES.keys()),
-        default="default",
-        help=(
-            "Colour palette. Choices: "
-            + ", ".join(_theme.THEMES.keys())
-            + ". Run `/themes` inside the TUI for descriptions."
-        ),
-    )
-    parser.add_argument(
         "--config",
         default=None,
         metavar="FILE",
         help=(
-            "Path to a YAML file containing OpenDataSciConfig fields. "
-            "Explicit TUI flags take precedence over values in the file."
+            "Path to a YAML file containing OpenDataSciConfig fields. Provider/model "
+            "fields it sets are used as-is; anything it doesn't set (including theme, "
+            "which it never sets) is picked interactively on startup."
         ),
     )
     parser.add_argument(
@@ -408,61 +474,29 @@ Examples:
         _print_providers()
         return
 
-    if args.workspace_or_file is None:
-        parser.error("the following arguments are required: path")
+    workspace_or_file = args.workspace_or_file or str(Path.cwd())
+    global_cfg = load_global_config()
 
-    # Build OpenDataSciConfig: YAML file provides the base; explicit TUI flags override.
     if args.config:
         datasci_config = OpenDataSciConfig.from_yaml(args.config)
-        overrides: dict[str, object] = {}
-        if args.provider is not None:
-            overrides["provider"] = args.provider
-        if args.model is not None:
-            overrides["model"] = args.model
-        if args.secondary_provider is not None:
-            overrides["secondary_provider"] = args.secondary_provider
-        if args.secondary_model is not None:
-            overrides["secondary_model"] = args.secondary_model
-        if args.api_key is not None:
-            effective_provider = str(args.provider or datasci_config.provider)
-            key_field = _PROVIDER_KEY_FIELD.get(Provider(effective_provider))
-            if key_field:
-                overrides[key_field] = args.api_key
-            else:
-                parser.error(
-                    f"--api-key is not supported for provider '{effective_provider}' "
-                    f"(uses cloud-native authentication)"
-                )
-        if overrides:
-            datasci_config = datasci_config.model_copy(update=overrides)
+        yaml_data = _load_yaml_dict(args.config)
     else:
-        provider: Provider = args.provider or Provider.ANTHROPIC
-        resolved_secondary_provider: Provider = args.secondary_provider or provider
-        kwargs: dict[str, object] = {
-            "provider": provider,
-            "model": args.model or DEFAULT_MODEL[provider],
-            "secondary_provider": resolved_secondary_provider,
-            "secondary_model": args.secondary_model
-            or DEFAULT_SECONDARY_MODEL[resolved_secondary_provider],
-        }
-        if args.api_key is not None:
-            key_field = _PROVIDER_KEY_FIELD.get(provider)
-            if key_field:
-                kwargs[key_field] = args.api_key
-            else:
-                parser.error(
-                    f"--api-key is not supported for provider '{provider}' "
-                    f"(uses cloud-native authentication)"
-                )
-        datasci_config = OpenDataSciConfig(**kwargs)  # type: ignore[arg-type]
+        datasci_config = OpenDataSciConfig()
+        yaml_data = {}
 
+    overrides: dict[str, object] = {}
+    _apply_global_config_fallback(overrides, global_cfg)
+    if overrides:
+        datasci_config = datasci_config.model_copy(update=overrides)
+
+    missing_selection = compute_missing_selection_fields(yaml_data)
     session_id = uuid.uuid4().hex
 
     OpenDataSciApp(
-        workspace_path=args.workspace_or_file,
+        workspace_path=workspace_or_file,
         session_id=session_id,
         datasci_config=datasci_config,
-        theme=args.theme,
+        missing_selection=missing_selection,
     ).run()
 
 

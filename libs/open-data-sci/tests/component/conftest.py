@@ -59,6 +59,7 @@ import pytest
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage
 
+from opendatasci._tui.service import OpenDataSciTuiService
 from opendatasci.agents.agents import Agent
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.context.local import LocalContextStore
@@ -66,7 +67,6 @@ from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory, SandboxExe
 from opendatasci.skills.local import LocalSkillStore
 from opendatasci.tools.factory import create_execution_mode_tools
 from opendatasci.workspace.local import LocalWorkspace
-from opendatasci._tui.service import OpenDataSciTuiService
 
 # ---------------------------------------------------------------------------
 # Workspace fixtures

@@ -1,13 +1,12 @@
 """Unit tests for opendatasci.streaming.processors (and format_stream_error)."""
 
-import asyncio
 from unittest.mock import MagicMock
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from opendatasci.streaming import AgentTurnStreamProcessor
 from opendatasci._utils.streaming_utils import format_stream_error
+from opendatasci.streaming import AgentTurnStreamProcessor
 from opendatasci.streaming.processors import SUBAGENT_TAG
 
 # ---------------------------------------------------------------------------
@@ -233,15 +232,18 @@ class TestStreamEventProcessor:
         assert len(results) == 1
         assert results[0].type == "tool_result"
 
-    def test_process_tool_end_string_output_uses_metadata_tool_call_id(self) -> None:
+    def test_process_tool_end_string_output_uses_data_tool_call_id(self) -> None:
         """When on_tool_end fires with a raw string (MCP / StructuredTool.from_function),
-        the tool_call_id must be read from event metadata rather than the output —
-        otherwise the TUI can never correlate the result with its running spinner."""
+        the tool_call_id must be read from event["data"] rather than the output —
+        otherwise the TUI can never correlate the result with its running spinner.
+
+        langchain_core's event-stream tracer never puts tool_call_id under
+        event["metadata"] (that's just the run's tags/metadata dict) — only
+        under event["data"]."""
         p = self._proc()
         event = {
             "event": "on_tool_end",
-            "data": {"output": "raw string result"},
-            "metadata": {"tool_call_id": "mcp-tc1"},
+            "data": {"output": "raw string result", "tool_call_id": "mcp-tc1"},
         }
         results = p.process_event(event)
         tool_results = [e for e in results if e.type == "tool_result"]
@@ -254,20 +256,18 @@ class TestStreamEventProcessor:
         p = self._proc()
         event = {
             "event": "on_tool_end",
-            "data": {"output": "plain result"},
-            "metadata": {"tool_call_id": "mcp-tc2"},
+            "data": {"output": "plain result", "tool_call_id": "mcp-tc2"},
         }
         results = p.process_event(event)
         assert not any(e.type == "message" for e in results)
 
-    def test_process_tool_end_tool_message_id_takes_precedence_over_metadata(self) -> None:
-        """When the output IS a ToolMessage, its own tool_call_id must win over metadata."""
+    def test_process_tool_end_tool_message_id_takes_precedence_over_data(self) -> None:
+        """When the output IS a ToolMessage, its own tool_call_id must win over event["data"]."""
         p = self._proc()
         tool_msg = ToolMessage(content="result", tool_call_id="msg-tc")
         event = {
             "event": "on_tool_end",
-            "data": {"output": tool_msg},
-            "metadata": {"tool_call_id": "meta-tc"},
+            "data": {"output": tool_msg, "tool_call_id": "data-tc"},
         }
         results = p.process_event(event)
         tool_results = [e for e in results if e.type == "tool_result"]
@@ -280,12 +280,14 @@ class TestStreamEventProcessor:
         produced and the ephemeral block's spinner in the TUI never resolves.
 
         Regression: previously on_tool_error was unhandled and process_event
-        silently returned []."""
+        silently returned []. Then tool_call_id was read from
+        event["metadata"] (always None — langchain_core puts it under
+        event["data"]), so the emitted ToolResultEvent could never correlate
+        with its ephemeral block either."""
         p = self._proc()
         event = {
             "event": "on_tool_error",
-            "data": {"error": RuntimeError("boom")},
-            "metadata": {"tool_call_id": "tc-err"},
+            "data": {"error": RuntimeError("boom"), "tool_call_id": "tc-err"},
         }
         results = p.process_event(event)
         tool_results = [e for e in results if e.type == "tool_result"]
@@ -294,7 +296,7 @@ class TestStreamEventProcessor:
         assert tool_results[0].tool_call_id == "tc-err"
         assert "boom" in tool_results[0].content
 
-    def test_process_tool_error_without_metadata_has_no_tool_call_id(self) -> None:
+    def test_process_tool_error_without_tool_call_id_has_no_tool_call_id(self) -> None:
         p = self._proc()
         event = {"event": "on_tool_error", "data": {"error": ValueError("bad input")}}
         results = p.process_event(event)
@@ -302,6 +304,23 @@ class TestStreamEventProcessor:
         assert len(tool_results) == 1
         assert tool_results[0].tool_call_id is None
         assert tool_results[0].is_error is True
+
+    def test_process_tool_error_graph_interrupt_is_not_a_tool_result(self) -> None:
+        """A LangGraph interrupt() (e.g. HITL command approval) bubbles out of a
+        tool as a GraphInterrupt, which the tool's callback wrapper reports via
+        on_tool_error before LangGraph catches it and pauses the graph. That is
+        normal control flow, not a tool failure — emitting a ToolResultEvent for
+        it would flag the ephemeral block as errored and then the genuine
+        post-resume result would arrive uncorrelated and be dropped."""
+        from langgraph.errors import GraphInterrupt
+
+        p = self._proc()
+        event = {
+            "event": "on_tool_error",
+            "data": {"error": GraphInterrupt(), "tool_call_id": "tc-interrupt"},
+        }
+        results = p.process_event(event)
+        assert results == []
 
     def test_process_model_end_emits_per_call_tokens(self) -> None:
         p = self._proc()

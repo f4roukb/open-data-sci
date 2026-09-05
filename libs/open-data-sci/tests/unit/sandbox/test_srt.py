@@ -24,6 +24,7 @@ def _mock_proc(stdout_lines: list[bytes], stderr: bytes = b"", returncode: int =
     proc.returncode = returncode
     return proc
 
+
 # ---------------------------------------------------------------------------
 # check_sandbox_dependencies
 # ---------------------------------------------------------------------------

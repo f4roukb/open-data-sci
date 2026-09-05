@@ -1,35 +1,33 @@
 """Unit tests for opendatasci.agents.agents."""
 
 import asyncio
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-
-from opendatasci._utils.message_utils import to_text_content_blocks
-from opendatasci.memory.messages import AgentMessage, MessageOrigin, TaskMessage, UserMessage
 from langchain_core.tools import BaseTool, StructuredTool
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel, ConfigDict
 
+from opendatasci._utils.message_utils import to_text_content_blocks
 from opendatasci.agents.agents import Agent, Invocation
-from opendatasci.agents.workers import SUBAGENT_TAG, WorkerAgent
-from opendatasci.agents.states import AgentState
 from opendatasci.agents.chat_history import ChatHistoryBuilder
-from opendatasci.memory.chat_memory import ChatTurnSummary
+from opendatasci.agents.states import AgentState
+from opendatasci.agents.workers import SUBAGENT_TAG, WorkerAgent
 from opendatasci.configs import OpenDataSciConfig
-from pathlib import Path
-
 from opendatasci.context.base import BaseContextStore
 from opendatasci.context.local import LocalContextStore
+from opendatasci.memory.chat_memory import ChatTurnSummary
+from opendatasci.memory.messages import AgentMessage, MessageOrigin, TaskMessage, UserMessage
 from opendatasci.sandbox.base import BaseSandboxFactory
 from opendatasci.session import BaseSessionManager
 from opendatasci.skills import BaseSkillStore
 from opendatasci.skills.base import Skill
-import uuid
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -217,7 +215,6 @@ class TestAgentConversation:
             assert _get_messages(agent) == []
 
     async def test_clear_chat_history_empties_memory(self) -> None:
-        from datetime import timezone
 
         _dt = datetime(2024, 1, 1, tzinfo=timezone.utc)
         async with _make_agent_ctx() as agent:
@@ -318,7 +315,6 @@ class TestAgentConversation:
             assert "no conversation" in result.lower()
 
     async def test_compact_chat_history_folds_turn_summaries_into_one_record(self) -> None:
-        from datetime import timezone
 
         _dt = datetime(2024, 1, 1, tzinfo=timezone.utc)
         async with _make_agent_ctx() as agent:
@@ -352,7 +348,6 @@ class TestAgentConversation:
             assert compaction.content == "compact summary"
 
     async def test_compact_chat_history_wipes_ongoing_turn_messages(self) -> None:
-        from datetime import timezone
 
         _dt = datetime(2024, 1, 1, tzinfo=timezone.utc)
         async with _make_agent_ctx() as agent:
@@ -379,7 +374,6 @@ class TestAgentConversation:
             assert _get_messages(agent) == []
 
     async def test_compact_chat_history_folds_existing_compaction_summary_too(self) -> None:
-        from datetime import timezone
 
         _dt = datetime(2024, 1, 1, tzinfo=timezone.utc)
         async with _make_agent_ctx() as agent:

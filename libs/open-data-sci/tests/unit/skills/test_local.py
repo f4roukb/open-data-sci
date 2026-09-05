@@ -6,8 +6,8 @@ from opendatasci.skills import Skill, SkillDomain
 from opendatasci.skills.local import (
     _BUILTIN_DOMAINS_DIRECTORY,
     _BUILTIN_SKILLS_DIRECTORY,
-    LocalSkillStore,
     SKILL_LABELS,
+    LocalSkillStore,
 )
 
 _BUILTIN_COMPETITIVE_SKILLS = {

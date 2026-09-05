@@ -8,10 +8,9 @@ from unittest.mock import patch
 import pytest
 
 from opendatasci.context.local import (
-    LocalContextStore,
-    OPENDATASCI_DIRNAME,
     _NOTES_DIR,
-    _PROFILES_DIR,
+    OPENDATASCI_DIRNAME,
+    LocalContextStore,
 )
 
 # ---------------------------------------------------------------------------

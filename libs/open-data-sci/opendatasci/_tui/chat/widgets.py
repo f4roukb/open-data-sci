@@ -28,9 +28,10 @@ try:
 except ImportError:
     _TUIImage = None
 
-from .commands import SLASH_COMMANDS, _fmt_model
-from .models import SPINNER, SPINNER_INTERVAL
-from .theme import active as theme
+from opendatasci._tui import tips
+from opendatasci._tui.chat.commands import SLASH_COMMANDS
+from opendatasci._tui.chat.models import SPINNER, SPINNER_INTERVAL
+from opendatasci._tui.style.theme import active as theme
 
 logger = logging.getLogger(__name__)
 
@@ -72,20 +73,17 @@ class AppHeader(Widget):
     def __init__(
         self,
         version: str,
-        provider: str,
-        model: str,
         workspace: str,
         workspace_name: str | None = None,
     ) -> None:
         super().__init__()
         self._version = version
-        self._provider = provider
-        self._model = model
         self._workspace = workspace
         self._workspace_name = workspace_name
         self._file_count: str = ""
+        self._model_info: str = ""
         self._background_tasks: str = ""
-        _logo_path = Path(__file__).parents[4] / "docs" / "logo.png"
+        _logo_path = Path(__file__).parents[5] / "docs" / "logo.png"
         self._use_image = _TUIImage is not None and _logo_path.exists()
         self._logo_path = _logo_path
 
@@ -122,9 +120,10 @@ class AppHeader(Widget):
         if self._workspace_name:
             t.append("   Workspace  ", style=lbl)
             t.append(self._workspace_name, style=theme["accent"])
-        t.append("\n")
-        t.append("Model      ", style=lbl)
-        t.append(_fmt_model(self._provider, self._model), style=theme["text_primary"])
+        if self._model_info:
+            t.append("\n")
+            t.append("Model      ", style=lbl)
+            t.append(self._model_info, style=theme["accent"])
         if self._background_tasks:
             t.append("\n")
             t.append("Background ", style=lbl)
@@ -139,6 +138,10 @@ class AppHeader(Widget):
         self._file_count = description
         self._render_info()
 
+    def set_model_info(self, description: str) -> None:
+        self._model_info = description
+        self._render_info()
+
     def set_background_tasks(self, description: str) -> None:
         """Update the "running background tasks" line, or clear it if *description* is empty."""
         self._background_tasks = description
@@ -150,6 +153,7 @@ class TurnStatusBar(Static):
 
     DEFAULT_CSS = """
     TurnStatusBar {
+        width: auto;
         height: auto;
         padding: 0 2;
         margin-bottom: 0;
@@ -205,7 +209,7 @@ class TurnStatusBar(Static):
 
     def _tick(self) -> None:
         s = int(time.monotonic() - self._start)
-        label = f"Working for {self._fmt(s)}{self._context_suffix()}"
+        label = f"Sciencing for {self._fmt(s)}{self._context_suffix()}"
         self.update(f"[{theme['text_muted']}]{label}[/{theme['text_muted']}]")
 
     def update_context(self, context_tokens: int | None, cached_tokens: int | None) -> None:
@@ -222,7 +226,7 @@ class TurnStatusBar(Static):
         if self._interval is not None:
             self._interval.stop()
         s = int(time.monotonic() - self._start)
-        label = f"Worked for {self._fmt(s)}{self._context_suffix()}"
+        label = f"Scienced for {self._fmt(s)}{self._context_suffix()}"
         self.update(f"[{theme['text_muted']}]{label}[/{theme['text_muted']}]")
 
     def on_unmount(self) -> None:
@@ -232,6 +236,66 @@ class TurnStatusBar(Static):
             self._stopped = True
             if self._interval is not None:
                 self._interval.stop()
+
+
+# Short, discoverable tips — cycled round-robin by TipsBar regardless of
+# what the user is doing, so people find features they'd otherwise only see
+# by reading /help.
+_TIPS: tuple[str, ...] = (
+    # Ordered most-to-least useful: gateways and everyday-workflow speedups
+    # first, one-off/niche/rarely-touched actions last.
+    "Tip: type /help to see all commands",
+    "Tip: type @path/to/file to attach a file",
+    "Tip: press Tab to autocomplete a command or file path",
+    "Tip: press ↑ / ↓ to browse your input history",
+    "Tip: type /config to configure the app",
+    "Tip: press Esc to stop the agent mid-turn",
+    "Tip: type /models to switch the active model",
+    "Tip: type /providers to switch the active provider",
+    "Tip: type /compact to summarise a long conversation",
+    "Tip: type /clear to wipe the conversation and start fresh",
+    "Tip: type /reset to reload your data from disk",
+    "Tip: type /ls-workspace to list your workspace files",
+    "Tip: type /cancel-message to drop the last queued message",
+    "Tip: press Ctrl+R to reset the session",
+    "Tip: press Ctrl+L to clear the conversation",
+    "Tip: disable tips in /config menu",
+)
+
+_TIP_INTERVAL_SECONDS = 7
+
+
+class TipsBar(Static):
+    """Rotating one-line tip docked at the footer's left — always cycling,
+    independent of agent/turn state."""
+
+    DEFAULT_CSS = """
+    TipsBar {
+        width: 1fr;
+        height: auto;
+        padding: 0 2;
+        color: $ods-text-muted;
+    }
+    """
+
+    def __init__(self) -> None:
+        super().__init__("")
+        self._index = 0
+
+    def on_mount(self) -> None:
+        self._render_tip()
+        self.set_interval(_TIP_INTERVAL_SECONDS, self._tick)
+
+    def _tick(self) -> None:
+        self._index = (self._index + 1) % len(_TIPS)
+        self._render_tip()
+
+    def _render_tip(self) -> None:
+        self.update(_TIPS[self._index] if tips.enabled else "")
+
+    def apply_settings(self) -> None:
+        """Re-render immediately after /config ▸ Display ▸ Tips is toggled."""
+        self._render_tip()
 
 
 class MessageBubble(Widget):
@@ -332,11 +396,21 @@ class MessageBubble(Widget):
         content = self._content
         if role == "user":
             assert isinstance(inner, Static)
-            inner.update(Text.from_markup(content))
+            try:
+                inner.update(Text.from_markup(content))
+            except Exception:
+                inner.update(Text(content))
         elif role == "question":
             assert isinstance(inner, Static)
             try:
                 inner.update(Text.from_markup(content))
+            except Exception:
+                inner.update(Text(content))
+        elif role == "error":
+            assert isinstance(inner, Static)
+            try:
+                markup = f"[bold {theme['error']}]{escape(content)}[/bold {theme['error']}]"
+                inner.update(Text.from_markup(markup))
             except Exception:
                 inner.update(Text(content))
         # "agent" rendering is handled entirely by the MarkdownStream.
@@ -519,7 +593,7 @@ class AttachmentBar(Static):
     def show_pill(self, label: str) -> None:
         safe = escape(label)
         markup = (
-            f"[bold {theme['accent']}]📎 {safe}[/bold {theme['accent']}]"
+            f"[bold {theme['accent']}]{safe}[/bold {theme['accent']}]"
             f"  [dim {theme['text_muted']}](Esc to discard)[/dim {theme['text_muted']}]"
         )
         self.update(Text.from_markup(markup))
@@ -706,15 +780,11 @@ class CommandApprovalPrompt(Widget):
 
     def _refresh_content(self) -> None:
         lines = [
-            f"[bold {theme['warning']}]🛡  Approval required[/bold {theme['warning']}]",
-            "",
-            f"[{theme['text_primary']}]I need your approval to run a bash "
-            f"script:[/{theme['text_primary']}]",
-            f"[{theme['text_primary']}]{escape(self._description)}[/{theme['text_primary']}]",
+            f"[bold {theme['warning']}]Approval required[/bold {theme['warning']}]"
+            f" — [{theme['text_primary']}]{escape(self._description)}[/{theme['text_primary']}]"
         ]
         if self._heads_up:
-            lines.append(f"[{theme['warning']}]⚠️  {escape(self._heads_up)}[/{theme['warning']}]")
-        lines.append("")
+            lines.append(f"[{theme['warning']}]{escape(self._heads_up)}[/{theme['warning']}]")
         for idx, option in enumerate(self._OPTIONS):
             if self._resolved:
                 if idx == self._selected:
@@ -727,11 +797,10 @@ class CommandApprovalPrompt(Widget):
             else:
                 lines.append(f"  [{theme['text_secondary']}]{option}[/{theme['text_secondary']}]")
         if not self._resolved:
-            lines += [
-                "",
+            lines.append(
                 f"[dim {theme['text_secondary']}]↑↓ select  Enter confirm  "
-                f"Esc decline[/dim {theme['text_secondary']}]",
-            ]
+                f"Esc decline[/dim {theme['text_secondary']}]"
+            )
         self.query_one("#approval-prompt-content", Static).update(
             Text.from_markup("\n".join(lines))
         )
@@ -771,31 +840,29 @@ class ThinkingBlock(Static):
     DEFAULT_CSS = """
     ThinkingBlock {
         height: auto;
-        padding: 0 1;
+        padding: 0 0 0 3;
         margin-bottom: 1;
     }
     """
 
-    _DOTS = ["", ".", "..", "..."]
-
     def __init__(self) -> None:
         super().__init__("")
-        self._dot_idx = 0
+        self._spin_idx = 0
         self._spin_timer: Timer | None = None
 
     def on_mount(self) -> None:
-        self._spin_timer = self.set_interval(0.35, self._tick)
+        self._spin_timer = self.set_interval(SPINNER_INTERVAL, self._tick)
         self._update_display()
 
     def _tick(self) -> None:
-        self._dot_idx = (self._dot_idx + 1) % len(self._DOTS)
+        self._spin_idx = (self._spin_idx + 1) % len(SPINNER)
         self._update_display()
 
     def _update_display(self) -> None:
-        dots = self._DOTS[self._dot_idx]
+        spin = SPINNER[self._spin_idx]
         self.update(
             Text.from_markup(
-                f"[dim {theme['text_muted']}]💭 Thinking{dots}[/dim {theme['text_muted']}]"
+                f"[dim {theme['text_muted']}]{spin} Thinking[/dim {theme['text_muted']}]"
             )
         )
 
@@ -838,18 +905,15 @@ class PendingMessageBubble(Static):
         self._text = text
 
     def on_mount(self) -> None:
-        self.update(
-            Text.from_markup(
-                f"[bold {theme['warning']}]⏳ Queued[/bold {theme['warning']}]  {self._text}"
-            )
-        )
+        self.update(Text(self._text))
 
 
 class PendingMessagePanel(Vertical):
     """Holds pinned PendingMessageBubble widgets between the chat and input bar.
 
-    New bubbles are mounted at the top of the stack, closest to the live
-    conversation, so the most recently queued message is the most visible.
+    New bubbles are appended at the bottom, so the queue reads top-to-bottom
+    in the order the messages were queued (and will be sent) — the same
+    order as everything else in the conversation.
     """
 
     DEFAULT_CSS = """
@@ -862,7 +926,7 @@ class PendingMessagePanel(Vertical):
 
     def add_pending(self, text: str) -> "PendingMessageBubble":
         bubble = PendingMessageBubble(text)
-        self.mount(bubble, before=0)
+        self.mount(bubble)
         return bubble
 
 
@@ -896,6 +960,8 @@ class ChatPane(Widget):
                 id="user-input",
                 highlighter=CommandHighlighter(),
             )
+        with Horizontal(id="status-bar"):
+            yield TipsBar()
         yield WorkspacePanel(id="workspace-panel")
 
     def _mount_in_messages(self, widget: Widget) -> None:
@@ -921,7 +987,7 @@ class ChatPane(Widget):
         for existing in self.query(TurnStatusBar):
             existing.remove()
         timer = TurnStatusBar()
-        self.mount(timer, after=self.query_one("#input-bar"))
+        self.query_one("#status-bar", Horizontal).mount(timer)
         return timer
 
     def add_pending_message(self, text: str) -> "PendingMessageBubble":
@@ -977,7 +1043,7 @@ class ToolCallBlock(Static):
     DEFAULT_CSS = """
     ToolCallBlock {
         height: auto;
-        padding: 0;
+        padding: 0 0 0 3;
         margin-bottom: 1;
     }
     """
@@ -1042,7 +1108,7 @@ class ToolCallBlock(Static):
             if self._communication:
                 lines.append(escape(self._communication))
                 lines.append("")
-            lines.append(self._status_markup("⚡ Parallelizing", done=self._done or all_terminal))
+            lines.append(self._status_markup("Parallelizing", done=self._done or all_terminal))
             for i, s in enumerate(self._task_summaries):
                 if self._done:
                     # Force-done: keep terminal rows as-is; promote any still-running row to
@@ -1055,7 +1121,7 @@ class ToolCallBlock(Static):
                 else:
                     st = self._task_statuses[i]
                 activity = self._task_activities[i] if i < len(self._task_activities) else ""
-                label = f"Worker {i + 1}: {activity if activity and st == 'running' else s}"
+                label = f"Worker {i + 1} — {activity if activity and st == 'running' else s}"
                 display = self._task_status_markup(label, st, prefix="  └─ ")
                 lines.append(display)
         else:

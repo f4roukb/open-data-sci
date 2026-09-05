@@ -79,7 +79,9 @@ class TestCreateAzurePrimaryModel:
         assert fake_azure_chat_openai["api_key"] == "env-fallback"
 
     def test_temperature_propagated(self, fake_azure_chat_openai, monkeypatch) -> None:
-        config = OpenDataSciConfig(provider="azure", azure_endpoint=_ENDPOINT, temperature=0.5)  # type: ignore[arg-type]
+        config = OpenDataSciConfig(
+            provider="azure", azure_endpoint=_ENDPOINT, primary_temperature=0.5
+        )  # type: ignore[arg-type]
         create_azure_model(config)
         assert fake_azure_chat_openai["temperature"] == 0.5
 

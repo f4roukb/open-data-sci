@@ -34,7 +34,7 @@ def openai_config() -> OpenDataSciConfig:
         secondary_provider="openai",
         secondary_model="gpt-4o-mini",
         openai_api_key="sk-test",
-        temperature=0.3,
+        primary_temperature=0.3,
     )
 
 
@@ -99,7 +99,7 @@ def azure_config() -> OpenDataSciConfig:
         secondary_model="my-mini-deployment",
         azure_api_key="azure-key",
         azure_endpoint="https://example.openai.azure.com",
-        temperature=0.4,
+        primary_temperature=0.4,
     )
 
 
@@ -151,7 +151,7 @@ def compat_config() -> OpenDataSciConfig:
         secondary_model="llama3-small",
         openai_api_key=None,
         llm_server_base_url=None,
-        temperature=0.2,
+        primary_temperature=0.2,
     )
 
 
@@ -202,7 +202,7 @@ def ollama_config() -> OpenDataSciConfig:
         secondary_provider="ollama",
         secondary_model="llama3-small",
         llm_server_base_url=None,
-        temperature=0.2,
+        primary_temperature=0.2,
     )
 
 
@@ -256,7 +256,7 @@ def gemini_config() -> OpenDataSciConfig:
         google_api_key="g-key",
         google_cloud_project="my-project",
         google_cloud_location="europe-west1",
-        temperature=0.5,
+        primary_temperature=0.5,
     )
 
 

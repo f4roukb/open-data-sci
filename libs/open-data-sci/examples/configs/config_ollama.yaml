@@ -23,7 +23,7 @@ secondary_provider: ollama
 secondary_model: qwen3.5:9b
 
 # ── Sampling ──────────────────────────────────────────────────────────────────
-temperature: 0.1
+primary_temperature: 0.1
 
 # ── Server URL ────────────────────────────────────────────────────────────────
 # Falls back to LLM_SERVER_BASE_URL env var, then http://localhost:11434.

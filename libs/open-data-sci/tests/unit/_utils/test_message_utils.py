@@ -3,14 +3,13 @@
 from langchain_core.messages import SystemMessage, ToolMessage
 
 from opendatasci._utils.message_utils import (
-    get_thoughts,
     get_message_text_content,
+    get_thoughts,
     prepend_messages,
     render_turn,
     to_text_content_blocks,
 )
 from opendatasci.memory.messages import AgentMessage, UserMessage, is_ongoing_turn
-
 
 # ---------------------------------------------------------------------------
 # prepend_messages

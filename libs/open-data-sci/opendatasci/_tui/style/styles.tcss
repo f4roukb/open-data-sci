@@ -10,20 +10,20 @@ Screen {
 
 AppHeader {
     dock: top;
-    height: 5;
+    height: 6;
     background: $ods-surface;
     border-bottom: solid $ods-separator;
 }
 
 #header-logo {
     width: 23;
-    height: 5;
+    height: 6;
     padding-left: 2;
     content-align: center middle;
 }
 
 #header-info {
-    height: 5;
+    height: 6;
     padding: 1 3 1 2;
     content-align: left middle;
 }
@@ -55,6 +55,12 @@ ChatPane {
     height: auto;
     border-top: solid $ods-separator;
     padding: 1 2 1 2;
+    background: $ods-background;
+}
+
+#status-bar {
+    height: auto;
+    layout: horizontal;
     background: $ods-background;
 }
 
@@ -115,6 +121,33 @@ WorkspacePanel.active {
     display: block;
 }
 
+/* ─── OptionList (config panels, startup wizard) ──────────────────────────── */
+/* Textual's own defaults use its built-in design tokens, not our palette —
+   without this, every selection list in the app renders unthemed. */
+
+OptionList {
+    background: $ods-surface;
+    color: $ods-text-primary;
+    border: solid $ods-separator;
+    padding: 0 2;
+    scrollbar-color: $ods-text-muted $ods-surface-alt;
+    scrollbar-background: $ods-surface-alt;
+}
+
+OptionList:focus {
+    border: solid $ods-accent;
+}
+
+OptionList > .option-list--option-highlighted {
+    background: $ods-accent 25%;
+    color: $ods-accent;
+    text-style: bold;
+}
+
+OptionList > .option-list--option-hover {
+    background: $ods-accent 12%;
+}
+
 /* ─── Message widgets ─────────────────────────────────────────────────────── */
 
 MessageBubble {
@@ -129,20 +162,22 @@ MessageBubble.user {
     padding: 0 2;
 }
 
-MessageBubble.thinking {
-    background: $ods-muted-bg;
-    border-left: thick $ods-text-muted;
-    padding: 0 2;
-}
-
 MessageBubble.question {
     background: $ods-warning-bg;
     border-left: thick $ods-warning;
     padding: 0 2;
 }
 
+MessageBubble.error {
+    border-left: thick $ods-error;
+    padding: 0 2;
+}
+
 MessageBubble.agent {
-    padding: 0 0;
+    /* No border-left like .user/.question, but the same 3-column text start
+       (1 for their border + 2 for their padding) so agent and user text
+       line up on the same left edge. */
+    padding: 0 0 0 3;
 }
 
 .msg-divider {

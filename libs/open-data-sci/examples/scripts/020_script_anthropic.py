@@ -98,7 +98,7 @@ async def main() -> None:
             _write_sales_csv(p, month, rng)
             log.info("Created %s", p)
 
-    config = OpenDataSciConfig(provider="anthropic", temperature=0.1)
+    config = OpenDataSciConfig(provider="anthropic", primary_temperature=0.1)
 
     csv_files = sorted(data_dir.glob("*.csv"))
     log.info("Analysing %d file(s)", len(csv_files))

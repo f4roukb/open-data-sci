@@ -1,7 +1,7 @@
 """Tool display metadata for the TUI renderer.
 
 Centralises ToolDisplay declarations and the global REGISTRY so the TUI
-and streaming layer can look up icons, labels, and summary arguments without
+and streaming layer can look up labels and summary arguments without
 knowing anything about tool internals.
 
 Usage::
@@ -9,7 +9,7 @@ Usage::
     from opendatasci._tui.tools_display import REGISTRY, ToolDisplay
 
     display = REGISTRY.get("execute_python_code", ToolDisplay(label="execute_python_code"))
-    print(display.icon, display.label)  # 🐍 Code
+    print(display.label)  # Code
 """
 
 import types
@@ -23,8 +23,6 @@ class ToolDisplay(FrozenStrictBaseModel):
     Attributes:
         label:          Human-readable tool name shown in the TUI
                         (e.g. ``"Python"``, ``"Web Search"``).
-        icon:           Optional single emoji rendered before the label
-                        (e.g. ``"🐍"``).
         summary_arg:    Name of the tool argument whose value is used as the
                         short summary line in the ephemeral block.  ``None``
                         means no summary (the block shows only the label and
@@ -37,7 +35,6 @@ class ToolDisplay(FrozenStrictBaseModel):
     """
 
     label: str
-    icon: str = ""
     summary_arg: str | None = None
     display_status: bool = True
 
@@ -57,73 +54,72 @@ def register(tool_name: str, display: ToolDisplay) -> None:
 # String literals are used for tool names so this module stays free of imports
 # from opendatasci.tools.factory (which creates a circular dependency).
 
-register("execute_python_code", ToolDisplay(label="Code", icon="🐍", summary_arg="summary"))
-register("execute_cli_command", ToolDisplay(label="Command", icon="💻", summary_arg="summary"))
+register("execute_python_code", ToolDisplay(label="Code", summary_arg="summary"))
+register("execute_cli_command", ToolDisplay(label="Command", summary_arg="summary"))
 register(
     "list_python_libs",
-    ToolDisplay(label="Checking available libraries", icon="📦", summary_arg="summary"),
+    ToolDisplay(label="Checking available libraries", summary_arg="summary"),
 )
 register(
     "switch_agentic_mode",
-    ToolDisplay(label="Switching mode", icon="🔀", summary_arg="summary"),
+    ToolDisplay(label="Switching mode", summary_arg="summary"),
 )
-register("exit_plan_mode", ToolDisplay(label="Planning complete", icon="🏁", summary_arg="summary"))
-register("load_skill", ToolDisplay(label="Loading skill", icon="🧠", summary_arg="summary"))
+register("exit_plan_mode", ToolDisplay(label="Planning complete", summary_arg="summary"))
+register("load_skill", ToolDisplay(label="Loading skill", summary_arg="summary"))
 register(
     "list_skills",
-    ToolDisplay(label="Checking available skills", icon="🧭", summary_arg="summary"),
+    ToolDisplay(label="Checking available skills", summary_arg="summary"),
 )
-register("task", ToolDisplay(label="Spawning workers", icon="👥", summary_arg="summary"))
+register("task", ToolDisplay(label="Spawning workers", summary_arg="summary"))
 register(
     "check_task",
-    ToolDisplay(label="Checking task status", icon="📋", summary_arg="summary"),
+    ToolDisplay(label="Checking task status", summary_arg="summary"),
 )
 register(
     "list_tasks",
-    ToolDisplay(label="Listing background tasks", icon="📋", summary_arg="summary"),
+    ToolDisplay(label="Listing background tasks", summary_arg="summary"),
 )
-register("stop_task", ToolDisplay(label="Stopping task", icon="🛑", summary_arg="summary"))
+register("stop_task", ToolDisplay(label="Stopping task", summary_arg="summary"))
 register(
     "monitor_task",
-    ToolDisplay(label="Monitoring task", icon="📶", summary_arg="summary"),
+    ToolDisplay(label="Monitoring task", summary_arg="summary"),
 )
 register(
     "read_dataset_info",
     ToolDisplay(
         label="Reading dataset information",
-        icon="📚",
         summary_arg="summary",
     ),
 )
 register(
     "update_dataset_info",
-    ToolDisplay(label="Updating dataset notes", icon="📝", summary_arg="summary"),
+    ToolDisplay(label="Updating dataset notes", summary_arg="summary"),
 )
 register(
     "profile_dataset",
-    ToolDisplay(label="Profiling dataset", icon="📊", summary_arg="summary"),
+    ToolDisplay(label="Profiling dataset", summary_arg="summary"),
 )
 register(
     "list_workspace_files",
-    ToolDisplay(label="Listing workspace files", icon="📁", summary_arg="summary"),
+    ToolDisplay(label="Listing workspace files", summary_arg="summary"),
 )
 register(
     "web_search",
-    ToolDisplay(label="Searching the web", icon="🌐", summary_arg="summary"),
+    ToolDisplay(label="Searching the web", summary_arg="summary"),
 )
 register(
     "fetch_url",
-    ToolDisplay(label="Fetching web content", icon="🔗", summary_arg="summary"),
+    ToolDisplay(label="Fetching web content", summary_arg="summary"),
 )
 register(
     "ask_user_mcq",
-    ToolDisplay(label="Question", icon="💬", summary_arg="summary", display_status=False),
+    ToolDisplay(label="Question", summary_arg="summary", display_status=False),
 )
 register(
     "exit_self_review_mode",
-    ToolDisplay(label="Done reviewing progress", icon="✅", summary_arg="summary"),
+    ToolDisplay(label="Done reviewing progress", summary_arg="summary"),
 )
 register(
     "verify_python_code",
-    ToolDisplay(label="Reviewing code", icon="🧪", summary_arg="summary"),
+    ToolDisplay(label="Reviewing code", summary_arg="summary"),
 )

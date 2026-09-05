@@ -23,8 +23,7 @@ from textual.widgets import Input, Static
 from textual.widgets import Markdown as TUIMarkdown
 
 import opendatasci._tui as _tui_pkg
-from opendatasci._tui import theme as _theme
-from opendatasci._tui.widgets import (
+from opendatasci._tui.chat.widgets import (
     AppHeader,
     AttachmentBar,
     ChatPane,
@@ -36,11 +35,11 @@ from opendatasci._tui.widgets import (
     PendingMessagePanel,
     SmartInput,
     ThinkingBlock,
-    ToolCallBlock,
     TurnStatusBar,
     WorkspacePanel,
     _scroll_is_at_bottom,
 )
+from opendatasci._tui.style import theme as _theme
 
 
 def _plain(widget: Static) -> str:
@@ -66,7 +65,7 @@ def _markdown_plain(bubble: "MessageBubble") -> str:
 class _Harness(App[None]):
     """Minimal app hosting the production ChatPane + AppHeader."""
 
-    CSS_PATH = str(Path(_tui_pkg.__file__).parent / "styles.tcss")
+    CSS_PATH = str(Path(_tui_pkg.__file__).parent / "style" / "styles.tcss")
 
     def __init__(self) -> None:
         super().__init__()
@@ -82,9 +81,7 @@ class _Harness(App[None]):
         return variables
 
     def compose(self) -> ComposeResult:
-        yield AppHeader(
-            version="9.9.9", provider="anthropic", model="claude-sonnet-4-6", workspace="/data"
-        )
+        yield AppHeader(version="9.9.9", workspace="/data")
         yield ChatPane()
 
     def on_command_approval_prompt_decision(self, message: CommandApprovalPrompt.Decision) -> None:
@@ -110,13 +107,24 @@ async def harness():
 
 
 class TestAppHeader:
-    async def test_renders_version_workspace_and_model(self, harness) -> None:
+    async def test_renders_version_and_workspace(self, harness) -> None:
         app, pilot, _ = harness
         info = _plain(app.query_one("#header-info", Static))
         assert "v9.9.9" in info
         assert "/data" in info
-        # _fmt_model prettifies provider/model ids for display
-        assert "Anthropic Claude Sonnet 4.6" in info
+
+    async def test_does_not_render_a_model_line_when_unset(self, harness) -> None:
+        app, pilot, _ = harness
+        info = _plain(app.query_one("#header-info", Static))
+        assert "Model" not in info
+
+    async def test_set_model_info_renders_a_model_line(self, harness) -> None:
+        app, pilot, _ = harness
+        header = app.query_one(AppHeader)
+        header.set_model_info("Anthropic  claude-sonnet-5")
+        info = _plain(app.query_one("#header-info", Static))
+        assert "Model" in info
+        assert "Anthropic  claude-sonnet-5" in info
 
     async def test_set_file_count_and_workspace_rerender(self, harness) -> None:
         app, pilot, _ = harness
@@ -266,9 +274,9 @@ class TestTurnStatusBar:
         app, pilot, pane = harness
         bar = pane.add_turn_status_bar()
         await pilot.pause()
-        assert "Working for 0s" in _plain(bar)
+        assert "Sciencing for 0s" in _plain(bar)
         bar.stop()
-        assert _plain(bar).startswith("Worked for")
+        assert _plain(bar).startswith("Scienced for")
         assert bar._interval is not None and bar._stopped is True
 
     async def test_context_suffix_without_cache_info(self, harness) -> None:
@@ -299,10 +307,10 @@ class TestTurnStatusBar:
         await pilot.pause()
         bar._start = time.monotonic() - 61
         bar._tick()
-        assert "Working for 1min 01s" in _plain(bar)
+        assert "Sciencing for 1min 01s" in _plain(bar)
         bar._start = time.monotonic() - 120
         bar._tick()
-        assert "Working for 2min" in _plain(bar)
+        assert "Sciencing for 2min" in _plain(bar)
 
     async def test_new_bar_replaces_previous_one(self, harness) -> None:
         app, pilot, pane = harness
@@ -387,20 +395,20 @@ class TestWorkerBlock:
         await pilot.pause()
         text = _plain(block)
         assert "Fanning out" in text
-        assert "⚡ Parallelizing" in text
-        assert "Worker 1: Clean data" in text
-        assert "Worker 2: Fit model" in text
+        assert "Parallelizing" in text
+        assert "Worker 1 — Clean data" in text
+        assert "Worker 2 — Fit model" in text
 
     async def test_activity_shown_while_running_and_cleared_when_done(self, harness) -> None:
         app, pilot, pane = harness
         block = pane.add_task_block("", ["Clean data", "Fit model"])
         await pilot.pause()
         block.update_task_activity(0, "run_python")
-        assert "Worker 1: run_python" in _plain(block)
+        assert "Worker 1 — run_python" in _plain(block)
 
         block.mark_task_done(0)
         text = _plain(block)
-        assert "Worker 1: Clean data" in text  # activity replaced by summary again
+        assert "Worker 1 — Clean data" in text  # activity replaced by summary again
         assert block.is_running() is True  # worker 2 still running
 
     async def test_all_workers_terminal_stops_spinner_and_marks_done(self, harness) -> None:
@@ -412,7 +420,7 @@ class TestWorkerBlock:
         assert block.is_running() is False
         assert block._spin_timer is None
         text = _plain(block)
-        assert "✗ Worker 2: b" in text
+        assert "✗ Worker 2 — b" in text
 
     async def test_out_of_range_worker_indices_are_ignored(self, harness) -> None:
         app, pilot, pane = harness
@@ -430,8 +438,8 @@ class TestWorkerBlock:
         block.mark_task_done(0)
         block.set_done()  # e.g. turn ended while worker 2 still running
         text = _plain(block)
-        assert "Worker 1: a" in text
-        assert "Worker 2: b" in text
+        assert "Worker 1 — a" in text
+        assert "Worker 2 — b" in text
         assert "✗" not in text  # promoted to done, not error
 
 
@@ -453,7 +461,7 @@ class TestCommandApprovalPrompt:
         app, pilot, pane = harness
         pane.show_approval_prompt("Delete rows", "Data loss possible")
         await pilot.pause()
-        assert "⚠️  Data loss possible" in _plain(app.query_one("#approval-prompt-content", Static))
+        assert "Data loss possible" in _plain(app.query_one("#approval-prompt-content", Static))
         await pilot.press("down", "enter")
         assert app.decisions == [False]
 
@@ -480,7 +488,12 @@ class TestCommandApprovalPrompt:
         app, pilot, pane = harness
         pane.show_approval_prompt("Benign action", "")
         await pilot.pause()
-        assert "⚠️" not in _plain(app.query_one("#approval-prompt-content", Static))
+        lines = _plain(app.query_one("#approval-prompt-content", Static)).splitlines()
+        # Compact layout: header+description line, then straight to Yes/No —
+        # no heads-up line, and no blank-line padding anywhere.
+        assert lines[0] == "Approval required — Benign action"
+        assert lines[1].lstrip("▸ ").rstrip() == "Yes"
+        assert "" not in lines
 
     async def test_content_layout_signposts_description_and_heads_up(self, harness) -> None:
         app, pilot, pane = harness
@@ -488,10 +501,8 @@ class TestCommandApprovalPrompt:
         await pilot.pause()
         text = _plain(app.query_one("#approval-prompt-content", Static))
         lines = text.splitlines()
-        assert lines[0] == "🛡  Approval required"
-        signpost = lines.index("I need your approval to run a bash script:")
-        assert lines[signpost + 1] == "Deletes temporary files"
-        assert lines[signpost + 2] == "⚠️  Files are gone for good"
+        assert lines[0] == "Approval required — Deletes temporary files"
+        assert lines[1] == "Files are gone for good"
 
 
 # ---------------------------------------------------------------------------
@@ -505,8 +516,12 @@ class TestThinkingBlock:
         block = pane.add_thinking_block()
         await pilot.pause()
         assert "Thinking" in _plain(block)
+        first = _plain(block)
         block._tick()
-        assert "Thinking." in _plain(block)
+        second = _plain(block)
+        # The spinner glyph cycles each tick, but the label text stays "Thinking".
+        assert "Thinking" in second
+        assert first != second
 
     async def test_finish_stops_animation_and_shows_summary(self, harness) -> None:
         app, pilot, pane = harness
@@ -733,7 +748,7 @@ class TestWorkspacePanel:
 
 
 class TestPendingMessages:
-    async def test_newest_pending_message_is_mounted_first(self, harness) -> None:
+    async def test_pending_messages_appear_in_queued_order(self, harness) -> None:
         app, pilot, pane = harness
         pane.add_pending_message("first queued")
         await pilot.pause()
@@ -741,14 +756,16 @@ class TestPendingMessages:
         await pilot.pause()
         panel = app.query_one(PendingMessagePanel)
         bubbles = list(panel.query(PendingMessageBubble))
-        assert _plain(bubbles[0]).endswith("second queued")
-        assert _plain(bubbles[1]).endswith("first queued")
+        assert _plain(bubbles[0]).endswith("first queued")
+        assert _plain(bubbles[1]).endswith("second queued")
 
-    async def test_pending_bubble_shows_queued_marker(self, harness) -> None:
+    async def test_pending_bubble_shows_bare_text(self, harness) -> None:
+        # No "Queued" label: the warning-colored border/background already
+        # signals queued state.
         app, pilot, pane = harness
         bubble = pane.add_pending_message("run the model")
         await pilot.pause()
-        assert "⏳ Queued" in _plain(bubble)
+        assert _plain(bubble) == "run the model"
 
 
 # ---------------------------------------------------------------------------

@@ -12,6 +12,7 @@ from opendatasci.skills.local import (
     _BUILTIN_DOMAINS_DIRECTORY as _DEFAULT_BUILTIN_DOMAINS_DIRECTORY,
 )
 from opendatasci.skills.local import _BUILTIN_SKILLS_DIRECTORY as _DEFAULT_BUILTIN_SKILLS_DIRECTORY
+from opendatasci.tools.mcp import MCPServerSpec
 
 DEFAULT_MODEL: MappingProxyType[Provider, str] = MappingProxyType(
     {
@@ -36,6 +37,22 @@ DEFAULT_SECONDARY_MODEL: MappingProxyType[Provider, str] = MappingProxyType(
         Provider.AZURE: "gpt-5.6-luna",
         Provider.OLLAMA: "qwen3.5:9b",
         Provider.OPENAI_COMPATIBLE_SERVER: "Qwen/Qwen3.5-4B",
+    }
+)
+
+# Maps a provider to the OpenDataSciConfig field that holds its API key.
+# Providers that use cloud-native auth (bedrock, vertexai, ollama) have no
+# key field, so switching to them never requires an API key check.
+PROVIDER_KEY_FIELD: MappingProxyType[Provider, str | None] = MappingProxyType(
+    {
+        Provider.ANTHROPIC: "anthropic_api_key",
+        Provider.OPENAI: "openai_api_key",
+        Provider.GEMINI: "google_api_key",
+        Provider.AZURE: "azure_api_key",
+        Provider.OPENAI_COMPATIBLE_SERVER: "openai_api_key",
+        Provider.BEDROCK: None,
+        Provider.VERTEXAI: None,
+        Provider.OLLAMA: None,
     }
 )
 
@@ -86,12 +103,15 @@ class OpenDataSciConfig(BaseSettings):
                            falls back to ``http://localhost:11434`` and
                            ``http://localhost:8000/v1`` respectively when
                            not set.
-        temperature:     LLM sampling temperature.  Not sent to Anthropic and
-                         Bedrock models that use adaptive thinking (Claude
-                         4.6+), which reject explicit sampling parameters.
+        primary_temperature: LLM sampling temperature for the primary model.
+                         Not sent to Anthropic and Bedrock models that use
+                         adaptive thinking (Claude 4.6+), which reject
+                         explicit sampling parameters.
         name:            Display name of the agent.  Defaults to ``"Sai"``.
-        mcp_servers: List of MCP server URLs the agent may connect to
-                         (``MCP_SERVERS``).
+        mcp_servers: MCP servers the agent may connect to (``MCP_SERVERS``).
+                         Only the ``http`` and ``sse`` transports are
+                         supported; each server's tools are (re)discovered
+                         regularly rather than once at startup.
         skills_directory: Path to a directory of custom skill files
                          (``SKILLS_DIRECTORY``).  Loaded in addition to the
                          built-in skills; custom skills override built-ins of
@@ -178,13 +198,15 @@ class OpenDataSciConfig(BaseSettings):
     llm_server_base_url: str | None = Field(default=None, alias="LLM_SERVER_BASE_URL")
 
     # ── Sampling & reasoning ──────────────────────────────────────────────────
-    temperature: float = Field(default=0.0, alias="TEMPERATURE")
+    # Named "primary" (rather than just "temperature") to leave room for a
+    # future secondary_temperature without an ambiguous bare name.
+    primary_temperature: float = Field(default=0.0, alias="PRIMARY_TEMPERATURE")
 
     # ── Agent Customization ───────────────────────────────────────────────────────
     name: str = Field(default="Sai", alias="NAME")
 
     # ── MCP ───────────────────────────────────────────────────────────
-    mcp_servers: List[str] = Field(default_factory=list, alias="MCP_SERVERS")
+    mcp_servers: List[MCPServerSpec] = Field(default_factory=list, alias="MCP_SERVERS")
 
     # ── Context management ───────────────────────────────────────────────────────
     midturn_compaction_threshold: int = Field(
@@ -255,7 +277,7 @@ class OpenDataSciConfig(BaseSettings):
             ValueError: If the file does not contain a mapping.
         """
         try:
-            import yaml  # type: ignore[import-untyped]
+            import yaml
         except ImportError as exc:
             raise ImportError(
                 "PyYAML is required to load YAML config files. Install it with: pip install pyyaml"

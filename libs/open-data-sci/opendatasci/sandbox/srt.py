@@ -26,6 +26,7 @@ import tempfile
 import traceback
 import warnings
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncIterator, Awaitable, Callable
 
@@ -35,6 +36,10 @@ from sandbox_runtime.utils.platform import get_platform
 from opendatasci._utils.accelerator_utils import discover_accelerator_devices
 from opendatasci._utils.fs_utils import find_maybe_sensitive_paths
 from opendatasci._utils.package_extras_utils import is_deep_learning_extra_active
+from opendatasci._utils.system_dependency_utils import (
+    build_linux_install_command,
+    build_macos_brew_install_command,
+)
 from opendatasci.sandbox.base import (
     PAYLOAD_SENTINEL,
     BaseSandbox,
@@ -78,24 +83,73 @@ def check_sandbox_dependencies() -> None:
     system dependency surfaces immediately, rather than on the first sandboxed
     code execution deep into a session.
     """
-    if SandboxManager.check_dependencies():
+    status = get_system_dependency_status()
+    if status.satisfied:
         return
 
-    platform = get_platform()
-    if not SandboxManager.is_supported_platform(platform):
+    if not status.supported:
         raise RuntimeError(
-            f"OpenDataSci's sandbox is not supported on platform '{platform}'. "
+            f"OpenDataSci's sandbox is not supported on platform '{status.platform}'. "
             "Only macOS and Linux are supported."
         )
 
-    install_hint = _INSTALL_HINTS.get(platform)
-    required = (
-        "ripgrep (rg)" if platform == "macos" else "ripgrep (rg), bubblewrap (bwrap), and socat"
-    )
-    message = f"Missing required sandbox dependencies for {platform}: {required}."
-    if install_hint:
-        message += f" Install with:\n  {install_hint}"
+    message = f"Missing required sandbox dependencies for {status.platform}: {status.description}."
+    if status.manual_install_hint:
+        message += f" Install with:\n  {status.manual_install_hint}"
     raise RuntimeError(message)
+
+
+@dataclass(frozen=True)
+class SystemDependencyStatus:
+    """Non-raising snapshot of whether the sandbox's native OS dependencies are present.
+
+    Used by the TUI's startup wizard to offer installing missing dependencies
+    before the sandbox is ever constructed, rather than surfacing a
+    ``RuntimeError`` mid-session. See :func:`check_sandbox_dependencies` for
+    the raising counterpart used deeper in the stack.
+    """
+
+    satisfied: bool
+    platform: str
+    supported: bool
+    description: str
+    manual_install_hint: str | None
+
+
+def get_system_dependency_status() -> SystemDependencyStatus:
+    """Return whether the host has everything the sandbox needs, without raising."""
+    platform = get_platform()
+    return SystemDependencyStatus(
+        satisfied=SandboxManager.check_dependencies(),
+        platform=platform,
+        supported=SandboxManager.is_supported_platform(platform),
+        description=(
+            "ripgrep (rg)" if platform == "macos" else "ripgrep (rg), bubblewrap (bwrap), and socat"
+        ),
+        manual_install_hint=_INSTALL_HINTS.get(platform),
+    )
+
+
+def build_auto_install_command(platform: str) -> list[str] | None:
+    """argv to auto-install the sandbox's missing dependencies on *platform*.
+
+    Returns ``None`` when nothing can be driven automatically: the platform
+    isn't macOS/Linux, Homebrew isn't installed on macOS, or no known package
+    manager is on PATH on Linux — in every such case the caller should fall
+    back to :class:`SystemDependencyStatus`'s ``manual_install_hint``.
+
+    The actual package-manager detection is generic (see
+    ``_utils.system_dependency_utils``); only the sandbox's specific package
+    list per platform lives here. Homebrew is invoked without ``sudo`` (it
+    refuses to run as root); the Linux managers all require it, so the caller
+    must run this in a real terminal (not with output captured) so ``sudo``
+    can prompt for a password the normal, secure way.
+    """
+    if platform == "macos":
+        return build_macos_brew_install_command(["ripgrep"])
+    if platform == "linux":
+        return build_linux_install_command(["bubblewrap", "socat", "ripgrep"])
+    return None
 
 
 _RUNNER_SRC = Path(__file__).parent / "_runner.py"

@@ -22,7 +22,6 @@ from opendatasci.tools.coding import (
     create_coding_tools,
 )
 from opendatasci.tools.dataset_info import create_data_context_tools
-from opendatasci.tools.mcp import create_mcp_tools
 from opendatasci.tools.modes import create_mode_tools
 from opendatasci.tools.skills import create_skill_tools
 from opendatasci.tools.tasks import create_task_management_tools, create_task_tools
@@ -172,8 +171,6 @@ def create_execution_mode_tools(
     tools.extend(create_task_management_tools(background_task_manager))
     tools.extend(create_web_tools())
     tools.extend(create_user_interaction_tools())
-    if datasci_config.mcp_servers:
-        tools.extend(create_mcp_tools(datasci_config.mcp_servers))
     return tools
 
 

@@ -1,51 +1,173 @@
 """Unit tests for opendatasci.tools.mcp."""
 
 import json
+from contextlib import asynccontextmanager
 from io import StringIO
 from pathlib import Path
-from typing import Any
+from typing import Any, AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from mcp.types import TextContent
 
 from opendatasci.tools.mcp import (
+    MCPServerSpec,
+    MCPTool,
+    MCPTransport,
     _build_args_model,
-    _initialize,
-    _jsonrpc,
-    _list_tools,
-    create_mcp_tools,
-    load_mcp_servers,
+    _parse_mcp_servers,
+    _server_tag,
+    check_mcp_server,
+    discover_mcp_tools,
+    load_named_mcp_servers,
+    load_workspace_mcp_servers,
+    save_workspace_mcp_servers,
 )
 
+_HTTP_SERVER = MCPServerSpec(name="server-a", url="http://localhost:8080")
+
+
+def _fake_session(**overrides: Any) -> MagicMock:
+    session = MagicMock()
+    session.list_tools = AsyncMock(return_value=MagicMock(tools=[]))
+    session.call_tool = AsyncMock()
+    session.initialize = AsyncMock()
+    for key, value in overrides.items():
+        setattr(session, key, value)
+    return session
+
+
+def _patched_session(session: MagicMock):
+    @asynccontextmanager
+    async def _cm(server: MCPServerSpec, *, timeout: float = 0.0) -> AsyncIterator[MagicMock]:
+        yield session
+
+    return patch("opendatasci.tools.mcp._mcp_session", _cm)
+
+
 # ---------------------------------------------------------------------------
-# _jsonrpc
+# MCPServerSpec / _parse_mcp_servers
 # ---------------------------------------------------------------------------
 
 
-class TestJsonrpc:
-    def test_includes_jsonrpc_version(self) -> None:
-        payload = _jsonrpc("tools/list")
-        assert payload["jsonrpc"] == "2.0"
+class TestParseMcpServers:
+    def test_defaults_to_http_transport(self) -> None:
+        data = {"mcpServers": {"a": {"url": "http://localhost:8080"}}}
+        specs = _parse_mcp_servers(data)
+        assert specs == [MCPServerSpec(name="a", url="http://localhost:8080")]
+        assert specs[0].transport is MCPTransport.HTTP
 
-    def test_includes_method(self) -> None:
-        payload = _jsonrpc("tools/list")
-        assert payload["method"] == "tools/list"
+    def test_reads_sse_transport(self) -> None:
+        data = {"mcpServers": {"a": {"url": "http://localhost:8080", "type": "sse"}}}
+        specs = _parse_mcp_servers(data)
+        assert specs[0].transport is MCPTransport.SSE
 
-    def test_includes_default_id(self) -> None:
-        payload = _jsonrpc("tools/list")
-        assert payload["id"] == 1
+    def test_unknown_transport_falls_back_to_http(self) -> None:
+        data = {"mcpServers": {"a": {"url": "http://localhost:8080", "type": "stdio"}}}
+        specs = _parse_mcp_servers(data)
+        assert specs[0].transport is MCPTransport.HTTP
 
-    def test_custom_id(self) -> None:
-        payload = _jsonrpc("tools/list", req_id=5)
-        assert payload["id"] == 5
+    def test_reads_headers(self) -> None:
+        data = {
+            "mcpServers": {
+                "a": {"url": "http://localhost:8080", "headers": {"Authorization": "Bearer x"}}
+            }
+        }
+        specs = _parse_mcp_servers(data)
+        assert specs[0].headers == {"Authorization": "Bearer x"}
 
-    def test_params_included_when_provided(self) -> None:
-        payload = _jsonrpc("initialize", params={"version": "1.0"})
-        assert payload["params"] == {"version": "1.0"}
+    def test_missing_headers_defaults_to_empty_dict(self) -> None:
+        data = {"mcpServers": {"a": {"url": "http://localhost:8080"}}}
+        specs = _parse_mcp_servers(data)
+        assert specs[0].headers == {}
 
-    def test_params_absent_when_none(self) -> None:
-        payload = _jsonrpc("tools/list")
-        assert "params" not in payload
+    def test_skips_entries_without_url_key(self) -> None:
+        data = {"mcpServers": {"no-url": {"host": "localhost"}}}
+        assert _parse_mcp_servers(data) == []
+
+    def test_no_mcp_servers_key_returns_empty(self) -> None:
+        assert _parse_mcp_servers({"other": {}}) == []
+
+
+# ---------------------------------------------------------------------------
+# load_workspace_mcp_servers / save_workspace_mcp_servers
+# ---------------------------------------------------------------------------
+
+
+class TestLoadWorkspaceMcpServers:
+    def test_returns_empty_list_when_file_absent(self, tmp_path: Path) -> None:
+        assert load_workspace_mcp_servers(tmp_path) == []
+
+    def test_returns_specs_from_valid_config(self, tmp_path: Path) -> None:
+        config_path = tmp_path / ".opendatasci" / "mcp.json"
+        config_path.parent.mkdir(parents=True)
+        config = {
+            "mcpServers": {
+                "server-a": {"url": "http://localhost:8080"},
+                "server-b": {"url": "http://localhost:9000", "type": "sse"},
+            }
+        }
+        config_path.write_text(json.dumps(config))
+        result = load_workspace_mcp_servers(tmp_path)
+        assert MCPServerSpec(name="server-a", url="http://localhost:8080") in result
+        assert (
+            MCPServerSpec(name="server-b", url="http://localhost:9000", transport=MCPTransport.SSE)
+            in result
+        )
+
+    def test_returns_empty_list_for_malformed_json(self, tmp_path: Path) -> None:
+        config_path = tmp_path / ".opendatasci" / "mcp.json"
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text("not valid json {{{")
+        assert load_workspace_mcp_servers(tmp_path) == []
+
+    def test_prints_warning_for_malformed_json(self, tmp_path: Path) -> None:
+        config_path = tmp_path / ".opendatasci" / "mcp.json"
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text("not valid json")
+        captured = StringIO()
+        with patch("sys.stderr", captured):
+            load_workspace_mcp_servers(tmp_path)
+        assert "Warning" in captured.getvalue()
+
+
+class TestSaveWorkspaceMcpServers:
+    def test_writes_url_type_and_headers(self, tmp_path: Path) -> None:
+        servers = [
+            MCPServerSpec(
+                name="server-a",
+                url="http://localhost:8080",
+                transport=MCPTransport.SSE,
+                headers={"X-Api-Key": "secret"},
+            )
+        ]
+        save_workspace_mcp_servers(tmp_path, servers)
+        data = json.loads((tmp_path / ".opendatasci" / "mcp.json").read_text())
+        entry = data["mcpServers"]["server-a"]
+        assert entry["url"] == "http://localhost:8080"
+        assert entry["type"] == "sse"
+        assert entry["headers"] == {"X-Api-Key": "secret"}
+
+    def test_omits_headers_key_when_empty(self, tmp_path: Path) -> None:
+        save_workspace_mcp_servers(tmp_path, [MCPServerSpec(name="a", url="http://x")])
+        data = json.loads((tmp_path / ".opendatasci" / "mcp.json").read_text())
+        assert "headers" not in data["mcpServers"]["a"]
+
+    def test_round_trips_through_load(self, tmp_path: Path) -> None:
+        servers = [MCPServerSpec(name="a", url="http://x", transport=MCPTransport.SSE)]
+        save_workspace_mcp_servers(tmp_path, servers)
+        assert load_workspace_mcp_servers(tmp_path) == servers
+
+
+class TestLoadNamedMcpServers:
+    def test_raises_for_missing_file(self, tmp_path: Path) -> None:
+        with pytest.raises(FileNotFoundError):
+            load_named_mcp_servers(tmp_path / "nope.json")
+
+    def test_reads_specs(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "mcp.json"
+        config_path.write_text(json.dumps({"mcpServers": {"a": {"url": "http://x"}}}))
+        assert load_named_mcp_servers(config_path) == [MCPServerSpec(name="a", url="http://x")]
 
 
 # ---------------------------------------------------------------------------
@@ -60,9 +182,7 @@ class TestBuildArgsModel:
             "required": ["query"],
         }
         model = _build_args_model("test_tool", schema)
-        fields = model.model_fields
-        assert "query" in fields
-        assert fields["query"].is_required()
+        assert model.model_fields["query"].is_required()
 
     def test_optional_field_defaults_to_none(self) -> None:
         schema: dict[str, Any] = {
@@ -70,383 +190,162 @@ class TestBuildArgsModel:
             "required": [],
         }
         model = _build_args_model("test_tool", schema)
-        fields = model.model_fields
-        assert "limit" in fields
-        assert not fields["limit"].is_required()
-
-    def test_type_mapping_string(self) -> None:
-        schema: dict[str, Any] = {
-            "properties": {"name": {"type": "string"}},
-            "required": ["name"],
-        }
-        model = _build_args_model("test_tool", schema)
-        instance = model(name="hello")
-        assert instance.name == "hello"  # type: ignore[attr-defined]
-
-    def test_type_mapping_integer(self) -> None:
-        schema: dict[str, Any] = {
-            "properties": {"count": {"type": "integer"}},
-            "required": ["count"],
-        }
-        model = _build_args_model("test_tool", schema)
-        instance = model(count=42)
-        assert instance.count == 42  # type: ignore[attr-defined]
-
-    def test_type_mapping_boolean(self) -> None:
-        schema: dict[str, Any] = {
-            "properties": {"flag": {"type": "boolean"}},
-            "required": ["flag"],
-        }
-        model = _build_args_model("test_tool", schema)
-        instance = model(flag=True)
-        assert instance.flag is True  # type: ignore[attr-defined]
+        assert not model.model_fields["limit"].is_required()
 
     def test_empty_schema_produces_empty_model(self) -> None:
-        schema: dict[str, Any] = {"properties": {}, "required": []}
-        model = _build_args_model("test_tool", schema)
-        instance = model()
-        assert instance is not None
-
-    def test_unknown_type_defaults_to_str(self) -> None:
-        schema: dict[str, Any] = {
-            "properties": {"mystery": {"type": "unknown_type"}},
-            "required": ["mystery"],
-        }
-        model = _build_args_model("test_tool", schema)
-        instance = model(mystery="value")
-        assert instance.mystery == "value"  # type: ignore[attr-defined]
+        model = _build_args_model("test_tool", {"properties": {}, "required": []})
+        assert model() is not None
 
 
 # ---------------------------------------------------------------------------
-# load_mcp_servers
+# check_mcp_server
 # ---------------------------------------------------------------------------
 
 
-class TestLoadMcpServerUrls:
-    def test_returns_empty_list_when_file_absent(self, tmp_path: Path) -> None:
-        result = load_mcp_servers(tmp_path)
-        assert result == []
+class TestCheckMcpServer:
+    async def test_raises_when_unreachable(self) -> None:
+        @asynccontextmanager
+        async def _boom(server: MCPServerSpec, *, timeout: float = 0.0) -> AsyncIterator[Any]:
+            raise ConnectionError("refused")
+            yield  # pragma: no cover
 
-    def test_returns_urls_from_valid_config(self, tmp_path: Path) -> None:
-        config_path = tmp_path / ".opendatasci" / "mcp.json"
-        config_path.parent.mkdir(parents=True)
-        config = {
-            "mcpServers": {
-                "server-a": {"url": "http://localhost:8080"},
-                "server-b": {"url": "http://localhost:9000"},
-            }
-        }
-        config_path.write_text(json.dumps(config))
-        result = load_mcp_servers(tmp_path)
-        assert "http://localhost:8080" in result
-        assert "http://localhost:9000" in result
+        with patch("opendatasci.tools.mcp._mcp_session", _boom):
+            with pytest.raises(ConnectionError):
+                await check_mcp_server(_HTTP_SERVER)
 
-    def test_returns_empty_list_for_empty_mcp_servers(self, tmp_path: Path) -> None:
-        config_path = tmp_path / ".opendatasci" / "mcp.json"
-        config_path.parent.mkdir(parents=True)
-        config_path.write_text(json.dumps({"mcpServers": {}}))
-        result = load_mcp_servers(tmp_path)
-        assert result == []
+    async def test_lists_tools_on_success(self) -> None:
+        session = _fake_session()
+        with _patched_session(session):
+            await check_mcp_server(_HTTP_SERVER)
+        session.list_tools.assert_awaited_once()
 
-    def test_skips_entries_without_url_key(self, tmp_path: Path) -> None:
-        config_path = tmp_path / ".opendatasci" / "mcp.json"
-        config_path.parent.mkdir(parents=True)
-        config = {"mcpServers": {"no-url": {"host": "localhost"}}}
-        config_path.write_text(json.dumps(config))
-        result = load_mcp_servers(tmp_path)
-        assert result == []
 
-    def test_returns_empty_list_for_malformed_json(self, tmp_path: Path) -> None:
-        config_path = tmp_path / ".opendatasci" / "mcp.json"
-        config_path.parent.mkdir(parents=True)
-        config_path.write_text("not valid json {{{")
-        result = load_mcp_servers(tmp_path)
-        assert result == []
+# ---------------------------------------------------------------------------
+# discover_mcp_tools
+# ---------------------------------------------------------------------------
 
-    def test_prints_warning_for_malformed_json(self, tmp_path: Path) -> None:
-        config_path = tmp_path / ".opendatasci" / "mcp.json"
-        config_path.parent.mkdir(parents=True)
-        config_path.write_text("not valid json")
+
+class TestDiscoverMcpTools:
+    async def test_returns_empty_list_for_no_servers(self) -> None:
+        assert await discover_mcp_tools([]) == []
+
+    async def test_skips_unreachable_server_with_warning(self) -> None:
+        @asynccontextmanager
+        async def _boom(server: MCPServerSpec, *, timeout: float = 0.0) -> AsyncIterator[Any]:
+            raise ConnectionError("refused")
+            yield  # pragma: no cover
+
         captured = StringIO()
-        with patch("sys.stderr", captured):
-            load_mcp_servers(tmp_path)
-        assert "Warning" in captured.getvalue()
-
-    def test_no_mcp_servers_key_returns_empty(self, tmp_path: Path) -> None:
-        config_path = tmp_path / ".opendatasci" / "mcp.json"
-        config_path.parent.mkdir(parents=True)
-        config_path.write_text(json.dumps({"other": {}}))
-        result = load_mcp_servers(tmp_path)
-        assert result == []
-
-
-# ---------------------------------------------------------------------------
-# create_mcp_tools
-# ---------------------------------------------------------------------------
-
-
-class TestGetMcpTools:
-    def test_returns_empty_list_for_no_urls(self) -> None:
-        result = create_mcp_tools([])
-        assert result == []
-
-    def test_skips_unreachable_server_with_warning(self) -> None:
-        captured = StringIO()
-        with patch("opendatasci.tools.mcp._initialize", side_effect=ConnectionError("refused")):
-            with patch("sys.stderr", captured):
-                result = create_mcp_tools(["http://localhost:9999"])
+        with patch("opendatasci.tools.mcp._mcp_session", _boom), patch("sys.stderr", captured):
+            result = await discover_mcp_tools([_HTTP_SERVER])
         assert result == []
         assert "Warning" in captured.getvalue()
 
-    def test_wraps_tools_from_reachable_server(self) -> None:
-        tool_def = {
-            "name": "my_tool",
-            "description": "does a thing",
-            "inputSchema": {
+    async def test_wraps_tools_from_reachable_server(self) -> None:
+        tool_def = MagicMock(
+            description="does a thing",
+            input_schema={
                 "type": "object",
                 "properties": {"arg": {"type": "string"}},
                 "required": ["arg"],
             },
-        }
-        with patch("opendatasci.tools.mcp._initialize"):
-            with patch("opendatasci.tools.mcp._list_tools", return_value=[tool_def]):
-                result = create_mcp_tools(["http://localhost:8080"])
+        )
+        tool_def.name = "my_tool"
+        session = _fake_session(list_tools=AsyncMock(return_value=MagicMock(tools=[tool_def])))
+        with _patched_session(session):
+            result = await discover_mcp_tools([_HTTP_SERVER])
         assert len(result) == 1
-        assert result[0].name == "my_tool"
+        assert isinstance(result[0], MCPTool)
+        assert result[0].name == f"mcp{_server_tag(_HTTP_SERVER)}__my_tool"
+        assert result[0].mcp_tool_name == "my_tool"
 
-    def test_skips_malformed_tool_definition_with_warning(self) -> None:
-        with patch("opendatasci.tools.mcp._initialize"):
-            with patch("opendatasci.tools.mcp._list_tools", return_value=[{"no_name": True}]):
-                captured = StringIO()
-                with patch("sys.stderr", captured):
-                    result = create_mcp_tools(["http://localhost:8080"])
+    async def test_namespaces_tools_by_server_to_avoid_collisions(self) -> None:
+        def _tool_def(name: str) -> MagicMock:
+            td = MagicMock(description="", input_schema={})
+            td.name = name
+            return td
+
+        server_a = MCPServerSpec(name="a", url="http://a")
+        server_b = MCPServerSpec(name="b", url="http://b")
+
+        sessions = {
+            "http://a": _fake_session(
+                list_tools=AsyncMock(return_value=MagicMock(tools=[_tool_def("shared_tool")]))
+            ),
+            "http://b": _fake_session(
+                list_tools=AsyncMock(return_value=MagicMock(tools=[_tool_def("shared_tool")]))
+            ),
+        }
+
+        @asynccontextmanager
+        async def _cm(server: MCPServerSpec, *, timeout: float = 0.0) -> AsyncIterator[MagicMock]:
+            yield sessions[server.url]
+
+        with patch("opendatasci.tools.mcp._mcp_session", _cm):
+            result = await discover_mcp_tools([server_a, server_b])
+        names = {t.name for t in result}
+        assert names == {
+            f"mcp{_server_tag(server_a)}__shared_tool",
+            f"mcp{_server_tag(server_b)}__shared_tool",
+        }
+        assert len(names) == 2  # different servers must get different tags
+
+    async def test_skips_malformed_tool_definition_with_warning(self) -> None:
+        bad_def = MagicMock(description="", input_schema="not-a-dict")
+        bad_def.name = "bad_tool"
+        session = _fake_session(list_tools=AsyncMock(return_value=MagicMock(tools=[bad_def])))
+        captured = StringIO()
+        with _patched_session(session), patch("sys.stderr", captured):
+            result = await discover_mcp_tools([_HTTP_SERVER])
         assert result == []
+        assert "Warning" in captured.getvalue()
 
-    @pytest.mark.asyncio
-    async def test_mcp_tool_call_formats_text_response(self) -> None:
-        tool_def = {
-            "name": "echo_tool",
-            "description": "echoes input",
-            "inputSchema": {
-                "type": "object",
-                "properties": {"msg": {"type": "string"}},
-                "required": ["msg"],
-            },
-        }
-        fake_response_data = {"result": {"content": [{"type": "text", "text": "hello from mcp"}]}}
-        mock_response = MagicMock()
-        mock_response.json.return_value = fake_response_data
-        mock_response.raise_for_status = MagicMock()
 
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
+# ---------------------------------------------------------------------------
+# MCPTool._arun
+# ---------------------------------------------------------------------------
 
-        with patch("opendatasci.tools.mcp._initialize"):
-            with patch("opendatasci.tools.mcp._list_tools", return_value=[tool_def]):
-                tools = create_mcp_tools(["http://localhost:8080"])
 
-        with patch("httpx.AsyncClient", return_value=mock_client):
-            result = await tools[0].ainvoke({"msg": "hello"})
+class TestMCPToolArun:
+    def _tool(self) -> MCPTool:
+        return MCPTool(
+            name=f"mcp{_server_tag(_HTTP_SERVER)}__echo",
+            description="echoes",
+            args_schema=_build_args_model("echo", {"properties": {}, "required": []}),
+            server=_HTTP_SERVER,
+            mcp_tool_name="echo",
+        )
 
-        assert "hello from mcp" in result
+    async def test_formats_text_response(self) -> None:
+        content = [TextContent(type="text", text="hello from mcp")]
+        result_obj = MagicMock(content=content, is_error=False, structured_content=None)
+        session = _fake_session(call_tool=AsyncMock(return_value=result_obj))
+        with _patched_session(session):
+            result = await self._tool()._arun(msg="hi")
+        assert result == "hello from mcp"
 
-    @pytest.mark.asyncio
-    async def test_mcp_tool_call_returns_error_message_on_http_failure(self) -> None:
-        tool_def = {
-            "name": "fail_tool",
-            "description": "fails",
-            "inputSchema": {"type": "object", "properties": {}},
-        }
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(side_effect=Exception("connection refused"))
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
+    async def test_falls_back_to_structured_content_when_no_text_parts(self) -> None:
+        result_obj = MagicMock(content=[], is_error=False, structured_content={"a": 1})
+        session = _fake_session(call_tool=AsyncMock(return_value=result_obj))
+        with _patched_session(session):
+            result = await self._tool()._arun()
+        assert json.loads(result) == {"a": 1}
 
-        with patch("opendatasci.tools.mcp._initialize"):
-            with patch("opendatasci.tools.mcp._list_tools", return_value=[tool_def]):
-                tools = create_mcp_tools(["http://localhost:8080"])
-
-        with patch("httpx.AsyncClient", return_value=mock_client):
-            result = await tools[0].ainvoke({})
-
-        assert "Error calling MCP tool" in result
-
-    @pytest.mark.asyncio
-    async def test_mcp_tool_call_returns_error_on_jsonrpc_error_field(self) -> None:
-        tool_def = {
-            "name": "err_tool",
-            "description": "errors",
-            "inputSchema": {"type": "object", "properties": {}},
-        }
-        fake_response_data = {"error": {"code": -32601, "message": "Method not found"}}
-        mock_response = MagicMock()
-        mock_response.json.return_value = fake_response_data
-        mock_response.raise_for_status = MagicMock()
-
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("opendatasci.tools.mcp._initialize"):
-            with patch("opendatasci.tools.mcp._list_tools", return_value=[tool_def]):
-                tools = create_mcp_tools(["http://localhost:8080"])
-
-        with patch("httpx.AsyncClient", return_value=mock_client):
-            result = await tools[0].ainvoke({})
-
+    async def test_reports_mcp_error(self) -> None:
+        content = [TextContent(type="text", text="bad args")]
+        result_obj = MagicMock(content=content, is_error=True, structured_content=None)
+        session = _fake_session(call_tool=AsyncMock(return_value=result_obj))
+        with _patched_session(session):
+            result = await self._tool()._arun()
         assert "MCP error" in result
-        assert "Method not found" in result
+        assert "bad args" in result
 
-    @pytest.mark.asyncio
-    async def test_mcp_tool_call_falls_back_to_json_when_no_text_parts(self) -> None:
-        """When the MCP response carries no ``type=="text"`` content items, the
-        tool must serialise the whole result dict back to JSON so the model can
-        still see what the server returned."""
-        tool_def = {
-            "name": "raw_tool",
-            "description": "returns non-text content",
-            "inputSchema": {"type": "object", "properties": {}},
-        }
-        fake_response_data = {
-            "result": {
-                "content": [{"type": "image", "data": "ignored"}],
-                "extra": [1, 2, 3],
-            }
-        }
-        mock_response = MagicMock()
-        mock_response.json.return_value = fake_response_data
-        mock_response.raise_for_status = MagicMock()
+    async def test_connection_failure_returns_error_message(self) -> None:
+        @asynccontextmanager
+        async def _boom(server: MCPServerSpec, *, timeout: float = 0.0) -> AsyncIterator[Any]:
+            raise ConnectionError("refused")
+            yield  # pragma: no cover
 
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("opendatasci.tools.mcp._initialize"):
-            with patch("opendatasci.tools.mcp._list_tools", return_value=[tool_def]):
-                tools = create_mcp_tools(["http://localhost:8080"])
-
-        with patch("httpx.AsyncClient", return_value=mock_client):
-            result = await tools[0].ainvoke({})
-
-        parsed = json.loads(result)
-        assert parsed == fake_response_data["result"]
-
-
-# ---------------------------------------------------------------------------
-# _initialize — JSON-RPC handshake
-# ---------------------------------------------------------------------------
-
-
-class TestInitialize:
-    def _make_sync_client(self, raise_on_second: bool = False) -> tuple[MagicMock, MagicMock]:
-        """Build a fake ``httpx.Client`` context manager and the constructor that returns it."""
-        response = MagicMock()
-        response.raise_for_status = MagicMock()
-        client = MagicMock()
-        if raise_on_second:
-            client.post = MagicMock(side_effect=[response, RuntimeError("boom")])
-        else:
-            client.post = MagicMock(return_value=response)
-        client.__enter__ = MagicMock(return_value=client)
-        client.__exit__ = MagicMock(return_value=False)
-        ctor = MagicMock(return_value=client)
-        return ctor, client
-
-    def test_posts_initialize_payload_to_url(self) -> None:
-        ctor, client = self._make_sync_client()
-        with patch("opendatasci.tools.mcp.httpx.Client", ctor):
-            _initialize("http://srv/mcp")
-        first_call = client.post.call_args_list[0]
-        assert first_call.args[0] == "http://srv/mcp"
-        assert first_call.kwargs["json"]["method"] == "initialize"
-
-    def test_initialize_payload_carries_protocol_version(self) -> None:
-        ctor, client = self._make_sync_client()
-        with patch("opendatasci.tools.mcp.httpx.Client", ctor):
-            _initialize("http://srv/mcp")
-        first_call = client.post.call_args_list[0]
-        params = first_call.kwargs["json"]["params"]
-        assert params["protocolVersion"] == "2024-11-05"
-        assert params["clientInfo"]["name"] == "opendatasci"
-
-    def test_sends_initialized_notification_after_handshake(self) -> None:
-        ctor, client = self._make_sync_client()
-        with patch("opendatasci.tools.mcp.httpx.Client", ctor):
-            _initialize("http://srv/mcp")
-        assert client.post.call_count == 2
-        second_call = client.post.call_args_list[1]
-        assert second_call.kwargs["json"]["method"] == "notifications/initialized"
-
-    def test_swallows_notification_failure(self) -> None:
-        """Spec says the initialized notification is best-effort — failures must not bubble."""
-        ctor, _ = self._make_sync_client(raise_on_second=True)
-        with patch("opendatasci.tools.mcp.httpx.Client", ctor):
-            _initialize("http://srv/mcp")  # must not raise
-
-    def test_raises_when_initialize_post_fails(self) -> None:
-        """The handshake POST itself must propagate errors so callers can drop the server."""
-        response = MagicMock()
-        response.raise_for_status = MagicMock(side_effect=RuntimeError("502 bad gateway"))
-        client = MagicMock()
-        client.post = MagicMock(return_value=response)
-        client.__enter__ = MagicMock(return_value=client)
-        client.__exit__ = MagicMock(return_value=False)
-        with patch("opendatasci.tools.mcp.httpx.Client", return_value=client):
-            with pytest.raises(RuntimeError, match="502"):
-                _initialize("http://srv/mcp")
-
-
-# ---------------------------------------------------------------------------
-# _list_tools — fetch tool manifest
-# ---------------------------------------------------------------------------
-
-
-class TestListTools:
-    def _make_client(self, response_json: dict) -> tuple[MagicMock, MagicMock]:
-        response = MagicMock()
-        response.raise_for_status = MagicMock()
-        response.json = MagicMock(return_value=response_json)
-        client = MagicMock()
-        client.post = MagicMock(return_value=response)
-        client.__enter__ = MagicMock(return_value=client)
-        client.__exit__ = MagicMock(return_value=False)
-        return MagicMock(return_value=client), client
-
-    def test_posts_tools_list_to_url(self) -> None:
-        ctor, client = self._make_client({"result": {"tools": []}})
-        with patch("opendatasci.tools.mcp.httpx.Client", ctor):
-            _list_tools("http://srv/mcp")
-        call = client.post.call_args
-        assert call.args[0] == "http://srv/mcp"
-        assert call.kwargs["json"]["method"] == "tools/list"
-
-    def test_returns_tool_list_from_response(self) -> None:
-        tools_payload = [{"name": "tool_a"}, {"name": "tool_b"}]
-        ctor, _ = self._make_client({"result": {"tools": tools_payload}})
-        with patch("opendatasci.tools.mcp.httpx.Client", ctor):
-            assert _list_tools("http://srv/mcp") == tools_payload
-
-    def test_returns_empty_list_when_result_missing(self) -> None:
-        ctor, _ = self._make_client({})
-        with patch("opendatasci.tools.mcp.httpx.Client", ctor):
-            assert _list_tools("http://srv/mcp") == []
-
-    def test_returns_empty_list_when_tools_key_missing(self) -> None:
-        ctor, _ = self._make_client({"result": {}})
-        with patch("opendatasci.tools.mcp.httpx.Client", ctor):
-            assert _list_tools("http://srv/mcp") == []
-
-    def test_propagates_http_error(self) -> None:
-        response = MagicMock()
-        response.raise_for_status = MagicMock(side_effect=RuntimeError("500"))
-        client = MagicMock()
-        client.post = MagicMock(return_value=response)
-        client.__enter__ = MagicMock(return_value=client)
-        client.__exit__ = MagicMock(return_value=False)
-        with patch("opendatasci.tools.mcp.httpx.Client", return_value=client):
-            with pytest.raises(RuntimeError, match="500"):
-                _list_tools("http://srv/mcp")
+        with patch("opendatasci.tools.mcp._mcp_session", _boom):
+            result = await self._tool()._arun()
+        assert "Error calling MCP tool" in result

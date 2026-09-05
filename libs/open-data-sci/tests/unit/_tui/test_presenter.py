@@ -1,20 +1,20 @@
-"""Unit tests for _TurnPresenter (opendatasci._tui.presenter)."""
+"""Unit tests for _TurnPresenter (opendatasci._tui.chat.presenter)."""
 
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from opendatasci._tui.chat.presenter import _TurnPresenter, apply_usage_event
 from opendatasci.streaming.events import (
     ReasoningEvent,
     SubagentEvent,
+    TaskDoneEvent,
     TokenEvent,
     ToolCallEvent,
     ToolCommunicationEvent,
     ToolResultEvent,
     UsageEvent,
-    TaskDoneEvent,
 )
-from opendatasci._tui.presenter import _TurnPresenter, apply_usage_event
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -344,10 +344,6 @@ class TestCommunicationSuppressedByNarration:
         p, ui = self._setup()
         p.handle_tool_communication(_tool_comm("tc1", "Fetching results…"))
         await p.handle_tool_call(_visible_tool_call("tc1"))
-        _, call_kwargs = (
-            ui.add_ephemeral_block.call_args_list[-1].args,
-            ui.add_ephemeral_block.call_args_list[-1],
-        )
         # The pre-mounted ephemeral is upgraded (not a new add_ephemeral_block call), so
         # check that set_communication was NOT called (comm not cleared).
         eph = ui.add_ephemeral_block.return_value
@@ -636,11 +632,11 @@ class TestSubagentEventActivityFallbacks:
     async def test_activity_falls_back_to_registry_label_when_no_summary(self) -> None:
         """When the subagent event carries no summary but the tool has a
         ToolDisplay in REGISTRY, the row activity must surface the registry
-        label (with icon) instead of the raw tool name."""
-        from opendatasci._tui.tools_display import ToolDisplay, _registry, register
+        label instead of the raw tool name."""
+        from opendatasci._tui.chat.tools_display import ToolDisplay, _registry, register
 
         original = _registry.get("fake_demo_tool")
-        register("fake_demo_tool", ToolDisplay(label="Demo Tool", icon="🎯"))
+        register("fake_demo_tool", ToolDisplay(label="Demo Tool"))
         try:
             p, wb = await self._setup()
             p.handle_subagent_event(
@@ -652,8 +648,7 @@ class TestSubagentEventActivityFallbacks:
                 )
             )
             _, activity = wb.update_task_activity.call_args.args
-            assert "🎯" in activity
-            assert "Demo Tool" in activity
+            assert activity == "Demo Tool"
         finally:
             if original is not None:
                 _registry["fake_demo_tool"] = original
@@ -695,22 +690,13 @@ class TestMakeLabel:
         assert "_" not in label
         assert label == "My Mcp Tool Name"
 
-    def test_registered_tool_uses_display_label_and_icon(self) -> None:
-        from opendatasci._tui.tools_display import ToolDisplay
+    def test_registered_tool_uses_display_label(self) -> None:
+        from opendatasci._tui.chat.tools_display import ToolDisplay
 
-        td = ToolDisplay(label="Run Code", icon="🐍")
+        td = ToolDisplay(label="Run Code")
         event = ToolCallEvent(tool="execute_python_code", tool_call_id="tc1", summary="")
         label = _TurnPresenter._make_label(td, event)
-        assert "Run Code" in label
-        assert "🐍" in label
-
-    def test_registered_tool_without_icon_returns_label_only(self) -> None:
-        from opendatasci._tui.tools_display import ToolDisplay
-
-        td = ToolDisplay(label="Do Something", icon="")
-        event = ToolCallEvent(tool="do_something", tool_call_id="tc1", summary="")
-        label = _TurnPresenter._make_label(td, event)
-        assert label == "Do Something"
+        assert label == "Run Code"
 
 
 # ---------------------------------------------------------------------------
@@ -775,6 +761,6 @@ class TestUncorrelatedToolResult:
 
         ui = _make_ui()
         p = _TurnPresenter(ui)
-        with caplog.at_level(logging.WARNING, logger="opendatasci._tui.presenter"):
+        with caplog.at_level(logging.WARNING, logger="opendatasci._tui.chat.presenter"):
             p.handle_tool_result(ToolResultEvent(tool_call_id="ghost-id"))
         assert any("uncorrelated" in r.message for r in caplog.records)

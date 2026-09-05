@@ -262,7 +262,6 @@ class TestUpdateDatasetInfo:
     async def test_does_not_write_profile(self, ctx: LocalContextStore, workspace: Path) -> None:
         p = _write_dataset(workspace)
         await ctx.update_dataset_info(str(p), "note")
-        hash_hex = await hash_path(p)
         _, _, profile = await ctx.get_profile_info(str(p))
         assert profile is None
 

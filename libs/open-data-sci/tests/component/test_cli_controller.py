@@ -157,6 +157,8 @@ class _RecordingUI(UIAdapter):
         self.pending_messages: list[_RecordingPendingMessage] = []
         self.approval_prompts: list[tuple[str, str]] = []
         self.ephemerals: list[_RecordingEphemeral] = []
+        self.config_panels: list[tuple[object, dict, list[str], object]] = []
+        self.theme_refreshes = 0
 
     def add_message(self, role: str, content: str = "") -> MessageHandle:
         h = _RecordingMessageHandle(role, content)
@@ -229,6 +231,14 @@ class _RecordingUI(UIAdapter):
 
     def stop_agent(self) -> None:
         self.stop_agent_calls += 1
+
+    def open_config_panel(
+        self, root, initial_values, start_path, on_apply, initial_mcp_servers=None
+    ) -> None:
+        self.config_panels.append((root, dict(initial_values), list(start_path), on_apply))
+
+    def refresh_theme(self) -> None:
+        self.theme_refreshes += 1
 
 
 # ---------------------------------------------------------------------------
@@ -352,44 +362,61 @@ class TestSlashCommands:
         await ctrl.on_submit("/help")
         assert any("Available Commands" in m.text for m in ui.messages)
 
-    async def test_models_message_includes_provider(self):
+    async def test_config_opens_panel_at_root(self):
+        ctrl, ui = _make_controller(service=_make_service_stub())
+        await ctrl.on_submit("/config")
+        assert len(ui.config_panels) == 1
+        assert ui.config_panels[0][2] == []
+
+    async def test_models_opens_panel_at_models_node(self):
         ctrl, ui = _make_controller(service=_make_service_stub())
         await ctrl.on_submit("/models")
-        msg = next(m for m in ui.messages if "Model" in m.text)
-        assert "Claude" in msg.text or "claude" in msg.text.lower()
+        assert len(ui.config_panels) == 1
+        assert ui.config_panels[0][2] == ["models"]
 
-    async def test_reset_calls_service(self):
+    async def test_providers_opens_panel_at_providers_node(self):
+        ctrl, ui = _make_controller(service=_make_service_stub())
+        await ctrl.on_submit("/providers")
+        assert len(ui.config_panels) == 1
+        assert ui.config_panels[0][2] == ["providers"]
+
+    async def test_reset_calls_service_clears_and_shows_only_the_command(self):
         svc = _make_service_stub()
         ctrl, ui = _make_controller(service=svc)
         await ctrl.on_submit("/reset")
         svc.reset_session.assert_awaited_once()
-        assert any("Session reset" in m.text for m in ui.messages)
+        assert ui.cleared == 1
+        assert [m.text for m in ui.messages] == ["/reset"]
 
-    async def test_reset_handles_service_error(self):
+    async def test_reset_handles_service_error_but_still_clears(self):
         svc = _make_service_stub(reset_raises=RuntimeError("kaboom"))
         ctrl, ui = _make_controller(service=svc)
-        await ctrl.on_submit("/reset")
-        assert any("Reset failed" in m.text for m in ui.messages)
+        await ctrl.on_submit("/reset")  # should not raise
+        assert ui.cleared == 1
+        assert [m.text for m in ui.messages] == ["/reset"]
 
-    async def test_clear_context_calls_service(self):
+    async def test_clear_context_calls_service_and_shows_only_the_command(self):
         svc = _make_service_stub()
         ctrl, ui = _make_controller(service=svc)
         await ctrl.on_submit("/clear")
         svc.clear_context.assert_awaited_once()
-        assert any("Context cleared" in m.text for m in ui.messages)
+        assert ui.cleared == 1
+        assert [m.text for m in ui.messages] == ["/clear"]
 
-    async def test_compact_emits_summary(self):
+    async def test_compact_clears_and_shows_only_the_command(self):
         svc = _make_service_stub(compact_summary="condensed history")
         ctrl, ui = _make_controller(service=svc)
         await ctrl.on_submit("/compact")
         svc.compact_chat_history.assert_awaited_once()
-        assert any("Compaction done" in m.text for m in ui.messages)
+        assert ui.cleared == 1
+        assert [m.text for m in ui.messages] == ["/compact"]
 
-    async def test_compact_reports_failure(self):
+    async def test_compact_failure_does_not_clear_or_show_anything(self):
         svc = _make_service_stub(compact_raises=RuntimeError("nope"))
         ctrl, ui = _make_controller(service=svc)
-        await ctrl.on_submit("/compact")
-        assert any("Compact failed" in m.text for m in ui.messages)
+        await ctrl.on_submit("/compact")  # should not raise
+        assert ui.cleared == 0
+        assert ui.messages == []
 
     async def test_ls_workspace_calls_panel(self):
         svc = _make_service_stub(workspace_files=["a.csv", "b.csv"])
@@ -397,16 +424,13 @@ class TestSlashCommands:
         await ctrl.on_submit("/ls-workspace")
         assert ui.workspace_panels == [["a.csv", "b.csv"]]
 
-    async def test_stop_when_idle_warns(self):
-        ctrl, ui = _make_controller(service=_make_service_stub())
-        await ctrl.on_submit("/stop")
-        assert any("No agent" in m.text for m in ui.messages)
-
-    async def test_stop_when_running_calls_ui_and_rollback(self):
+    async def test_stop_agent_directly_calls_ui_and_rollback(self):
+        # Ctrl+C / Esc call CLIController.stop_agent() directly now (app.py),
+        # not through a slash command.
         svc = _make_service_stub()
         ctrl, ui = _make_controller(service=svc)
         ctrl._agent_running = True
-        await ctrl.on_submit("/stop")
+        await ctrl.stop_agent()
         assert ui.stop_agent_calls == 1
         svc.rewind_turn.assert_awaited_once()
 
@@ -597,9 +621,7 @@ class TestStreamingAllEventTypes:
         svc = _make_service_stub(astream_events=events)
         ctrl, ui = _make_controller(service=svc)
         await ctrl.run_agent("Q")
-        # Final state: agent stopped, dividers added once per turn.
         assert ctrl._agent_running is False
-        assert ui.dividers >= 1
 
     async def test_hidden_tool_call_skips_block(self):
         """Tools with display_status=False emit tool_result without a paired ephemeral; no crash."""
@@ -745,7 +767,7 @@ class TestCancelPendingMessages:
 
         assert ctrl._pending_queue.is_empty()
 
-    async def test_cancel_all_messages_reports_count(self):
+    async def test_cancel_all_messages_shows_no_output(self):
         svc = _make_service_stub()
         ctrl, ui = _make_controller(service=svc)
         ctrl._agent_running = True
@@ -755,15 +777,15 @@ class TestCancelPendingMessages:
 
         await ctrl.on_submit("/cancel-all-messages")
 
-        assert any("2" in m.text and "Cancelled" in m.text for m in ui.messages)
+        assert ui.messages == []
 
-    async def test_cancel_all_messages_on_empty_queue_says_nothing_to_cancel(self):
+    async def test_cancel_all_messages_on_empty_queue_shows_no_output(self):
         svc = _make_service_stub()
         ctrl, ui = _make_controller(service=svc)
 
         await ctrl.on_submit("/cancel-all-messages")
 
-        assert any("No pending" in m.text for m in ui.messages)
+        assert ui.messages == []
 
     async def test_cancel_all_messages_removes_pending_handles(self):
         svc = _make_service_stub()
@@ -788,17 +810,17 @@ class TestCancelPendingMessages:
 
         await ctrl.on_submit("/cancel-message")
 
-        # One message remains in the queue.
+        # One message remains in the queue, and no output was shown.
         assert len(ctrl._pending_queue) == 1
-        assert any("Cancelled last" in m.text for m in ui.messages)
+        assert ui.messages == []
 
-    async def test_cancel_last_message_on_empty_queue_says_nothing_to_cancel(self):
+    async def test_cancel_last_message_on_empty_queue_shows_no_output(self):
         svc = _make_service_stub()
         ctrl, ui = _make_controller(service=svc)
 
         await ctrl.on_submit("/cancel-message")
 
-        assert any("No pending" in m.text for m in ui.messages)
+        assert ui.messages == []
 
 
 class TestOnInputChanged:
