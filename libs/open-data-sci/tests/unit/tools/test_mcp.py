@@ -8,6 +8,7 @@ from typing import Any, AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from mcp.types import TextContent
 
 from opendatasci.tools.mcp import (
     MCPServerSpec,
@@ -316,7 +317,7 @@ class TestMCPToolArun:
         )
 
     async def test_formats_text_response(self) -> None:
-        content = [MagicMock(type="text", text="hello from mcp")]
+        content = [TextContent(type="text", text="hello from mcp")]
         result_obj = MagicMock(content=content, isError=False, structuredContent=None)
         session = _fake_session(call_tool=AsyncMock(return_value=result_obj))
         with _patched_session(session):
@@ -331,7 +332,7 @@ class TestMCPToolArun:
         assert json.loads(result) == {"a": 1}
 
     async def test_reports_mcp_error(self) -> None:
-        content = [MagicMock(type="text", text="bad args")]
+        content = [TextContent(type="text", text="bad args")]
         result_obj = MagicMock(content=content, isError=True, structuredContent=None)
         session = _fake_session(call_tool=AsyncMock(return_value=result_obj))
         with _patched_session(session):

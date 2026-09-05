@@ -331,6 +331,7 @@ class Agent(BaseOpenDataSciAgent):
             logger.exception("Failed to discover MCP tools; keeping the previous set")
             return
 
+        assert self._tools is not None  # set in __aenter__ before any turn can run
         current_names = {t.name for t in self._tools if isinstance(t, MCPTool)}
         new_names = {t.name for t in mcp_tools}
         if current_names == new_names:

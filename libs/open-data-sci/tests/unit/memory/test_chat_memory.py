@@ -205,9 +205,7 @@ class TestChatTurnSummarizer:
         structured_llm.ainvoke = AsyncMock(
             return_value=_ChatTurnSummaryOutput(
                 step_batches=[
-                    _TurnStepBatchSummaryOutput(
-                        goal="g", actions="a", outcome="o", artifacts=[]
-                    )
+                    _TurnStepBatchSummaryOutput(goal="g", actions="a", outcome="o", artifacts=[])
                 ]
             )
         )

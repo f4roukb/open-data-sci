@@ -429,8 +429,8 @@ class TestRunOne:
     @pytest.mark.asyncio
     async def test_returns_agent_output(self) -> None:
         tool = _make_tool()
-        with patch(_AGENT_PATCH) as MockAgent:
-            MockAgent.return_value.ainvoke = AsyncMock(return_value="direct output")
+        with patch(_AGENT_PATCH) as mock_agent_cls:
+            mock_agent_cls.return_value.ainvoke = AsyncMock(return_value="direct output")
             result = await tool._arun_one(
                 0,
                 TaskTool.TaskDetails(subtask="Do X.", summary="X"),
@@ -442,8 +442,8 @@ class TestRunOne:
     @pytest.mark.asyncio
     async def test_runtime_error_returned_as_string(self) -> None:
         tool = _make_tool()
-        with patch(_AGENT_PATCH) as MockAgent:
-            MockAgent.return_value.ainvoke = AsyncMock(side_effect=RuntimeError("boom"))
+        with patch(_AGENT_PATCH) as mock_agent_cls:
+            mock_agent_cls.return_value.ainvoke = AsyncMock(side_effect=RuntimeError("boom"))
             result = await tool._arun_one(
                 0,
                 TaskTool.TaskDetails(subtask="Fail.", summary="F"),
@@ -457,8 +457,8 @@ class TestRunOne:
         store = _make_store()
         store.load = MagicMock(return_value="skill_obj")
         tool = _make_tool(skill_store=store)
-        with patch(_AGENT_PATCH) as MockAgent:
-            MockAgent.return_value.ainvoke = AsyncMock(return_value="ok")
+        with patch(_AGENT_PATCH) as mock_agent_cls:
+            mock_agent_cls.return_value.ainvoke = AsyncMock(return_value="ok")
             await tool._arun_one(
                 0,
                 TaskTool.TaskDetails(subtask="T.", summary="s", skill="data_science"),
@@ -474,8 +474,8 @@ class TestRunOne:
         store = _make_store()
         store.load = MagicMock(return_value=None)
         tool = _make_tool(skill_store=store)
-        with patch(_AGENT_PATCH) as MockAgent:
-            MockAgent.return_value.ainvoke = AsyncMock(return_value="ok")
+        with patch(_AGENT_PATCH) as mock_agent_cls:
+            mock_agent_cls.return_value.ainvoke = AsyncMock(return_value="ok")
             with caplog.at_level("WARNING"):
                 result = await tool._arun_one(
                     0,
@@ -492,20 +492,20 @@ class TestRunOne:
         # it's retired (monitoring moved to the scheduling agent's
         # monitor_task tool), a worker's toolset shouldn't depend on task_id.
         tool = _make_tool()
-        with patch(_AGENT_PATCH) as MockAgent:
-            MockAgent.return_value.ainvoke = AsyncMock(return_value="ok")
+        with patch(_AGENT_PATCH) as mock_agent_cls:
+            mock_agent_cls.return_value.ainvoke = AsyncMock(return_value="ok")
             await tool._arun_one(
                 0, TaskTool.TaskDetails(subtask="x", summary="y"), uuid4(), MagicMock()
             )
-        _, background_kwargs = MockAgent.call_args
+        _, background_kwargs = mock_agent_cls.call_args
         background_tool_names = {t.name for t in background_kwargs["tools"]}
 
-        with patch(_AGENT_PATCH) as MockAgent:
-            MockAgent.return_value.ainvoke = AsyncMock(return_value="ok")
+        with patch(_AGENT_PATCH) as mock_agent_cls:
+            mock_agent_cls.return_value.ainvoke = AsyncMock(return_value="ok")
             await tool._arun_one(
                 0, TaskTool.TaskDetails(subtask="x", summary="y"), None, MagicMock()
             )
-        _, foreground_kwargs = MockAgent.call_args
+        _, foreground_kwargs = mock_agent_cls.call_args
         foreground_tool_names = {t.name for t in foreground_kwargs["tools"]}
 
         assert background_tool_names == foreground_tool_names
@@ -529,10 +529,10 @@ class TestActivityLog:
             return None
 
         with (
-            patch(_AGENT_PATCH) as MockAgent,
+            patch(_AGENT_PATCH) as mock_agent_cls,
             patch("opendatasci.tools.tasks.adispatch_custom_event", _noop_dispatch),
         ):
-            MockAgent.return_value.ainvoke = _fake_ainvoke
+            mock_agent_cls.return_value.ainvoke = _fake_ainvoke
             await tool._arun_one(
                 0, TaskTool.TaskDetails(subtask="x", summary="y"), task_id, MagicMock()
             )
@@ -555,10 +555,10 @@ class TestActivityLog:
             return None
 
         with (
-            patch(_AGENT_PATCH) as MockAgent,
+            patch(_AGENT_PATCH) as mock_agent_cls,
             patch("opendatasci.tools.tasks.adispatch_custom_event", _noop_dispatch),
         ):
-            MockAgent.return_value.ainvoke = _fake_ainvoke
+            mock_agent_cls.return_value.ainvoke = _fake_ainvoke
             await tool._arun_one(
                 0, TaskTool.TaskDetails(subtask="x", summary="y"), None, MagicMock()
             )
@@ -585,8 +585,8 @@ class TestTaskTool:
     @pytest.mark.asyncio
     async def test_single_worker_result_returned(self) -> None:
         tool = self._get_tool()
-        with patch(_AGENT_PATCH) as MockAgent:
-            MockAgent.return_value.ainvoke = AsyncMock(return_value="worker output")
+        with patch(_AGENT_PATCH) as mock_agent_cls:
+            mock_agent_cls.return_value.ainvoke = AsyncMock(return_value="worker output")
             result = await tool.ainvoke(
                 {
                     "subtasks": [TaskTool.TaskDetails(subtask="Do X.", summary="Do X")],
@@ -607,8 +607,8 @@ class TestTaskTool:
             call_count += 1
             return f"output_{call_count}"
 
-        with patch(_AGENT_PATCH) as MockAgent:
-            MockAgent.return_value.ainvoke = _run
+        with patch(_AGENT_PATCH) as mock_agent_cls:
+            mock_agent_cls.return_value.ainvoke = _run
             result = await tool.ainvoke(
                 {
                     "subtasks": [
@@ -628,8 +628,8 @@ class TestTaskTool:
         # its string message; other exceptions propagate and get the "Error: worker
         # failed" prefix from task.  Both paths include the message text.
         tool = self._get_tool()
-        with patch(_AGENT_PATCH) as MockAgent:
-            MockAgent.return_value.ainvoke = AsyncMock(side_effect=RuntimeError("boom"))
+        with patch(_AGENT_PATCH) as mock_agent_cls:
+            mock_agent_cls.return_value.ainvoke = AsyncMock(side_effect=RuntimeError("boom"))
             result = await tool.ainvoke(
                 {
                     "subtasks": [TaskTool.TaskDetails(subtask="Fail task.", summary="Fail")],
@@ -651,10 +651,10 @@ class TestTaskTool:
 
         tool = self._get_tool()
         with (
-            patch(_AGENT_PATCH) as MockAgent,
+            patch(_AGENT_PATCH) as mock_agent_cls,
             patch("opendatasci.tools.tasks.adispatch_custom_event", _record),
         ):
-            MockAgent.return_value.ainvoke = AsyncMock(return_value="ok")
+            mock_agent_cls.return_value.ainvoke = AsyncMock(return_value="ok")
             await tool.ainvoke(
                 {
                     "subtasks": [TaskTool.TaskDetails(subtask="Succeed.", summary="ok")],
@@ -678,10 +678,10 @@ class TestTaskTool:
 
         tool = self._get_tool()
         with (
-            patch(_AGENT_PATCH) as MockAgent,
+            patch(_AGENT_PATCH) as mock_agent_cls,
             patch("opendatasci.tools.tasks.adispatch_custom_event", _record),
         ):
-            MockAgent.return_value.ainvoke = AsyncMock(return_value="done")
+            mock_agent_cls.return_value.ainvoke = AsyncMock(return_value="done")
             await tool.ainvoke(
                 {
                     "subtasks": [TaskTool.TaskDetails(subtask="Task.", summary="my task")],
@@ -705,8 +705,8 @@ class TestTaskTool:
             background_task_manager=BackgroundTaskManager(),
         )
         tool = tools[0]
-        with patch(_AGENT_PATCH) as MockAgent:
-            MockAgent.return_value.ainvoke = AsyncMock(return_value="done")
+        with patch(_AGENT_PATCH) as mock_agent_cls:
+            mock_agent_cls.return_value.ainvoke = AsyncMock(return_value="done")
             await tool.ainvoke(
                 {
                     "subtasks": [
@@ -722,13 +722,13 @@ class TestTaskTool:
     async def test_timeout_uses_agent_config_value(self) -> None:
         config = OpenDataSciConfig(worker_timeout_seconds=0.01)
         tool = self._get_tool(datasci_config=config)
-        with patch(_AGENT_PATCH) as MockAgent:
+        with patch(_AGENT_PATCH) as mock_agent_cls:
 
             async def _slow_run(*args, **kwargs):
                 await asyncio.sleep(10)
                 return "never"
 
-            MockAgent.return_value.ainvoke = _slow_run
+            mock_agent_cls.return_value.ainvoke = _slow_run
             with pytest.raises(asyncio.TimeoutError):
                 await tool.ainvoke(
                     {
@@ -743,8 +743,8 @@ class TestRunMode:
     @pytest.mark.asyncio
     async def test_default_run_mode_returns_result_synchronously(self) -> None:
         tool = _make_tool()
-        with patch(_AGENT_PATCH) as MockAgent:
-            MockAgent.return_value.ainvoke = AsyncMock(return_value="worker output")
+        with patch(_AGENT_PATCH) as mock_agent_cls:
+            mock_agent_cls.return_value.ainvoke = AsyncMock(return_value="worker output")
             result = await tool.ainvoke(
                 {
                     "subtasks": [TaskTool.TaskDetails(subtask="Do X.", summary="X")],
@@ -762,8 +762,8 @@ class TestRunMode:
             await asyncio.sleep(10)
             return "never"
 
-        with patch(_AGENT_PATCH) as MockAgent:
-            MockAgent.return_value.ainvoke = _slow_run
+        with patch(_AGENT_PATCH) as mock_agent_cls:
+            mock_agent_cls.return_value.ainvoke = _slow_run
             result = await asyncio.wait_for(
                 tool.ainvoke(
                     {
@@ -793,8 +793,8 @@ class TestRunMode:
             await asyncio.sleep(10)
             return "never"
 
-        with patch(_AGENT_PATCH) as MockAgent:
-            MockAgent.return_value.ainvoke = _slow_run
+        with patch(_AGENT_PATCH) as mock_agent_cls:
+            mock_agent_cls.return_value.ainvoke = _slow_run
             result = await asyncio.wait_for(
                 tool.ainvoke(
                     {
@@ -831,8 +831,8 @@ class TestRunMode:
             ran.set()
             return "done"
 
-        with patch(_AGENT_PATCH) as MockAgent:
-            MockAgent.return_value.ainvoke = _run
+        with patch(_AGENT_PATCH) as mock_agent_cls:
+            mock_agent_cls.return_value.ainvoke = _run
             await tool.ainvoke(
                 {
                     "subtasks": [TaskTool.TaskDetails(subtask="T.", summary="s")],
@@ -846,8 +846,8 @@ class TestRunMode:
     @pytest.mark.asyncio
     async def test_background_mode_task_failure_is_logged_not_raised(self) -> None:
         tool = _make_tool()
-        with patch(_AGENT_PATCH) as MockAgent:
-            MockAgent.return_value.ainvoke = AsyncMock(side_effect=RuntimeError("boom"))
+        with patch(_AGENT_PATCH) as mock_agent_cls:
+            mock_agent_cls.return_value.ainvoke = AsyncMock(side_effect=RuntimeError("boom"))
             result = await tool.ainvoke(
                 {
                     "subtasks": [TaskTool.TaskDetails(subtask="Fail.", summary="s")],

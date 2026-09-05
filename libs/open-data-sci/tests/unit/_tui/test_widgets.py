@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from collections.abc import Callable
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
@@ -134,7 +135,7 @@ class TestTurnStatusBarFmt:
     """Test time formatting without instantiating the full Textual widget."""
 
     @pytest.fixture
-    def fmt(self) -> "function":  # type: ignore[type-arg]
+    def fmt(self) -> Callable[[int], str]:
         bar = TurnStatusBar.__new__(TurnStatusBar)
         return bar._fmt
 
@@ -1828,7 +1829,9 @@ class TestPendingMessagePanelAddPending:
         panel.mount = MagicMock()
         bubble_sentinel = MagicMock()
 
-        with patch("opendatasci._tui.chat.widgets.PendingMessageBubble", return_value=bubble_sentinel):
+        with patch(
+            "opendatasci._tui.chat.widgets.PendingMessageBubble", return_value=bubble_sentinel
+        ):
             panel.add_pending("queued message")
 
         panel.mount.assert_called_once_with(bubble_sentinel)

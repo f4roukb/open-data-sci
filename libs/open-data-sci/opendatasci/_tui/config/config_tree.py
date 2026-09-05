@@ -241,9 +241,7 @@ def build_config_tree() -> ConfigNode:
                 key="personalization",
                 label="Personalization",
                 children=[
-                    ConfigNode(
-                        key="agent_name", label="Agent name", leaf=build_agent_name_leaf()
-                    ),
+                    ConfigNode(key="agent_name", label="Agent name", leaf=build_agent_name_leaf()),
                 ],
             ),
             ConfigNode(

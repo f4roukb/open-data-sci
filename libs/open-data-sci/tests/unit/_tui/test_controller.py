@@ -293,7 +293,7 @@ class TestPasteAttachment:
 # ---------------------------------------------------------------------------
 
 
-class TestPasteAttachment_Controller:
+class TestPasteAttachmentController:
     def test_on_paste_stores_attachment(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
@@ -1364,7 +1364,6 @@ class TestStopAgent:
         mock_ui.stop_agent.assert_called_once()
 
 
-
 # ---------------------------------------------------------------------------
 # CLIController — lifecycle
 # ---------------------------------------------------------------------------
@@ -1867,7 +1866,9 @@ class TestOpenConfigPanel:
     ) -> None:
         controller.open_config_panel()
         mock_ui.open_config_panel.assert_called_once()
-        root, values, start_path, on_apply, _initial_mcp_servers = mock_ui.open_config_panel.call_args[0]
+        root, values, start_path, on_apply, _initial_mcp_servers = (
+            mock_ui.open_config_panel.call_args[0]
+        )
         assert root.key == "root"
         assert start_path == []
         assert on_apply == controller._apply_config_changes
@@ -1943,9 +1944,7 @@ class TestApplyConfigChangesModelProvider:
         self, controller: CLIController
     ) -> None:
         # base_config has no openai_api_key set.
-        error = await controller._apply_config_changes(
-            {"provider": "openai", "model": "gpt-4o"}
-        )
+        error = await controller._apply_config_changes({"provider": "openai", "model": "gpt-4o"})
         assert error is not None
         assert "OpenAI" in error
         assert controller._service is None
@@ -2004,5 +2003,3 @@ class TestApplyConfigChangesModelProvider:
         assert "boom" in error
         assert controller._service is old_service
         old_service.close.assert_not_awaited()
-
-

@@ -146,7 +146,10 @@ class TestAgentConfigFromYaml:
         )
         cfg = OpenDataSciConfig.from_yaml(f)
         assert [s.name for s in cfg.mcp_servers] == ["a", "b"]
-        assert [s.url for s in cfg.mcp_servers] == ["http://localhost:1234", "http://localhost:5678"]
+        assert [s.url for s in cfg.mcp_servers] == [
+            "http://localhost:1234",
+            "http://localhost:5678",
+        ]
         assert cfg.mcp_servers[1].transport == "sse"
 
     def test_empty_yaml_yields_defaults(self, tmp_path: Path) -> None:
@@ -207,7 +210,7 @@ class TestSkillsDirectoryConfig:
     def test_skills_directory_defaults_to_none(self) -> None:
         assert OpenDataSciConfig().skills_directory is None
 
-    def test_BUILTIN_SKILLS_DIRECTORYectory_defaults_to_bundled_path(self) -> None:
+    def test_builtin_skills_directory_defaults_to_bundled_path(self) -> None:
         cfg = OpenDataSciConfig()
         assert cfg.builtin_skills_directory == _BUILTIN_SKILLS_DIRECTORY
         assert cfg.builtin_skills_directory.is_dir()
@@ -216,7 +219,7 @@ class TestSkillsDirectoryConfig:
         cfg = OpenDataSciConfig(skills_directory=tmp_path)
         assert cfg.skills_directory == tmp_path
 
-    def test_BUILTIN_SKILLS_DIRECTORYectory_accepts_custom_path(self, tmp_path: Path) -> None:
+    def test_builtin_skills_directory_accepts_custom_path(self, tmp_path: Path) -> None:
         cfg = OpenDataSciConfig(builtin_skills_directory=tmp_path)
         assert cfg.builtin_skills_directory == tmp_path
 
@@ -228,7 +231,7 @@ class TestSkillsDirectoryConfig:
         cfg = OpenDataSciConfig.from_yaml(f)
         assert cfg.skills_directory == skills_dir
 
-    def test_from_yaml_loads_BUILTIN_SKILLS_DIRECTORYectory(self, tmp_path: Path) -> None:
+    def test_from_yaml_loads_builtin_skills_directory(self, tmp_path: Path) -> None:
         custom_builtin = tmp_path / "builtin"
         custom_builtin.mkdir()
         f = tmp_path / "cfg.yaml"

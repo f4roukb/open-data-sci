@@ -344,10 +344,6 @@ class TestCommunicationSuppressedByNarration:
         p, ui = self._setup()
         p.handle_tool_communication(_tool_comm("tc1", "Fetching results…"))
         await p.handle_tool_call(_visible_tool_call("tc1"))
-        _, call_kwargs = (
-            ui.add_ephemeral_block.call_args_list[-1].args,
-            ui.add_ephemeral_block.call_args_list[-1],
-        )
         # The pre-mounted ephemeral is upgraded (not a new add_ephemeral_block call), so
         # check that set_communication was NOT called (comm not cleared).
         eph = ui.add_ephemeral_block.return_value

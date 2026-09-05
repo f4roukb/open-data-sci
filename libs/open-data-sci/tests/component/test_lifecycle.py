@@ -6,7 +6,6 @@ the real integration between OpenDataSci, Session, and Agent state.
 """
 
 
-
 def _seed_messages(agent, messages):
     """Add messages directly to the agent's graph state for testing."""
     agent.graph.update_state(agent._graph_config, {"messages": messages})

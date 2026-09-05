@@ -115,7 +115,6 @@ class TestMainArgparse:
         assert cfg.secondary_model == "claude-haiku-4-5"
 
 
-
 # ---------------------------------------------------------------------------
 # OpenDataSciApp.on_submit — history wiring
 # ---------------------------------------------------------------------------

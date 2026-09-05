@@ -28,7 +28,12 @@ from textual.widgets.option_list import Option
 
 from opendatasci._tui.config.config_tree import ConfigLeaf, ConfigNode, diff_values
 from opendatasci._tui.style.theme import active as theme
-from opendatasci.tools.mcp import MCPServerSpec, MCPTransport, check_mcp_server, load_named_mcp_servers
+from opendatasci.tools.mcp import (
+    MCPServerSpec,
+    MCPTransport,
+    check_mcp_server,
+    load_named_mcp_servers,
+)
 
 _SAVE = "Save changes"
 _DISCARD = "Discard changes"
@@ -404,7 +409,8 @@ class ConfigScreen(ModalScreen[None]):
         self._clear_body()
         body = self.query_one("#config-body", Vertical)
         options = [
-            Option(_MCP_TRANSPORT_LABELS[transport], id=transport.value) for transport in MCPTransport
+            Option(_MCP_TRANSPORT_LABELS[transport], id=transport.value)
+            for transport in MCPTransport
         ]
         option_list = _ConfigOptionList(*options)
         body.mount(option_list)

@@ -1,6 +1,5 @@
 """Unit tests for opendatasci._tui.chat.message_queue.PendingMessageQueue."""
 
-
 from opendatasci._tui.chat.message_queue import PendingMessage, PendingMessageQueue
 
 # ---------------------------------------------------------------------------
@@ -104,7 +103,7 @@ class TestPendingMessageQueuePopNext:
 
     def test_pop_next_second_message_becomes_first_after_first_popped(self) -> None:
         q = PendingMessageQueue()
-        m1 = q.enqueue("q1", "d1")
+        q.enqueue("q1", "d1")
         m2 = q.enqueue("q2", "d2")
         q.pop_next()  # removes m1
         result = q.pop_next()

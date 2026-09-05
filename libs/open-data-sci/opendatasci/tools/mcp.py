@@ -21,6 +21,7 @@ from langchain_core.tools import BaseTool
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 from mcp.client.streamable_http import streamablehttp_client
+from mcp.types import TextContent
 from mcp.types import Tool as MCPToolDef
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
@@ -122,7 +123,7 @@ def _build_args_model(tool_name: str, input_schema: dict[str, Any]) -> type[Base
         else:
             fields[prop_name] = (Optional[py_type], Field(default=None, description=description))
 
-    return create_model(f"_{tool_name}_args", **fields)  # type: ignore[no-any-return]
+    return create_model(f"_{tool_name}_args", **fields)
 
 
 class MCPTool(OpenDataSciBaseTool):
@@ -150,7 +151,7 @@ class MCPTool(OpenDataSciBaseTool):
                 f"'{self.server.name}': {type(exc).__name__}: {exc}"
             )
 
-        parts = [block.text for block in result.content if getattr(block, "type", None) == "text"]
+        parts = [block.text for block in result.content if isinstance(block, TextContent)]
         if parts:
             text = "\n".join(parts)
         elif result.structuredContent is not None:
@@ -198,8 +199,7 @@ async def _discover_server_tools(server: MCPServerSpec) -> list[BaseTool]:
             )
         except Exception as exc:
             print(
-                f"Warning: Failed to wrap MCP tool {tool_def.name!r} from "
-                f"'{server.name}': {exc}",
+                f"Warning: Failed to wrap MCP tool {tool_def.name!r} from '{server.name}': {exc}",
                 file=sys.stderr,
             )
     return tools
