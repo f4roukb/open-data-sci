@@ -56,7 +56,7 @@ class SystemDependenciesScreen(ModalScreen[None]):
     SystemDependenciesScreen #sysdeps-body {{
         padding: 1 3;
     }}
-    SystemDependenciesScreen Static {{
+    SystemDependenciesScreen #sysdeps-body Static {{
         margin-bottom: 1;
     }}
     SystemDependenciesScreen OptionList {{

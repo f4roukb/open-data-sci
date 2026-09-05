@@ -7,4 +7,4 @@ Wide enough that the longest wizard content (the theme picker's aligned
 label/description columns) never wraps.
 """
 
-WIZARD_BOX_WIDTH = 96
+WIZARD_BOX_WIDTH = 100
