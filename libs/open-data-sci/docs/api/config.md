@@ -22,7 +22,7 @@ config = OpenDataSciConfig(
     provider="openai",
     model="gpt-5.6-sol",
     openai_api_key="sk-...",
-    temperature=0.2,
+    primary_temperature=0.2,
 )
 
 # Mixed providers — Anthropic for the primary model, OpenAI for summarisation

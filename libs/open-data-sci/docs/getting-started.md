@@ -236,7 +236,7 @@ config = OpenDataSciConfig(
     provider="openai",
     model="gpt-5.6-sol",
     openai_api_key="sk-...",
-    temperature=0.2,
+    primary_temperature=0.2,
 )
 
 async with create_agent("data.parquet", config=config) as agent:
@@ -296,7 +296,7 @@ model: claude-sonnet-5
 secondary_provider: openai
 secondary_model: gpt-5.6-luna
 
-temperature: 0.1
+primary_temperature: 0.1
 
 worker_timeout_seconds: 600
 midturn_compaction_threshold: 80000

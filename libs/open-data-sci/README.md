@@ -138,7 +138,7 @@ provider: anthropic
 model: claude-sonnet-5
 secondary_provider: openai
 secondary_model: gpt-5.6-luna
-temperature: 0.1
+primary_temperature: 0.1
 ```
 
 ```bash
@@ -241,7 +241,7 @@ Type `/` in the input box to trigger autocomplete. All commands are available at
 | `/config` | Open the [configuration panel](#the-config-panel) — theme, models, providers, MCP servers, and more |
 | `/help` | Show all available commands |
 | `/ls-workspace` | List all files currently in the workspace |
-| `/models` | Jump straight into `/config`'s Models section (primary/secondary model, temperature) |
+| `/models` | Jump straight into `/config`'s Models section (primary/secondary model, primary temperature) |
 | `/providers` | Jump straight into `/config`'s Providers section (primary/secondary provider) |
 | `/reset` | Reset the agent session and reload data from disk |
 | `/exit` | Quit OpenDataSci |
@@ -262,7 +262,7 @@ Run `/config` to open a navigable menu covering every setting the agent needs, o
 |---------|--------------|
 | **Display** | Theme (see [Themes](#themes)); Tips (toggle the rotating footer hints) |
 | **Integrations** | **MCP Servers** — add, verify, or remove [MCP servers](#mcp-servers) the agent can call, either by loading candidates from an `mcp.json` file or entering one manually (name, URL, transport, headers); **Skills directory** — point at a folder of [custom skills](#custom-skills) |
-| **Models** | Primary model, secondary model, sampling temperature |
+| **Models** | Grouped under **Primary Model** (model, sampling temperature) and **Secondary Model** (model) |
 | **Personalization** | Agent display name |
 | **Providers** | Primary provider, secondary provider — picking a new provider resets its paired model to that provider's default |
 | **Subagents** | Worker timeout (max seconds a spawned worker may run) |
@@ -333,7 +333,7 @@ config = OpenDataSciConfig(
     provider="openai",
     model="gpt-5.6-sol",
     openai_api_key="sk-...",
-    temperature=0.2,
+    primary_temperature=0.2,
 )
 
 async with create_agent("data.parquet", config=config) as agent:
@@ -359,7 +359,7 @@ async with create_agent("data.parquet", config=config) as agent:
 | `azure_endpoint` | Azure OpenAI resource endpoint URL (env: `AZURE_OPENAI_ENDPOINT`) |
 | `azure_api_version` | Azure OpenAI API version — defaults to `2025-01-01-preview` (env: `AZURE_OPENAI_API_VERSION`) |
 | `llm_server_base_url` | Custom API base URL — required for `ollama` and `openai_compatible_server` (env: `LLM_SERVER_BASE_URL`) |
-| `temperature` | Sampling temperature — not sent to Claude 4.6+ / Sonnet 5 models, which use adaptive thinking (env: `TEMPERATURE`) |
+| `primary_temperature` | Sampling temperature for the primary model — not sent to Claude 4.6+ / Sonnet 5 models, which use adaptive thinking (env: `PRIMARY_TEMPERATURE`) |
 | `name` | Display name for the agent — defaults to `"Sai"` (env: `NAME`) |
 | `mcp_servers` | MCP servers the agent may connect to — see [MCP Servers](#mcp-servers) (env: `MCP_SERVERS`) |
 | `skills_directory` | Path to a directory of custom skill files loaded in addition to built-ins (env: `SKILLS_DIRECTORY`) |
@@ -401,7 +401,7 @@ async def analyse(csv_path: Path, config: OpenDataSciConfig) -> str:
 async def main() -> None:
     # No terminal, no prompts — every value the provider needs must be
     # supplied here or via the environment before this runs.
-    config = OpenDataSciConfig(provider="anthropic", temperature=0.1)
+    config = OpenDataSciConfig(provider="anthropic", primary_temperature=0.1)
     for path in Path("data").glob("*.csv"):
         report = await analyse(path, config)
         Path("reports", path.with_suffix(".report.txt").name).write_text(report)
@@ -575,7 +575,7 @@ async with create_agent("data.csv", config=config) as agent:
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI resource endpoint URL |
 | `AZURE_OPENAI_API_VERSION` | Azure OpenAI API version (default: `2025-01-01-preview`) |
 | `LLM_SERVER_BASE_URL` | Custom API base URL — used by `ollama` and `openai_compatible_server` providers |
-| `TEMPERATURE` | LLM sampling temperature |
+| `PRIMARY_TEMPERATURE` | LLM sampling temperature for the primary model |
 | `MCP_SERVERS` | MCP server definitions — see [MCP Servers](#mcp-servers) |
 | `SKILLS_DIRECTORY` | Path to a directory of user-defined skill files |
 | `BUILTIN_SKILLS_DIRECTORY` | Path to the built-in skills directory (defaults to the bundled skills) |
