@@ -17,10 +17,12 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional, override
 
+import httpx2
 from langchain_core.tools import BaseTool
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 from mcp.client.streamable_http import streamable_http_client
+from mcp.shared._httpx_utils import create_mcp_http_client
 from mcp.types import TextContent
 from mcp.types import Tool as MCPToolDef
 from pydantic import BaseModel, ConfigDict, Field, create_model
@@ -94,13 +96,21 @@ async def _mcp_session(
     headers = server.headers or None
     if server.transport is MCPTransport.SSE:
         transport_cm = sse_client(server.url, headers=headers, timeout=timeout)
+        async with transport_cm as streams:
+            read_stream, write_stream = streams[0], streams[1]
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                yield session
     else:
-        transport_cm = streamable_http_client(server.url, headers=headers, timeout=timeout)
-    async with transport_cm as streams:
-        read_stream, write_stream = streams[0], streams[1]
-        async with ClientSession(read_stream, write_stream) as session:
-            await session.initialize()
-            yield session
+        # streamable_http_client no longer takes headers/timeout directly;
+        # configure them on the httpx client we hand it instead.
+        http_client = create_mcp_http_client(headers=headers, timeout=httpx2.Timeout(timeout))
+        async with http_client:
+            async with streamable_http_client(server.url, http_client=http_client) as streams:
+                read_stream, write_stream = streams[0], streams[1]
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    yield session
 
 
 async def check_mcp_server(server: MCPServerSpec) -> None:
@@ -154,12 +164,12 @@ class MCPTool(OpenDataSciBaseTool):
         parts = [block.text for block in result.content if isinstance(block, TextContent)]
         if parts:
             text = "\n".join(parts)
-        elif result.structuredContent is not None:
-            text = json.dumps(result.structuredContent)
+        elif result.structured_content is not None:
+            text = json.dumps(result.structured_content)
         else:
             text = json.dumps([block.model_dump(mode="json") for block in result.content])
 
-        if result.isError:
+        if result.is_error:
             return f"MCP error from '{self.mcp_tool_name}': {text or 'unknown error'}"
         return text or "(no output)"
 
@@ -187,7 +197,7 @@ async def _discover_server_tools(server: MCPServerSpec) -> list[BaseTool]:
     tool_def: MCPToolDef
     for tool_def in result.tools:
         try:
-            args_model = _build_args_model(tool_def.name, tool_def.inputSchema or {})
+            args_model = _build_args_model(tool_def.name, tool_def.input_schema or {})
             tools.append(
                 MCPTool(
                     name=f"mcp{server_tag}__{_sanitize_tool_name_part(tool_def.name)}",
