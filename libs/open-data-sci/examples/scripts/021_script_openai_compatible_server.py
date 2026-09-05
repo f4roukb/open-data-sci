@@ -109,7 +109,7 @@ async def main() -> None:
     config = OpenDataSciConfig(
         provider="openai_compatible_server",
         model="Qwen/Qwen3.5-4B",
-        temperature=0.1,
+        primary_temperature=0.1,
     )
 
     csv_files = sorted(data_dir.glob("*.csv"))

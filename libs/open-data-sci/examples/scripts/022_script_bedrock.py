@@ -112,7 +112,7 @@ async def main() -> None:
     config = OpenDataSciConfig(
         provider="bedrock",
         model="us.anthropic.claude-sonnet-5",
-        temperature=0.1,
+        primary_temperature=0.1,
     )
 
     csv_files = sorted(data_dir.glob("*.csv"))
