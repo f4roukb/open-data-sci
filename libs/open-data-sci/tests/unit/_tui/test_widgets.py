@@ -19,6 +19,7 @@ from opendatasci._tui.chat.widgets import (
     CommandApprovalPrompt,
     CommandHighlighter,
     CompletionPopup,
+    ImageBlock,
     MessageBubble,
     MessagesContainer,
     PendingMessageBubble,
