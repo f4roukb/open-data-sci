@@ -1003,9 +1003,7 @@ class ImageBlock(Widget):
         try:
             validate_static_image(image_path)
         except UnsupportedImageError as exc:
-            yield Static(
-                f"[{theme['error']}]🖼️  Could not display image: {exc}[/{theme['error']}]"
-            )
+            yield Static(f"[{theme['error']}]🖼️  Could not display image: {exc}[/{theme['error']}]")
             return
 
         if terminal_supports_image_graphics():
