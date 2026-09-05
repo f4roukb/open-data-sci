@@ -1,14 +1,19 @@
-"""Image support for the chat pane: static-image format validation.
+"""Image support for the chat pane: static-image format validation and the
+browser-preview fallback for terminals with no native graphics protocol.
 
-Actual rendering is delegated to ``textual-image``'s ``AutoImage`` widget,
-which draws through the terminal's native graphics protocol (Kitty's
-Terminal Graphics Protocol or Sixel). OpenDataSci deliberately never uses
+Inline pixel rendering is delegated to ``textual-image``'s ``AutoImage``
+widget, which draws through the terminal's native graphics protocol (Kitty's
+Terminal Graphics Protocol or Sixel); OpenDataSci deliberately never uses
 that library's Unicode/half-cell fallback tier — its fidelity is too low to
-be worth showing — so ``render_image`` is only ever offered to the agent
-(``OpenDataSciConfig.enable_image_rendering``) when a real graphics protocol
-was detected; see ``opendatasci._utils.graphics_utils.terminal_supports_image_graphics``.
+be worth showing. Where no native protocol is available but a real
+interactive terminal is, ``build_browser_preview`` backs a clickable OSC 8
+hyperlink instead (see ``ImageBlock``) — nothing opens until the user clicks
+it. See ``opendatasci._tui.graphics_utils`` for the terminal-capability
+checks that choose between these.
 """
 
+import html
+import tempfile
 from pathlib import Path
 
 from PIL import Image, UnidentifiedImageError
@@ -17,6 +22,29 @@ from PIL import Image, UnidentifiedImageError
 # no single-frame meaning here); other multi-frame/video containers are
 # rejected because Pillow simply won't recognize them as a still image.
 _DISALLOWED_FORMATS = frozenset({"GIF"})
+
+_PREVIEW_HTML_TEMPLATE = """\
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{title}</title>
+<style>
+  body {{ background: #1e1e1e; color: #ddd; margin: 0; padding: 2rem;
+          display: flex; flex-direction: column; align-items: center;
+          font-family: system-ui, sans-serif; }}
+  img {{ max-width: 90vw; max-height: 85vh; }}
+  figcaption {{ margin-top: 1rem; text-align: center; }}
+</style>
+</head>
+<body>
+<figure style="margin: 0;">
+  <img src="{image_uri}" alt="{alt}">
+  {caption_html}
+</figure>
+</body>
+</html>
+"""
 
 
 class UnsupportedImageError(ValueError):
@@ -44,3 +72,25 @@ def validate_static_image(path: Path) -> None:
         raise UnsupportedImageError(
             f"'{path.name}' is a {image_format} — only static images are supported."
         )
+
+
+def build_browser_preview(path: Path, caption: str) -> str:
+    """Write a standalone HTML page previewing *path* (with *caption*) and return its ``file://`` URI.
+
+    The page references the image in place via its own ``file://`` URI
+    rather than copying it, so it's only ever useful when the browser opening
+    it can reach the same filesystem as this process — see ``ImageBlock``.
+    """
+    caption_html = f"<figcaption>{html.escape(caption)}</figcaption>" if caption else ""
+    content = _PREVIEW_HTML_TEMPLATE.format(
+        title=html.escape(path.name),
+        image_uri=path.resolve().as_uri(),
+        alt=html.escape(path.name),
+        caption_html=caption_html,
+    )
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".html", prefix="opendatasci-image-", delete=False, encoding="utf-8"
+    ) as fh:
+        fh.write(content)
+        preview_path = Path(fh.name)
+    return preview_path.as_uri()

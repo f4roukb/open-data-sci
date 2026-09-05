@@ -12,7 +12,7 @@
 
 </div>
 
-**OpenDataSci brings a Claude Code-adjacent experience to data science and machine learning: an open-source, Python-native agent that runs anywhere, from your own Linux or macOS device to the cloud or a self-hosted cluster.** It works entirely on its own: planning, coding, and correcting itself as it goes, and remembering what it learns from one session to the next. A from-scratch run scored top-30% among 3,000+ teams in a live Kaggle competition, with zero guidance.
+**A Claude Code-adjacent experience for data science and machine learning**: an open-source, Python-native agent that runs anywhere, from your own Linux or macOS device to the cloud or a self-hosted cluster. It works entirely on its own — planning, coding, and correcting itself as it goes, and remembering what it learns from one session to the next. A from-scratch run scored top-30% among 3,000+ teams in a live Kaggle competition, with zero guidance.
 
 <div align="center">
   <img src="resources/demo/run-open-data-sci-fast.gif" alt="OpenDataSci demo" width="95%" />
@@ -25,6 +25,7 @@
 - [Benchmark](#benchmark)
 - [What does OpenDataSci do?](#what-it-does)
 - [Supported LLM providers](#supported-llm-providers)
+- [Cloud portability](#cloud-portability)
 - [Built-in ML library surface](#built-in-ml-library-surface)
 - [Documentation](#documentation)
 - [Setup](#setup)
@@ -55,19 +56,17 @@ Most "AI for data" tools turn you into the bottleneck. Every experiment starts w
 
 | | |
 |--|--|
-| **Rich TUI** | Interactive terminal interface for real-time progress, tool calls, and agent output |
+| **Near-zero config** | Point it at your data and go — a setup wizard walks you through provider/model choice on first run |
 | **Full workflow** | EDA, cleaning, feature engineering, modelling, evaluation, visualisation, reporting |
-| **Real code execution** | Full Python in a native OS sandbox |
-| **Built-in DS methodology** | Leakage prevention, proper evaluation, causality awareness |
-| **Self-review** | Every significant step is reviewed and revised before moving forward |
-| **Parallel experimentation** | Up to 3 concurrent worker agents for ensemble runs, hyperparameter sweeps, strategy comparisons — run in the background with live progress and no blocking on long ones |
-| **Persistent project memory** | Data schema, profiles, and notes accumulate across sessions |
-| **Safe by default** | Sandboxed execution: everything runs safely inside your workspace |
-| **Human-in-the-loop** | At genuine decision forks that impact your intended goal, it pauses and asks, then gets on with it |
-| **Specialized Skills** | Data Science, Machine Learning, Deep Learning, Quantitative Analysis, Competitive DS, Education |
-| **Extensible** | Drop Markdown skill files into `.opendatasci/skills/` to inject your own domain knowledge |
-| **Web access** | Searches for papers, docs, and library changelogs mid-analysis, with curated navigation know-how for Kaggle, arXiv, Hugging Face, GitHub, Papers with Code, and Yahoo Finance |
-| **MCP-ready** | Connect any MCP-compatible tool server: internal databases, custom APIs, proprietary sources |
+| **Self-correcting** | Reviews and revises its own steps, and recovers from wrong turns without starting over |
+| **Sandboxed execution** | Runs real Python safely inside your workspace |
+| **Parallel agents** | Up to 3 concurrent subagents running parallel code executions — in the background, non-blocking |
+| **Per-project knowledge accumulation** | Data schema, profiles, and notes carry over across sessions |
+| **Skills** | Built-in skills (e.g., Data Science, Machine Learning) plus bring-your-own via Markdown files in `.opendatasci/skills/` |
+| **Web search** | Look up papers, docs, and library changelogs mid-analysis |
+| **MCP** | Connect internal tools, databases, and proprietary APIs |
+| **Built-in TUI** | Use within your development environment (e.g., VSCode, Cursor) or from any terminal |
+| **Human-in-the-loop** | Pauses at genuine decision forks, then gets on with it |
 
 ---
 
@@ -85,6 +84,12 @@ OpenDataSci supports every major cloud provider and fully self-hosted deployment
 - OpenAI-compatible servers (e.g., vLLM server)
 
 You can take it a step further and mix providers within a single session: one model for heavy reasoning, another for lightweight tasks like summarisation.
+
+---
+
+## Cloud portability
+
+Every stateful dependency the agent relies on is built behind a swappable interface rather than tied to your local machine. The shipped implementations all run locally, but the architecture lets you replace any of them with a cloud-backed equivalent without touching the agent itself. See [Cloud Portability](libs/open-data-sci/README.md#cloud-portability) in the library README, including the full [table of dependencies and their recommended cloud implementations](libs/open-data-sci/README.md#dependencies-and-their-interfaces).
 
 ---
 

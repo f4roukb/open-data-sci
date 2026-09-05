@@ -3,6 +3,7 @@
 import asyncio
 import time
 from collections.abc import Callable
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
@@ -2114,10 +2115,16 @@ def _write_png(path) -> str:  # noqa: ANN001 - tmp_path fixture-typed Path
 
 
 class TestImageBlockComposition:
-    def test_valid_image_yields_auto_image(self, tmp_path) -> None:  # noqa: ANN001
+    def test_valid_image_yields_auto_image_when_graphics_supported(self, tmp_path) -> None:  # noqa: ANN001
         image_path = _write_png(tmp_path)
         block = _make_image_block(image_path)
-        with patch("opendatasci._tui.image_render.validate_static_image"):
+        with (
+            patch("opendatasci._tui.image_render.validate_static_image"),
+            patch(
+                "opendatasci._tui.graphics_utils.terminal_supports_image_graphics",
+                return_value=True,
+            ),
+        ):
             children = list(block.compose())
         assert len(children) == 1
         assert isinstance(children[0], AutoImage)
@@ -2126,7 +2133,13 @@ class TestImageBlockComposition:
     def test_valid_image_with_caption_yields_auto_image_and_caption(self, tmp_path) -> None:  # noqa: ANN001
         image_path = _write_png(tmp_path)
         block = _make_image_block(image_path, caption="Monthly revenue")
-        with patch("opendatasci._tui.image_render.validate_static_image"):
+        with (
+            patch("opendatasci._tui.image_render.validate_static_image"),
+            patch(
+                "opendatasci._tui.graphics_utils.terminal_supports_image_graphics",
+                return_value=True,
+            ),
+        ):
             children = list(block.compose())
         assert len(children) == 2
         assert isinstance(children[0], AutoImage)
@@ -2138,7 +2151,13 @@ class TestImageBlockComposition:
     def test_valid_image_without_caption_yields_only_auto_image(self, tmp_path) -> None:  # noqa: ANN001
         image_path = _write_png(tmp_path)
         block = _make_image_block(image_path, caption="")
-        with patch("opendatasci._tui.image_render.validate_static_image"):
+        with (
+            patch("opendatasci._tui.image_render.validate_static_image"),
+            patch(
+                "opendatasci._tui.graphics_utils.terminal_supports_image_graphics",
+                return_value=True,
+            ),
+        ):
             children = list(block.compose())
         assert len(children) == 1
         assert isinstance(children[0], AutoImage)
@@ -2168,3 +2187,67 @@ class TestImageBlockComposition:
         ):
             children = list(block.compose())
         assert not any(isinstance(c, AutoImage) for c in children)
+
+
+# ---------------------------------------------------------------------------
+# ImageBlock — browser-link fallback (no native graphics protocol)
+# ---------------------------------------------------------------------------
+
+
+class TestImageBlockBrowserLinkFallback:
+    def _compose_without_graphics(self, block: ImageBlock, preview_uri: str) -> list:
+        with (
+            patch("opendatasci._tui.image_render.validate_static_image"),
+            patch(
+                "opendatasci._tui.graphics_utils.terminal_supports_image_graphics",
+                return_value=False,
+            ),
+            patch(
+                "opendatasci._tui.image_render.build_browser_preview",
+                return_value=preview_uri,
+            ) as mock_build,
+        ):
+            children = list(block.compose())
+        return children, mock_build
+
+    def test_no_graphics_support_yields_link_instead_of_auto_image(self, tmp_path) -> None:  # noqa: ANN001
+        image_path = _write_png(tmp_path)
+        block = _make_image_block(image_path)
+        children, _ = self._compose_without_graphics(block, "file:///tmp/preview.html")
+        assert not any(isinstance(c, AutoImage) for c in children)
+        assert isinstance(children[0], Static)
+        assert "image-link" in children[0].classes
+
+    def test_link_style_points_at_generated_preview_uri(self, tmp_path) -> None:  # noqa: ANN001
+        image_path = _write_png(tmp_path)
+        block = _make_image_block(image_path)
+        preview_uri = "file:///tmp/opendatasci-image-xyz.html"
+        children, _ = self._compose_without_graphics(block, preview_uri)
+        link_text = children[0].render()
+        assert any(preview_uri in str(span.style) for span in link_text.spans)
+
+    def test_link_label_includes_caption_when_present(self, tmp_path) -> None:  # noqa: ANN001
+        image_path = _write_png(tmp_path)
+        block = _make_image_block(image_path, caption="Monthly revenue")
+        children, _ = self._compose_without_graphics(block, "file:///tmp/preview.html")
+        assert "Monthly revenue" in children[0].render().plain
+
+    def test_link_label_omits_dash_when_no_caption(self, tmp_path) -> None:  # noqa: ANN001
+        image_path = _write_png(tmp_path)
+        block = _make_image_block(image_path, caption="")
+        children, _ = self._compose_without_graphics(block, "file:///tmp/preview.html")
+        assert "View image" in children[0].render().plain
+        assert "—" not in children[0].render().plain
+
+    def test_caption_still_rendered_separately_below_the_link(self, tmp_path) -> None:  # noqa: ANN001
+        image_path = _write_png(tmp_path)
+        block = _make_image_block(image_path, caption="Monthly revenue")
+        children, _ = self._compose_without_graphics(block, "file:///tmp/preview.html")
+        assert len(children) == 2
+        assert "image-caption" in children[1].classes
+
+    def test_build_browser_preview_called_with_path_and_caption(self, tmp_path) -> None:  # noqa: ANN001
+        image_path = _write_png(tmp_path)
+        block = _make_image_block(image_path, caption="Monthly revenue")
+        _, mock_build = self._compose_without_graphics(block, "file:///tmp/preview.html")
+        mock_build.assert_called_once_with(Path(image_path), "Monthly revenue")

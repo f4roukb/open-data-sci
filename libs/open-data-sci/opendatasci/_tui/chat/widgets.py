@@ -948,15 +948,21 @@ class MessagesContainer(ScrollableContainer):
 
 
 class ImageBlock(Widget):
-    """Displays a static image inline, drawn through the terminal's native
-    graphics protocol via ``textual-image``'s ``AutoImage``.
+    """Displays a static image inline when the terminal supports it, or a
+    clickable link to a browser preview otherwise.
 
-    Sized to 80% of the chat pane's width with its aspect ratio preserved
-    (``height: auto``), centered horizontally, with a caption — also
-    centered — directly beneath it. The path only ever reaches this widget
-    as a string (see ``ImageRenderEvent``) — validation and rendering happen
-    here, independently of whatever produced the path, so a stale or invalid
-    path degrades to a plain text notice instead of failing the whole turn.
+    When the terminal has a native graphics protocol (Kitty TGP or Sixel),
+    draws the image directly via ``textual-image``'s ``AutoImage``, sized to
+    80% of the chat pane's width with its aspect ratio preserved
+    (``height: auto``). Otherwise — but only on a real interactive terminal —
+    shows a clickable OSC 8 hyperlink to a small standalone HTML page (image
+    + caption) built by ``build_browser_preview``; nothing opens until the
+    user clicks it. Either way the block is centered horizontally, with a
+    caption — also centered — directly beneath it. The path only ever
+    reaches this widget as a string (see ``ImageRenderEvent``) — validation
+    and rendering happen here, independently of whatever produced the path,
+    so a stale or invalid path degrades to a plain text notice instead of
+    failing the whole turn.
     """
 
     DEFAULT_CSS = """
@@ -970,6 +976,10 @@ class ImageBlock(Widget):
         width: 80%;
         height: auto;
     }
+    ImageBlock .image-link {
+        width: 80%;
+        text-align: center;
+    }
     ImageBlock .image-caption {
         width: 80%;
         text-align: center;
@@ -982,16 +992,34 @@ class ImageBlock(Widget):
         self._caption = caption
 
     def compose(self) -> ComposeResult:
-        from opendatasci._tui.image_render import UnsupportedImageError, validate_static_image
+        from opendatasci._tui.graphics_utils import terminal_supports_image_graphics
+        from opendatasci._tui.image_render import (
+            UnsupportedImageError,
+            build_browser_preview,
+            validate_static_image,
+        )
 
+        image_path = Path(self._path)
         try:
-            validate_static_image(Path(self._path))
+            validate_static_image(image_path)
         except UnsupportedImageError as exc:
             yield Static(
                 f"[{theme['error']}]🖼️  Could not display image: {exc}[/{theme['error']}]"
             )
             return
-        yield AutoImage(self._path)
+
+        if terminal_supports_image_graphics():
+            yield AutoImage(self._path)
+        else:
+            preview_uri = build_browser_preview(image_path, self._caption)
+            label = f"View image — {escape(self._caption)}" if self._caption else "View image"
+            link_markup = (
+                f"[{theme['accent']}]🖼  "
+                f'[link="{preview_uri}" underline]{label}[/link]'
+                f"  ↗[/{theme['accent']}]"
+            )
+            yield Static(link_markup, classes="image-link")
+
         if self._caption:
             yield Static(
                 f"[{theme['text_secondary']}]{escape(self._caption)}[/{theme['text_secondary']}]",
@@ -1042,6 +1070,16 @@ class ChatPane(Widget):
         timer = TurnStatusBar()
         self.query_one("#status-bar", Horizontal).mount(timer)
         return timer
+
+    def clear_turn_status(self) -> None:
+        """Remove any leftover turn-status bar (timer + context readout).
+
+        Called after ``/clear``, ``/reset``, and ``/compact`` so a frozen bar
+        from a now-discarded conversation doesn't linger — the context size
+        it showed no longer describes anything real.
+        """
+        for existing in self.query(TurnStatusBar):
+            existing.remove()
 
     def add_pending_message(self, text: str) -> "PendingMessageBubble":
         return self.query_one("#pending-panel", PendingMessagePanel).add_pending(text)

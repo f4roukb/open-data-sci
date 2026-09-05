@@ -210,8 +210,10 @@ class OpenDataSciConfig(BaseSettings):
 
     # ── Tool capability gates ───────────────────────────────────────────────
     # Controls whether the render_image tool is offered to the agent. The TUI
-    # detects the terminal's actual image-rendering support at startup and
-    # sets this via model_copy before the agent's tools are built.
+    # detects whether it's attached to a real interactive terminal at startup
+    # and sets this via model_copy before the agent's tools are built --
+    # inline pixel rendering vs. a clickable link is then chosen per-image by
+    # ImageBlock, based on the terminal's actual graphics-protocol support.
     enable_image_rendering: bool = Field(default=False, alias="ENABLE_IMAGE_RENDERING")
 
     # ── Context management ───────────────────────────────────────────────────────

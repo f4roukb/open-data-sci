@@ -15,6 +15,7 @@ A production-grade AI agent for data science and machine learning. See the [proj
 - [Themes](#themes)
 - [Python SDK](#python-sdk)
 - [Embedding OpenDataSci in Your Own App](#embedding-opendatasci-in-your-own-app)
+- [Cloud Portability](#cloud-portability)
 - [Models](#models)
 - [MCP Servers](#mcp-servers)
 - [Custom Skills](#custom-skills)
@@ -440,6 +441,27 @@ This is the shape a desktop app's backend or a long-running notebook kernel want
 - **Sandboxed code execution needs the same [system dependencies](#system-dependencies)** (`ripgrep`, and on Linux `bubblewrap`/`socat`) baked into your container image — there's no wizard to fall back on in a headless deployment, so install them at build time.
 - **`agent.astream()`'s event stream** (`token`/`response`/`error`, plus tool-call and background-task events) is the integration surface for a custom frontend — pipe it into a WebSocket, an SSE endpoint, or your desktop app's own message-passing, rather than trying to reuse any `_tui`-internal code (that package is private and not part of the public API).
 - See [`examples/configs/`](examples/configs/) for a ready-made `OpenDataSciConfig` per provider to adapt into your deployment's own config-loading path.
+
+---
+
+## Cloud Portability
+
+Every stateful dependency OpenDataSci relies on — where it stores data, where it runs code, where it keeps memory — sits behind an abstract interface, and the local backend shipped today is just one implementation of each. Swap in a cloud-infrastructure-backed implementation of the same interface and the agent keeps working unchanged, which is what makes moving OpenDataSci into a multi-tenant or distributed deployment a matter of configuration and infrastructure choice, not a rewrite.
+
+### Dependencies and their interfaces
+
+| Dependency | Utility | Abstraction | Shipped Implementation | Recommended Cloud Implementation |
+|---|---|---|---|---|
+| Workspace | The dataset files and other workspace artifacts | `BaseWorkspace` | Local directory on disk | Object store (e.g., S3) |
+| Code execution | Running the agent's sandboxed Python and CLI executions | `BaseSandbox` | Local OS sandbox | Firecracker microVMs |
+| Project memory | Dataset profiles, notes, and session plans | `BaseContextStore` | Local project directory | MongoDB |
+| Session-to-thread mapping | The session-to-thread mapping | `BaseSessionManager` | Local session file | Redis |
+| Conversation checkpoints | Conversation checkpoint state | `BaseCheckpointSaver` | In-memory saver | Managed Postgres |
+| Background tasks | Running and tracking background tasks | `BackgroundTaskManagerBase` | In-process async tasks | Celery (with a Redis or SQS broker) |
+| Skill registry | Skill and skill-domain files shared across an agent fleet | `BaseSkillStore` | Local skill files | Object store (e.g., S3) |
+| Human approval channel | Collecting the user's approve/reject decision for guarded actions in a headless deployment | `HumanApprovalBaseManager` | TUI prompt | A hosted approval workflow (e.g., a Slack app) |
+
+None of this is enabled out of the box — the shipped implementations are all local. Cloud portability here means the architecture doesn't stand in the way: swapping in a cloud-backed implementation of one of these interfaces doesn't require touching the agent logic that depends on it.
 
 ---
 

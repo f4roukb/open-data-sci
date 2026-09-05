@@ -7,6 +7,8 @@ querying the real terminal, so the check here is a cheap lookup rather than
 a fresh probe.
 """
 
+import sys
+
 from textual_image.renderable import Image as _DetectedImageRenderable
 from textual_image.renderable.sixel import Image as _SixelRenderable
 from textual_image.renderable.tgp import Image as _TGPRenderable
@@ -20,3 +22,13 @@ def terminal_supports_image_graphics() -> bool:
     those the same as no support at all.
     """
     return _DetectedImageRenderable in (_SixelRenderable, _TGPRenderable)
+
+
+def terminal_is_interactive() -> bool:
+    """True when stdout is attached to a real terminal a human can click things in.
+
+    Weaker than :func:`terminal_supports_image_graphics` -- this only asks
+    whether a clickable OSC 8 hyperlink is a meaningful thing to show, not
+    whether inline pixel rendering is possible.
+    """
+    return sys.__stdout__ is not None and sys.__stdout__.isatty()
