@@ -1453,7 +1453,7 @@ class TestSessionId:
             patch("opendatasci._tui.controller.create_agent", mock_create_agent),
             patch("opendatasci._tui.controller.OpenDataSciTuiService", mock_service_cls),
             patch("opendatasci._tui.session.CLISessionInfo.from_path", return_value=fake_info),
-            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
+            patch("opendatasci._tui.controller.load_global_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
         ):
             await ctrl.boot()
@@ -1472,7 +1472,7 @@ class TestSessionId:
 # ---------------------------------------------------------------------------
 
 _BOOT_PATCHES = (
-    "opendatasci.tools.mcp.load_workspace_mcp_servers",
+    "opendatasci._tui.controller.load_global_mcp_servers",
     "pathlib.Path.resolve",
     "pathlib.Path.is_dir",
 )
@@ -1496,7 +1496,7 @@ class TestBootFailures:
             patch("opendatasci._tui.controller.create_agent", side_effect=FileNotFoundError()),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
             patch("opendatasci._tui.session.CLISessionInfo.from_path"),
-            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
+            patch("opendatasci._tui.controller.load_global_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
             patch("opendatasci._tui.controller.CLIController._did_you_mean", return_value=""),
         ):
@@ -1521,7 +1521,7 @@ class TestBootFailures:
             patch("opendatasci._tui.controller.create_agent", side_effect=FileNotFoundError()),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
             patch("opendatasci._tui.session.CLISessionInfo.from_path"),
-            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
+            patch("opendatasci._tui.controller.load_global_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path(typo)),
         ):
             await ctrl.boot()
@@ -1543,7 +1543,7 @@ class TestBootFailures:
             patch("opendatasci._tui.controller.create_agent", side_effect=FileNotFoundError()),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
             patch("opendatasci._tui.session.CLISessionInfo.from_path"),
-            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
+            patch("opendatasci._tui.controller.load_global_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path(typo)),
         ):
             await ctrl.boot()
@@ -1559,7 +1559,7 @@ class TestBootFailures:
             patch("opendatasci._tui.controller.create_agent", side_effect=PermissionError()),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
             patch("opendatasci._tui.session.CLISessionInfo.from_path"),
-            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
+            patch("opendatasci._tui.controller.load_global_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
         ):
             await ctrl.boot()
@@ -1580,7 +1580,7 @@ class TestBootFailures:
             ),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
             patch("opendatasci._tui.session.CLISessionInfo.from_path"),
-            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
+            patch("opendatasci._tui.controller.load_global_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
         ):
             await ctrl.boot()
@@ -1602,7 +1602,7 @@ class TestBootFailures:
             ),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
             patch("opendatasci._tui.session.CLISessionInfo.from_path"),
-            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
+            patch("opendatasci._tui.controller.load_global_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
         ):
             await ctrl.boot()
@@ -1818,7 +1818,7 @@ class TestBootFailedState:
             patch("opendatasci._tui.controller.create_agent", side_effect=FileNotFoundError()),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
             patch("opendatasci._tui.session.CLISessionInfo.from_path"),
-            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
+            patch("opendatasci._tui.controller.load_global_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
             patch("opendatasci._tui.controller.CLIController._did_you_mean", return_value=""),
         ):
@@ -1924,7 +1924,8 @@ class TestApplyConfigChangesTheme:
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         try:
-            error = await controller._apply_config_changes({"theme": "light"})
+            with patch("opendatasci._tui.controller.save_settings_values"):
+                error = await controller._apply_config_changes({"theme": "light"})
             assert error is None
             assert _theme.active_name == "light"
             mock_ui.refresh_theme.assert_called_once()
@@ -1935,7 +1936,8 @@ class TestApplyConfigChangesTheme:
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         try:
-            await controller._apply_config_changes({"theme": "light"})
+            with patch("opendatasci._tui.controller.save_settings_values"):
+                await controller._apply_config_changes({"theme": "light"})
         finally:
             _theme.active_name = "default (dark, colorblind)"
         assert controller._service is None  # never rebuilt
@@ -1985,15 +1987,17 @@ class TestApplyConfigChangesModelProvider:
             patch("pathlib.Path.is_file", return_value=True),
             patch("pathlib.Path.is_dir", return_value=False),
             patch("opendatasci._tui.controller.create_agent", side_effect=_fake_create_agent),
-            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
+            patch("opendatasci._tui.controller.load_global_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
+            patch("opendatasci._tui.controller.save_settings_values") as mock_save_settings,
         ):
             error = await controller._apply_config_changes({"model": "claude-opus-4-8"})
 
         assert error is None
         assert controller._base_config.model == "claude-opus-4-8"
         old_service.close.assert_awaited_once()
+        mock_save_settings.assert_called_once_with({"model": "claude-opus-4-8"})
 
     async def test_failed_rebuild_keeps_old_service_and_reports_error(
         self, controller: CLIController
@@ -2010,7 +2014,7 @@ class TestApplyConfigChangesModelProvider:
                 "opendatasci._tui.controller.create_agent",
                 side_effect=RuntimeError("boom"),
             ),
-            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
+            patch("opendatasci._tui.controller.load_global_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
         ):
             error = await controller._apply_config_changes({"model": "claude-opus-4-8"})

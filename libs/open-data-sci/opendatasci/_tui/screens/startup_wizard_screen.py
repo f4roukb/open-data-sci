@@ -1,10 +1,11 @@
 """StartupWizardScreen — the mandatory, once-per-launch selection flow.
 
-Walks a fixed sequence of ``ConfigLeaf`` steps (always theme first, then
-whichever of provider/model/secondary_provider/secondary_model weren't
-already resolved from ``--config``/env — see
-``opendatasci._tui.config.onboarding.compute_missing_selection_fields``), one per
-screen, using the same option-list/text-input rendering as ``ConfigScreen``.
+Walks a fixed sequence of ``ConfigLeaf`` steps (theme, and whichever of
+provider/model/secondary_provider/secondary_model weren't already resolved
+from ``--config``/env/persisted settings — see
+``opendatasci._tui.config.onboarding.compute_missing_selection_fields``), each
+step shown only when its value isn't already resolved, one per screen, using
+the same option-list/text-input rendering as ``ConfigScreen``.
 No back-navigation and no Escape-to-cancel: this stands in for the CLI flags
 that used to make these choices, so it must run to completion before boot.
 """

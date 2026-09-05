@@ -368,17 +368,17 @@ class TestSlashCommands:
         assert len(ui.config_panels) == 1
         assert ui.config_panels[0][2] == []
 
+    async def test_settings_opens_panel_at_root(self):
+        ctrl, ui = _make_controller(service=_make_service_stub())
+        await ctrl.on_submit("/settings")
+        assert len(ui.config_panels) == 1
+        assert ui.config_panels[0][2] == []
+
     async def test_models_opens_panel_at_models_node(self):
         ctrl, ui = _make_controller(service=_make_service_stub())
         await ctrl.on_submit("/models")
         assert len(ui.config_panels) == 1
         assert ui.config_panels[0][2] == ["models"]
-
-    async def test_providers_opens_panel_at_providers_node(self):
-        ctrl, ui = _make_controller(service=_make_service_stub())
-        await ctrl.on_submit("/providers")
-        assert len(ui.config_panels) == 1
-        assert ui.config_panels[0][2] == ["providers"]
 
     async def test_reset_calls_service_clears_and_shows_only_the_command(self):
         svc = _make_service_stub()
