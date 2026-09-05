@@ -72,7 +72,7 @@ config = OpenDataSciConfig.from_yaml("opendatasci_config.yaml")
 
 | Field | Env var | Default | Description |
 |-------|---------|---------|-------------|
-| `temperature` | `TEMPERATURE` | `0.0` | LLM sampling temperature (not sent to Claude 4.6+ / Sonnet 5 models) |
+| `primary_temperature` | `PRIMARY_TEMPERATURE` | `0.0` | LLM sampling temperature for the primary model (not sent to Claude 4.6+ / Sonnet 5 models) |
 
 ### Agent behaviour
 
@@ -128,7 +128,7 @@ model: claude-sonnet-5
 secondary_provider: openai
 secondary_model: gpt-5.6-luna
 
-temperature: 0.1
+primary_temperature: 0.1
 
 name: Sai
 
