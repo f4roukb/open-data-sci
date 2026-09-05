@@ -11,6 +11,7 @@ from textual.widgets import Input, Static
 
 from opendatasci._tui.config.global_config import save_global_config_value
 from opendatasci._tui.config.onboarding import RequiredField
+from opendatasci._tui.screens._wizard_layout import WIZARD_BOX_WIDTH
 from opendatasci._tui.style.theme import active as theme
 
 
@@ -22,20 +23,23 @@ class OnboardingScreen(ModalScreen[None]):
     lost on the next launch.
     """
 
-    DEFAULT_CSS = """
-    OnboardingScreen {
+    DEFAULT_CSS = f"""
+    OnboardingScreen {{
         align: center middle;
-    }
-    OnboardingScreen > Vertical {
-        width: 64;
+    }}
+    OnboardingScreen > Vertical {{
+        width: {WIZARD_BOX_WIDTH};
         height: auto;
         border: round $ods-accent;
         padding: 1 2;
         background: $ods-surface;
-    }
-    OnboardingScreen Input {
+    }}
+    OnboardingScreen #onboarding-help {{
         margin-top: 1;
-    }
+    }}
+    OnboardingScreen Input {{
+        margin-top: 1;
+    }}
     """
 
     def __init__(

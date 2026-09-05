@@ -20,6 +20,7 @@ from textual.widgets import Input, OptionList, Static
 from textual.widgets.option_list import Option
 
 from opendatasci._tui.config.config_tree import ConfigLeaf
+from opendatasci._tui.screens._wizard_layout import WIZARD_BOX_WIDTH
 from opendatasci._tui.style import theme as _theme
 from opendatasci._tui.style.theme import active as theme
 
@@ -38,29 +39,29 @@ def _hint_chip(key: str, label: str) -> str:
 class StartupWizardScreen(ModalScreen[None]):
     """One-shot linear picker for theme + whichever provider/model fields are unset."""
 
-    DEFAULT_CSS = """
-    StartupWizardScreen {
+    DEFAULT_CSS = f"""
+    StartupWizardScreen {{
         align: center middle;
-    }
-    StartupWizardScreen > Vertical {
-        width: 70;
+    }}
+    StartupWizardScreen > Vertical {{
+        width: {WIZARD_BOX_WIDTH};
         height: auto;
         border: round $ods-accent;
         background: $ods-surface;
-    }
-    StartupWizardScreen #wizard-title {
+    }}
+    StartupWizardScreen #wizard-title {{
         background: $ods-surface-alt;
         border-bottom: solid $ods-separator;
         padding: 1 3;
-    }
-    StartupWizardScreen #wizard-body {
+    }}
+    StartupWizardScreen #wizard-body {{
         padding: 1 3;
-    }
-    StartupWizardScreen OptionList {
+    }}
+    StartupWizardScreen OptionList {{
         height: auto;
         max-height: 14;
         margin-bottom: 1;
-    }
+    }}
     """
 
     def __init__(
@@ -93,6 +94,7 @@ class StartupWizardScreen(ModalScreen[None]):
         lines = [
             f"[bold {theme['accent']}]{escape(title)}[/bold {theme['accent']}]"
             f"  [{theme['accent']}]{dots}[/{theme['accent']}]",
+            "",
             _hint_chip("↑↓", "move") + "    " + _hint_chip("Enter", "select"),
         ]
         self.query_one("#wizard-title", Static).update("\n".join(lines))
@@ -102,11 +104,16 @@ class StartupWizardScreen(ModalScreen[None]):
         choices = leaf.options(self._staged)
         if choices:
             current = self._staged.get(leaf.field)
+            # Pad every label to the widest one in this step so descriptions
+            # start in the same column regardless of how long their label is
+            # (e.g. "dark" vs. "default (dark, colorblind)").
+            widest_label = max((len(choice.label) for choice in choices), default=0)
             options = []
             for choice in choices:
                 marker = "●" if choice.value == current else "○"
                 label = f"{marker} {choice.label}"
                 if choice.description:
+                    label += " " * (widest_label - len(choice.label))
                     label += f"  [dim]{choice.description}[/dim]"
                 options.append(Option(label, id=choice.value))
             option_list = OptionList(*options)

@@ -20,7 +20,7 @@ from typing import Any, AsyncIterator, Optional, override
 from langchain_core.tools import BaseTool
 from mcp import ClientSession
 from mcp.client.sse import sse_client
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 from mcp.types import TextContent
 from mcp.types import Tool as MCPToolDef
 from pydantic import BaseModel, ConfigDict, Field, create_model
@@ -95,7 +95,7 @@ async def _mcp_session(
     if server.transport is MCPTransport.SSE:
         transport_cm = sse_client(server.url, headers=headers, timeout=timeout)
     else:
-        transport_cm = streamablehttp_client(server.url, headers=headers, timeout=timeout)
+        transport_cm = streamable_http_client(server.url, headers=headers, timeout=timeout)
     async with transport_cm as streams:
         read_stream, write_stream = streams[0], streams[1]
         async with ClientSession(read_stream, write_stream) as session:

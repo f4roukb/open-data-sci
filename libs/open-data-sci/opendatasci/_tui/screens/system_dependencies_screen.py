@@ -20,6 +20,7 @@ from textual.screen import ModalScreen
 from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
+from opendatasci._tui.screens._wizard_layout import WIZARD_BOX_WIDTH
 from opendatasci._tui.style.theme import active as theme
 from opendatasci.sandbox.srt import (
     SystemDependencyStatus,
@@ -37,29 +38,32 @@ _CONTINUE = "continue"
 class SystemDependenciesScreen(ModalScreen[None]):
     """One-shot prompt to install missing sandbox dependencies (ripgrep, bubblewrap, socat)."""
 
-    DEFAULT_CSS = """
-    SystemDependenciesScreen {
+    DEFAULT_CSS = f"""
+    SystemDependenciesScreen {{
         align: center middle;
-    }
-    SystemDependenciesScreen > Vertical {
-        width: 74;
+    }}
+    SystemDependenciesScreen > Vertical {{
+        width: {WIZARD_BOX_WIDTH};
         height: auto;
         border: round $ods-accent;
         background: $ods-surface;
-    }
-    SystemDependenciesScreen #sysdeps-title {
+    }}
+    SystemDependenciesScreen #sysdeps-title {{
         background: $ods-surface-alt;
         border-bottom: solid $ods-separator;
         padding: 1 3;
-    }
-    SystemDependenciesScreen #sysdeps-body {
+    }}
+    SystemDependenciesScreen #sysdeps-body {{
         padding: 1 3;
-    }
-    SystemDependenciesScreen OptionList {
+    }}
+    SystemDependenciesScreen Static {{
+        margin-bottom: 1;
+    }}
+    SystemDependenciesScreen OptionList {{
         height: auto;
         max-height: 6;
         margin-top: 1;
-    }
+    }}
     """
 
     def __init__(
