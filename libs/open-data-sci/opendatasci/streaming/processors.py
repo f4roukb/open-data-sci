@@ -3,6 +3,7 @@ import re
 from typing import Any
 
 from langchain_core.messages import AIMessage, ToolMessage
+from langgraph.errors import GraphBubbleUp
 
 from opendatasci._utils.message_utils import get_message_text_content
 from opendatasci.streaming.events import (
@@ -365,10 +366,12 @@ class AgentTurnStreamProcessor:
         is_error = (
             isinstance(output, ToolMessage) and getattr(output, "status", "success") == "error"
         )
-        # Prefer tool_call_id from the output (ToolMessage); fall back to event metadata
-        # for tools (e.g. StructuredTool via MCP) where on_tool_end fires with the raw
-        # return value before LangGraph wraps it in a ToolMessage.
-        tool_call_id = getattr(output, "tool_call_id", None) or event.get("metadata", {}).get(
+        # Prefer tool_call_id from the output (ToolMessage); fall back to the
+        # event's own data for tools (e.g. StructuredTool via MCP) where
+        # on_tool_end fires with the raw return value before LangGraph wraps
+        # it in a ToolMessage. It lives under event["data"], not
+        # event["metadata"] (that's just the run's tags/metadata dict).
+        tool_call_id = getattr(output, "tool_call_id", None) or event.get("data", {}).get(
             "tool_call_id"
         )
         out: list[AgentStreamEvent] = []
@@ -391,7 +394,19 @@ class AgentTurnStreamProcessor:
         ``_unwrap_command_output`` for the analogous ``on_tool_end`` fix).
         """
         error = event.get("data", {}).get("error")
-        tool_call_id = event.get("metadata", {}).get("tool_call_id")
+        # A LangGraph interrupt() call (e.g. the command-approval flow in
+        # HumanApprovalManager) raises GraphInterrupt — a GraphBubbleUp
+        # subclass — from inside the tool. The tool's callback wrapper
+        # reports that as an on_tool_error before re-raising it for LangGraph
+        # to catch and turn into a real interrupt, so it's normal control
+        # flow, not a tool failure: skip it and let the ephemeral keep
+        # running until the tool's real result arrives after resume (or the
+        # pending ApprovalRequiredEvent/InputRequiredEvent pauses the UI).
+        if isinstance(error, GraphBubbleUp):
+            return []
+        # tool_call_id lives under event["data"], not event["metadata"]
+        # (that's just the run's tags/metadata dict).
+        tool_call_id = event.get("data", {}).get("tool_call_id")
         return [
             ToolResultEvent(
                 content=f"Error: {error}",
