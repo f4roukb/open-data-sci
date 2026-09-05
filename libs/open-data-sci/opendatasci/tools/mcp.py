@@ -29,8 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from opendatasci.tools.base import OpenDataSciBaseTool
 
-OPENDATASCI_DIRNAME = ".opendatasci"
-_MCP_CONFIG_FILE = "mcp.json"
+_MCP_GLOBAL_CONFIG_PATH = Path.home() / ".opendatasci" / "integrations" / "mcp.json"
 
 # Timeout for an actual tool call — these can legitimately take a while.
 _MCP_CALL_TIMEOUT = 30.0
@@ -252,12 +251,8 @@ def _parse_mcp_servers(data: dict[str, Any]) -> list[MCPServerSpec]:
     return specs
 
 
-def _workspace_mcp_config_path(workspace_path: Path) -> Path:
-    return workspace_path / OPENDATASCI_DIRNAME / _MCP_CONFIG_FILE
-
-
-def load_workspace_mcp_servers(workspace_path: Path) -> list[MCPServerSpec]:
-    """Read the configured MCP servers from ``<workspace>/.opendatasci/mcp.json``.
+def load_global_mcp_servers() -> list[MCPServerSpec]:
+    """Read the configured MCP servers from ``~/.opendatasci/integrations/mcp.json``.
 
     The file format mirrors the Cursor/VS Code ``mcp.json`` convention::
 
@@ -276,7 +271,7 @@ def load_workspace_mcp_servers(workspace_path: Path) -> list[MCPServerSpec]:
     omitted. Returns an empty list when the file is absent, empty, or
     malformed (a warning is printed to stderr in the latter case).
     """
-    config_path = _workspace_mcp_config_path(workspace_path)
+    config_path = _MCP_GLOBAL_CONFIG_PATH
     if not config_path.exists():
         return []
 
@@ -291,13 +286,13 @@ def load_workspace_mcp_servers(workspace_path: Path) -> list[MCPServerSpec]:
         return []
 
 
-def save_workspace_mcp_servers(workspace_path: Path, servers: list[MCPServerSpec]) -> None:
-    """Write *servers* to ``<workspace>/.opendatasci/mcp.json``.
+def save_global_mcp_servers(servers: list[MCPServerSpec]) -> None:
+    """Write *servers* to ``~/.opendatasci/integrations/mcp.json``.
 
     Replaces the file's whole ``mcpServers`` block, creating the
-    ``.opendatasci`` directory if needed.
+    ``integrations`` directory if needed.
     """
-    config_path = _workspace_mcp_config_path(workspace_path)
+    config_path = _MCP_GLOBAL_CONFIG_PATH
     config_path.parent.mkdir(parents=True, exist_ok=True)
     data = {
         "mcpServers": {
@@ -315,8 +310,8 @@ def save_workspace_mcp_servers(workspace_path: Path, servers: list[MCPServerSpec
 def load_named_mcp_servers(config_path: Path) -> list[MCPServerSpec]:
     """Read the configured MCP servers from an ``mcp.json``-formatted file at *config_path*.
 
-    Unlike :func:`load_workspace_mcp_servers`, this reads *config_path*
-    directly (it is not resolved relative to a workspace's ``.opendatasci``
+    Unlike :func:`load_global_mcp_servers`, this reads *config_path*
+    directly (it is not resolved relative to the global ``integrations``
     directory) and raises on a missing or malformed file instead of
     degrading to an empty list — callers driving an interactive picker want
     to show the user why the file couldn't be used.

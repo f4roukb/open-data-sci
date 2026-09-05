@@ -56,6 +56,7 @@ from opendatasci._tui.chat.message_queue import PendingMessageQueue
 from opendatasci._tui.chat.presenter import _TurnPresenter, apply_usage_event
 from opendatasci._tui.config.config_tree import build_config_tree
 from opendatasci._tui.config.config_tree import initial_values as build_initial_values
+from opendatasci._tui.config.settings import save_settings_values
 from opendatasci._tui.service import OpenDataSciTuiService
 from opendatasci._tui.session import CLISessionInfo
 from opendatasci._tui.style import theme as _theme
@@ -85,8 +86,8 @@ from opendatasci.streaming.events import (
 from opendatasci.tasks.base import BackgroundTaskStatus, BackgroundTaskUpdate
 from opendatasci.tools.mcp import (
     MCPServerSpec,
-    load_workspace_mcp_servers,
-    save_workspace_mcp_servers,
+    load_global_mcp_servers,
+    save_global_mcp_servers,
 )
 
 logger = logging.getLogger(__name__)
@@ -224,7 +225,7 @@ class CLIController:
         ui = self._ui
 
         try:
-            mcp_servers = load_workspace_mcp_servers(self._config_search_path())
+            mcp_servers = load_global_mcp_servers()
 
             cfg = self._base_config.model_copy(update={"mcp_servers": mcp_servers})
             self._cfg = cfg
@@ -257,11 +258,6 @@ class CLIController:
             await self._fail_boot(ui, f"Provider error: {exc}")
         except Exception as exc:
             await self._fail_boot(ui, f"Failed to load: {exc}")
-
-    def _config_search_path(self) -> Path:
-        """Directory to look for ``.opendatasci/mcp.json`` in for this workspace."""
-        resolved_path = Path(self._workspace_path).resolve()
-        return resolved_path if resolved_path.is_dir() else resolved_path.parent
 
     async def _fail_boot(self, ui: UIAdapter, msg_text: str) -> None:
         self._boot_failed = True
@@ -859,7 +855,7 @@ class CLIController:
         cfg = self._cfg or self._base_config
         root = build_config_tree()
         values = build_initial_values(cfg, _theme.active_name)
-        initial_mcp_servers = load_workspace_mcp_servers(self._config_search_path())
+        initial_mcp_servers = load_global_mcp_servers()
         self._ui.open_config_panel(
             root, values, start_path or [], self._apply_config_changes, initial_mcp_servers
         )
@@ -871,10 +867,12 @@ class CLIController:
         if "theme" in changes:
             _theme.set_active(changes["theme"])
             self._ui.refresh_theme()
+            save_settings_values({"theme": changes["theme"]})
 
         if "tips" in changes:
             _tips.set_enabled(changes["tips"] == "on")
             self._ui.refresh_tips()
+            save_settings_values({"tips": changes["tips"]})
 
         raw_changes = {k: v for k, v in changes.items() if k not in ("theme", "tips")}
         config_changes, coerce_error = _coerce_config_values(raw_changes)
@@ -903,8 +901,12 @@ class CLIController:
 
         new_cfg = self._base_config.model_copy(update=config_changes)
         error = await self._rebuild_agent(new_cfg, mcp_servers)
-        if error is None and mcp_servers is not None:
-            save_workspace_mcp_servers(self._config_search_path(), mcp_servers)
+        if error is None:
+            if mcp_servers is not None:
+                save_global_mcp_servers(mcp_servers)
+            persistable = {k: v for k, v in raw_changes.items() if k != "skills_directory"}
+            if persistable:
+                save_settings_values(persistable)
         return error
 
     async def _rebuild_agent(
@@ -917,14 +919,14 @@ class CLIController:
         model/provider switch never leaves the user without a working
         session. Returns an error string on failure, or ``None`` on success.
 
-        *mcp_servers*, when given, overrides the workspace file's MCP
+        *mcp_servers*, when given, overrides the global file's MCP
         servers for this rebuild (used by the /config panel to apply staged
         additions/removals before they're persisted to disk).
         """
         exit_stack = AsyncExitStack()
         try:
             if mcp_servers is None:
-                mcp_servers = load_workspace_mcp_servers(self._config_search_path())
+                mcp_servers = load_global_mcp_servers()
             cfg = new_base_config.model_copy(update={"mcp_servers": mcp_servers})
             agent = await exit_stack.enter_async_context(
                 create_agent(self._workspace_path, config=cfg)

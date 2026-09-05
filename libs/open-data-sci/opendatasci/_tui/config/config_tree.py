@@ -224,12 +224,12 @@ def build_config_tree() -> ConfigNode:
                 label="Integrations",
                 children=[
                     ConfigNode(
-                        key="mcp_servers", label="MCP Servers", leaf=build_mcp_servers_leaf()
+                        key="skills_directory",
+                        label="Custom skills",
+                        leaf=build_skills_leaf(),
                     ),
                     ConfigNode(
-                        key="skills_directory",
-                        label="Skills directory",
-                        leaf=build_skills_leaf(),
+                        key="mcp_servers", label="MCP Servers", leaf=build_mcp_servers_leaf()
                     ),
                 ],
             ),
