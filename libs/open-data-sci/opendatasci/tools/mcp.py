@@ -17,7 +17,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional, override
 
-import httpx2
+import httpx
 from langchain_core.tools import BaseTool
 from mcp import ClientSession
 from mcp.client.sse import sse_client
@@ -104,7 +104,7 @@ async def _mcp_session(
     else:
         # streamable_http_client no longer takes headers/timeout directly;
         # configure them on the httpx client we hand it instead.
-        http_client = create_mcp_http_client(headers=headers, timeout=httpx2.Timeout(timeout))
+        http_client = create_mcp_http_client(headers=headers, timeout=httpx.Timeout(timeout))
         async with http_client:
             async with streamable_http_client(server.url, http_client=http_client) as streams:
                 read_stream, write_stream = streams[0], streams[1]
