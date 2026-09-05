@@ -788,8 +788,8 @@ class TestShowHelp:
             "/compact",
             "/ls-workspace",
             "/models",
-            "/providers",
             "/config",
+            "/settings",
             "/exit",
             "/reset",
         ]:
@@ -1711,17 +1711,17 @@ class TestSlashDispatch:
         mock_ui.open_config_panel.assert_called_once()
         assert mock_ui.open_config_panel.call_args[0][2] == ["models"]
 
-    async def test_slash_providers_opens_config_panel_at_providers_node(
-        self, loaded_controller: CLIController, mock_ui: MagicMock
-    ) -> None:
-        await loaded_controller.on_submit("/providers")
-        mock_ui.open_config_panel.assert_called_once()
-        assert mock_ui.open_config_panel.call_args[0][2] == ["providers"]
-
     async def test_slash_config_opens_config_panel_at_root(
         self, loaded_controller: CLIController, mock_ui: MagicMock
     ) -> None:
         await loaded_controller.on_submit("/config")
+        mock_ui.open_config_panel.assert_called_once()
+        assert mock_ui.open_config_panel.call_args[0][2] == []
+
+    async def test_slash_settings_opens_config_panel_at_root(
+        self, loaded_controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await loaded_controller.on_submit("/settings")
         mock_ui.open_config_panel.assert_called_once()
         assert mock_ui.open_config_panel.call_args[0][2] == []
 
@@ -1871,8 +1871,8 @@ class TestControllerStateProperties:
 
 
 # ---------------------------------------------------------------------------
-# CLIController.open_config_panel / _apply_config_changes — /config, /models,
-# /providers
+# CLIController.open_config_panel / _apply_config_changes — /config,
+# /settings, /models
 # ---------------------------------------------------------------------------
 
 
@@ -1892,9 +1892,9 @@ class TestOpenConfigPanel:
     def test_jumps_to_the_requested_start_path(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        controller.open_config_panel(["providers"])
+        controller.open_config_panel(["models"])
         start_path = mock_ui.open_config_panel.call_args[0][2]
-        assert start_path == ["providers"]
+        assert start_path == ["models"]
 
     def test_initial_values_reflect_the_active_config_and_theme(
         self, controller: CLIController, mock_ui: MagicMock
