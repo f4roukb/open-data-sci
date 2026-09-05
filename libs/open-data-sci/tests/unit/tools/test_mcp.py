@@ -244,7 +244,7 @@ class TestDiscoverMcpTools:
     async def test_wraps_tools_from_reachable_server(self) -> None:
         tool_def = MagicMock(
             description="does a thing",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {"arg": {"type": "string"}},
                 "required": ["arg"],
@@ -261,7 +261,7 @@ class TestDiscoverMcpTools:
 
     async def test_namespaces_tools_by_server_to_avoid_collisions(self) -> None:
         def _tool_def(name: str) -> MagicMock:
-            td = MagicMock(description="", inputSchema={})
+            td = MagicMock(description="", input_schema={})
             td.name = name
             return td
 
@@ -291,7 +291,7 @@ class TestDiscoverMcpTools:
         assert len(names) == 2  # different servers must get different tags
 
     async def test_skips_malformed_tool_definition_with_warning(self) -> None:
-        bad_def = MagicMock(description="", inputSchema="not-a-dict")
+        bad_def = MagicMock(description="", input_schema="not-a-dict")
         bad_def.name = "bad_tool"
         session = _fake_session(list_tools=AsyncMock(return_value=MagicMock(tools=[bad_def])))
         captured = StringIO()
@@ -318,14 +318,14 @@ class TestMCPToolArun:
 
     async def test_formats_text_response(self) -> None:
         content = [TextContent(type="text", text="hello from mcp")]
-        result_obj = MagicMock(content=content, isError=False, structuredContent=None)
+        result_obj = MagicMock(content=content, is_error=False, structured_content=None)
         session = _fake_session(call_tool=AsyncMock(return_value=result_obj))
         with _patched_session(session):
             result = await self._tool()._arun(msg="hi")
         assert result == "hello from mcp"
 
     async def test_falls_back_to_structured_content_when_no_text_parts(self) -> None:
-        result_obj = MagicMock(content=[], isError=False, structuredContent={"a": 1})
+        result_obj = MagicMock(content=[], is_error=False, structured_content={"a": 1})
         session = _fake_session(call_tool=AsyncMock(return_value=result_obj))
         with _patched_session(session):
             result = await self._tool()._arun()
@@ -333,7 +333,7 @@ class TestMCPToolArun:
 
     async def test_reports_mcp_error(self) -> None:
         content = [TextContent(type="text", text="bad args")]
-        result_obj = MagicMock(content=content, isError=True, structuredContent=None)
+        result_obj = MagicMock(content=content, is_error=True, structured_content=None)
         session = _fake_session(call_tool=AsyncMock(return_value=result_obj))
         with _patched_session(session):
             result = await self._tool()._arun()

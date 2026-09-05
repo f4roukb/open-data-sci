@@ -73,6 +73,10 @@ class ConfigNode:
     label: str
     children: list["ConfigNode"] = field(default_factory=list)
     leaf: ConfigLeaf | None = None
+    # A non-selectable section label rendered inline among its siblings (e.g.
+    # "Primary Model" grouping the Model/Temperature rows that follow it) —
+    # has no children and no leaf of its own.
+    header: bool = False
 
 
 def _provider_options(_staged: dict[str, str]) -> list[ConfigOption]:
@@ -167,7 +171,7 @@ def _validate_temperature(value: str) -> str | None:
 
 def build_temperature_leaf() -> ConfigLeaf:
     return ConfigLeaf(
-        field="temperature",
+        field="primary_temperature",
         text_placeholder="0.0-1.0 (leave empty for default)",
         allow_empty=True,
         validate=_validate_temperature,
@@ -220,20 +224,22 @@ def build_config_tree() -> ConfigNode:
                 key="models",
                 label="Models",
                 children=[
+                    ConfigNode(key="primary_model_header", label="Primary Model", header=True),
                     ConfigNode(
                         key="primary_model",
-                        label="Primary model",
+                        label="Model",
                         leaf=build_model_leaf("model", "provider"),
                     ),
                     ConfigNode(
-                        key="secondary_model",
-                        label="Secondary model",
-                        leaf=build_model_leaf("secondary_model", "secondary_provider"),
-                    ),
-                    ConfigNode(
-                        key="temperature",
+                        key="primary_temperature",
                         label="Temperature",
                         leaf=build_temperature_leaf(),
+                    ),
+                    ConfigNode(key="secondary_model_header", label="Secondary Model", header=True),
+                    ConfigNode(
+                        key="secondary_model",
+                        label="Model",
+                        leaf=build_model_leaf("secondary_model", "secondary_provider"),
                     ),
                 ],
             ),
@@ -285,7 +291,9 @@ def initial_values(cfg: OpenDataSciConfig, theme_name: str) -> dict[str, str]:
         "secondary_provider": str(cfg.secondary_provider),
         "secondary_model": cfg.secondary_model,
         "skills_directory": str(cfg.skills_directory) if cfg.skills_directory else "",
-        "temperature": "" if cfg.temperature == 0.0 else _format_number(cfg.temperature),
+        "primary_temperature": (
+            "" if cfg.primary_temperature == 0.0 else _format_number(cfg.primary_temperature)
+        ),
         "name": cfg.name,
         "worker_timeout_seconds": (
             "" if cfg.worker_timeout_seconds is None else _format_number(cfg.worker_timeout_seconds)

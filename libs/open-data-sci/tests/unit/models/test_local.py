@@ -57,7 +57,7 @@ class TestCreateOllamaPrimaryModel:
         assert fake_chat_ollama["model"] == config.model
 
     def test_temperature_propagated(self, fake_chat_ollama) -> None:
-        config = OpenDataSciConfig(provider="ollama", temperature=0.6)  # type: ignore[arg-type]
+        config = OpenDataSciConfig(provider="ollama", primary_temperature=0.6)  # type: ignore[arg-type]
         create_ollama_model(config)
         assert fake_chat_ollama["temperature"] == 0.6
 
@@ -124,7 +124,7 @@ class TestCreateOpenAICompatiblePrimaryModel:
         assert fake_chat_openai_compatible["model"] == config.model
 
     def test_temperature_propagated(self, fake_chat_openai_compatible) -> None:
-        config = OpenDataSciConfig(provider="openai_compatible_server", temperature=0.4)  # type: ignore[arg-type]
+        config = OpenDataSciConfig(provider="openai_compatible_server", primary_temperature=0.4)  # type: ignore[arg-type]
         create_openai_compatible_model(config)
         assert fake_chat_openai_compatible["temperature"] == 0.4
 

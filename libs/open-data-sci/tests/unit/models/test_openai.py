@@ -42,7 +42,7 @@ class TestCreateOpenAIPrimaryModel:
 
     def test_temperature_propagated_from_config(self, fake_chat_openai) -> None:
         # OpenAI does not have extended thinking, so the user-set temperature is honoured.
-        config = OpenDataSciConfig(provider="openai", temperature=0.42)  # type: ignore[arg-type]
+        config = OpenDataSciConfig(provider="openai", primary_temperature=0.42)  # type: ignore[arg-type]
         create_openai_model(config)
         assert fake_chat_openai["temperature"] == 0.42
 

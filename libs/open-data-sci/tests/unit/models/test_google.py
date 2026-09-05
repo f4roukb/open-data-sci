@@ -57,7 +57,7 @@ class TestCreateGeminiPrimaryModel:
         assert fake_genai["model"] == config.model
 
     def test_temperature_propagated(self, fake_genai) -> None:
-        config = OpenDataSciConfig(provider="gemini", temperature=0.7)  # type: ignore[arg-type]
+        config = OpenDataSciConfig(provider="gemini", primary_temperature=0.7)  # type: ignore[arg-type]
         create_gemini_model(config)
         assert fake_genai["temperature"] == 0.7
 
@@ -113,7 +113,7 @@ class TestCreateVertexAIPrimaryModel:
         assert fake_vertexai["model"] == config.model
 
     def test_temperature_propagated(self, fake_vertexai) -> None:
-        config = OpenDataSciConfig(provider="vertexai", temperature=0.3)  # type: ignore[arg-type]
+        config = OpenDataSciConfig(provider="vertexai", primary_temperature=0.3)  # type: ignore[arg-type]
         create_vertexai_model(config)
         assert fake_vertexai["temperature"] == 0.3
 

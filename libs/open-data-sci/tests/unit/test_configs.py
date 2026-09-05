@@ -128,9 +128,9 @@ class TestAgentConfigFromYaml:
 
     def test_loads_scalar_fields(self, tmp_path: Path) -> None:
         f = tmp_path / "cfg.yaml"
-        f.write_text("temperature: 0.5\nworker_timeout_seconds: 120\nname: TestBot\n")
+        f.write_text("primary_temperature: 0.5\nworker_timeout_seconds: 120\nname: TestBot\n")
         cfg = OpenDataSciConfig.from_yaml(f)
-        assert cfg.temperature == 0.5
+        assert cfg.primary_temperature == 0.5
         assert cfg.worker_timeout_seconds == 120
         assert cfg.name == "TestBot"
 

@@ -103,16 +103,16 @@ def _coerce_config_values(raw_changes: dict[str, str]) -> tuple[dict[str, object
 
     ``model_copy(update=...)`` skips validation, so any caller that stamps raw
     strings from a staged-values dict onto the config (skills_directory,
-    temperature, worker_timeout_seconds) must convert them itself first.
+    primary_temperature, worker_timeout_seconds) must convert them itself first.
     Returns the coerced dict, or an error string if a value is invalid.
     """
     config_changes: dict[str, object] = dict(raw_changes)
     if "skills_directory" in raw_changes:
         value = raw_changes["skills_directory"].strip()
         config_changes["skills_directory"] = Path(value) if value else None
-    if "temperature" in raw_changes:
-        value = raw_changes["temperature"].strip()
-        config_changes["temperature"] = float(value) if value else 0.0
+    if "primary_temperature" in raw_changes:
+        value = raw_changes["primary_temperature"].strip()
+        config_changes["primary_temperature"] = float(value) if value else 0.0
     if "worker_timeout_seconds" in raw_changes:
         value = raw_changes["worker_timeout_seconds"].strip()
         if value:

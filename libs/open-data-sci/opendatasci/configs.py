@@ -103,9 +103,10 @@ class OpenDataSciConfig(BaseSettings):
                            falls back to ``http://localhost:11434`` and
                            ``http://localhost:8000/v1`` respectively when
                            not set.
-        temperature:     LLM sampling temperature.  Not sent to Anthropic and
-                         Bedrock models that use adaptive thinking (Claude
-                         4.6+), which reject explicit sampling parameters.
+        primary_temperature: LLM sampling temperature for the primary model.
+                         Not sent to Anthropic and Bedrock models that use
+                         adaptive thinking (Claude 4.6+), which reject
+                         explicit sampling parameters.
         name:            Display name of the agent.  Defaults to ``"Sai"``.
         mcp_servers: MCP servers the agent may connect to (``MCP_SERVERS``).
                          Only the ``http`` and ``sse`` transports are
@@ -197,7 +198,9 @@ class OpenDataSciConfig(BaseSettings):
     llm_server_base_url: str | None = Field(default=None, alias="LLM_SERVER_BASE_URL")
 
     # ── Sampling & reasoning ──────────────────────────────────────────────────
-    temperature: float = Field(default=0.0, alias="TEMPERATURE")
+    # Named "primary" (rather than just "temperature") to leave room for a
+    # future secondary_temperature without an ambiguous bare name.
+    primary_temperature: float = Field(default=0.0, alias="PRIMARY_TEMPERATURE")
 
     # ── Agent Customization ───────────────────────────────────────────────────────
     name: str = Field(default="Sai", alias="NAME")

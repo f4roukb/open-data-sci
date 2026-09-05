@@ -8,8 +8,11 @@ pausing/buffering for background messages to survive the panel being open.
 Navigation: Up/Down move the highlight within a level (native to
 ``OptionList``). Enter, Right and mouse click all select the highlighted row
 (Textual's own ``OptionList.action_select`` already posts ``OptionSelected``
-for all three). Left moves up one level. Escape leaves the whole panel,
-prompting Save/Discard first if anything was changed.
+for all three). Left and Escape both move up one level; only at the root of
+the tree does Escape instead leave the whole panel, prompting Save/Discard
+first if anything was changed. A text field's staged value updates live as
+the user types (no Enter needed) so leaving the field via Left/Escape still
+picks up the latest typed value.
 """
 
 from pathlib import Path
@@ -38,15 +41,23 @@ from opendatasci.tools.mcp import (
 _SAVE = "Save changes"
 _DISCARD = "Discard changes"
 
-_MCP_TEXT_MODES = ("mcp_load_path", "mcp_manual_name", "mcp_manual_url", "mcp_manual_header")
+_MCP_TEXT_MODES = ("mcp_load_path",)
 # Every mode that belongs to an "add a server" sub-flow (load-from-file or
 # manual) — Back/Escape from any of these cancels the whole sub-flow rather
 # than stepping back one field at a time.
-_MCP_WIZARD_MODES = (*_MCP_TEXT_MODES, "mcp_load_select", "mcp_manual_transport")
+_MCP_WIZARD_MODES = (*_MCP_TEXT_MODES, "mcp_load_select", "mcp_manual_form")
 _MCP_TRANSPORT_LABELS = {
     MCPTransport.HTTP: "HTTP (Streamable, recommended)",
     MCPTransport.SSE: "SSE (Server-Sent Events, legacy)",
 }
+# Focus order for the "Add manually" form — Up/Down cycle through these.
+_MCP_FORM_FIELD_IDS = (
+    "mcp-form-name",
+    "mcp-form-url",
+    "mcp-form-transport",
+    "mcp-form-headers",
+    "mcp-form-action",
+)
 
 
 def _hint_chip(key: str, label: str) -> str:
@@ -59,11 +70,51 @@ def _hint_bar(pairs: list[tuple[str, str]]) -> str:
     return "    ".join(_hint_chip(key, label) for key, label in pairs)
 
 
+def _parse_headers_text(text: str) -> tuple[dict[str, str], str | None]:
+    """Parse a comma-separated ``Name: Value, Name2: Value2`` string.
+
+    Returns the parsed headers, or an error message (and an empty dict) if
+    any comma-separated part isn't a well-formed ``Name: Value`` pair.
+    """
+    text = text.strip()
+    if not text:
+        return {}, None
+    headers: dict[str, str] = {}
+    for part in text.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        name, sep, value = part.partition(":")
+        name, value = name.strip(), value.strip()
+        if not sep or not name or not value:
+            return {}, f"Expected 'Header-Name: value', got {part!r}"
+        headers[name] = value
+    return headers, None
+
+
 class _NavigateBack(Message):
     pass
 
 
 class _RequestClose(Message):
+    pass
+
+
+class _FormNavUp(Message):
+    pass
+
+
+class _FormNavDown(Message):
+    pass
+
+
+class _McpTransportToggled(Message):
+    def __init__(self, transport: MCPTransport) -> None:
+        self.transport = transport
+        super().__init__()
+
+
+class _McpFormSubmit(Message):
     pass
 
 
@@ -85,6 +136,8 @@ class _ConfigTextInput(Input):
     BINDINGS = [
         Binding("left", "go_back", show=False),
         Binding("escape", "request_close", show=False),
+        Binding("up", "form_nav_up", show=False),
+        Binding("down", "form_nav_down", show=False),
     ]
 
     def action_go_back(self) -> None:
@@ -92,6 +145,12 @@ class _ConfigTextInput(Input):
 
     def action_request_close(self) -> None:
         self.post_message(_RequestClose())
+
+    def action_form_nav_up(self) -> None:
+        self.post_message(_FormNavUp())
+
+    def action_form_nav_down(self) -> None:
+        self.post_message(_FormNavDown())
 
 
 class _ToggleSelectAll(Message):
@@ -103,6 +162,88 @@ class _McpSelectOptionList(_ConfigOptionList):
 
     def action_toggle_all(self) -> None:
         self.post_message(_ToggleSelectAll())
+
+
+class _MCPTransportField(Static, can_focus=True):
+    """Focusable, non-Input row that cycles HTTP/SSE with Enter.
+
+    Lives inside the "Add manually" form alongside plain ``Input`` fields —
+    Up/Down/Left/Escape mirror ``_ConfigTextInput`` so the whole form
+    navigates uniformly regardless of which row is focused.
+    """
+
+    DEFAULT_CSS = """
+    _MCPTransportField {
+        padding: 0 1;
+    }
+    _MCPTransportField:focus {
+        background: $ods-surface-alt;
+    }
+    """
+    BINDINGS = [
+        Binding("enter", "toggle_transport", show=False),
+        Binding("left", "go_back", show=False),
+        Binding("escape", "request_close", show=False),
+        Binding("up", "form_nav_up", show=False),
+        Binding("down", "form_nav_down", show=False),
+    ]
+
+    def __init__(self, transport: MCPTransport, id: str | None = None) -> None:
+        super().__init__(id=id)
+        self.transport = transport
+        self._refresh()
+
+    def _refresh(self) -> None:
+        self.update(f"‹ {_MCP_TRANSPORT_LABELS[self.transport]} ›")
+
+    def action_toggle_transport(self) -> None:
+        transports = list(MCPTransport)
+        self.transport = transports[(transports.index(self.transport) + 1) % len(transports)]
+        self._refresh()
+        self.post_message(_McpTransportToggled(self.transport))
+
+    def action_go_back(self) -> None:
+        self.post_message(_NavigateBack())
+
+    def action_request_close(self) -> None:
+        self.post_message(_RequestClose())
+
+    def action_form_nav_up(self) -> None:
+        self.post_message(_FormNavUp())
+
+    def action_form_nav_down(self) -> None:
+        self.post_message(_FormNavDown())
+
+
+class _MCPFormAction(Static, can_focus=True):
+    """The "Add server" trigger row at the bottom of the manual-add form."""
+
+    DEFAULT_CSS = """
+    _MCPFormAction {
+        padding: 0 1;
+    }
+    _MCPFormAction:focus {
+        background: $ods-surface-alt;
+    }
+    """
+    BINDINGS = [
+        Binding("enter", "submit", show=False),
+        Binding("left", "go_back", show=False),
+        Binding("escape", "request_close", show=False),
+        Binding("up", "form_nav_up", show=False),
+    ]
+
+    def action_submit(self) -> None:
+        self.post_message(_McpFormSubmit())
+
+    def action_go_back(self) -> None:
+        self.post_message(_NavigateBack())
+
+    def action_request_close(self) -> None:
+        self.post_message(_RequestClose())
+
+    def action_form_nav_up(self) -> None:
+        self.post_message(_FormNavUp())
 
 
 class ConfigScreen(ModalScreen[None]):
@@ -132,6 +273,13 @@ class ConfigScreen(ModalScreen[None]):
         max-height: 16;
         margin-bottom: 1;
     }
+    ConfigScreen .mcp-form-label {
+        color: $ods-text-muted;
+        margin-top: 1;
+    }
+    ConfigScreen .mcp-form-label:first-child {
+        margin-top: 0;
+    }
     """
 
     def __init__(
@@ -160,12 +308,12 @@ class ConfigScreen(ModalScreen[None]):
         self._mcp_selected: set[int] = set()
         self._mcp_select_cursor: int = 0
         self._mcp_checking: bool = False
-        # Fields collected across the manual-add wizard (name -> url ->
-        # transport -> headers) before the final connectivity check.
+        # Fields staged live from the manual-add form (name, url, transport,
+        # headers all shown at once) before the final connectivity check.
         self._mcp_pending_name: str | None = None
         self._mcp_pending_url: str | None = None
         self._mcp_pending_transport: MCPTransport = MCPTransport.HTTP
-        self._mcp_pending_headers: dict[str, str] = {}
+        self._mcp_pending_headers_text: str = ""
 
     @staticmethod
     def _resolve_path(root: ConfigNode, start_path: list[str]) -> list[ConfigNode]:
@@ -209,8 +357,10 @@ class ConfigScreen(ModalScreen[None]):
                     ("←", "cancel"),
                 ]
             )
-        elif self._mode == "mcp_manual_transport":
-            hint = _hint_bar([("↑↓", "move"), ("Enter", "select"), ("←", "cancel")])
+        elif self._mode == "mcp_manual_form":
+            hint = _hint_bar(
+                [("↑↓", "move field"), ("Enter", "next/toggle/add"), ("←/Esc", "cancel")]
+            )
         elif self._mode in _MCP_TEXT_MODES:
             hint = _hint_bar([("Enter", "continue"), ("←/Esc", "cancel")])
         else:
@@ -239,10 +389,18 @@ class ConfigScreen(ModalScreen[None]):
         body = self.query_one("#config-body", Vertical)
 
         if node.children:
-            options = [Option(self._child_label(child), id=child.key) for child in node.children]
+            options = [
+                Option(self._section_header_label(child), id=child.key, disabled=True)
+                if child.header
+                else Option(self._child_label(child), id=child.key)
+                for child in node.children
+            ]
             option_list = _ConfigOptionList(*options)
             body.mount(option_list)
-            option_list.highlighted = self._cursor_by_path.get(self._path_key(), 0)
+            default_highlight = next(
+                (i for i, child in enumerate(node.children) if not child.header), 0
+            )
+            option_list.highlighted = self._cursor_by_path.get(self._path_key(), default_highlight)
             option_list.focus()
             return
 
@@ -271,6 +429,9 @@ class ConfigScreen(ModalScreen[None]):
             )
             body.mount(text_input)
             text_input.focus()
+
+    def _section_header_label(self, child: ConfigNode) -> str:
+        return f"[bold {theme['text_muted']}]{escape(child.label)}[/bold {theme['text_muted']}]"
 
     def _child_label(self, child: ConfigNode) -> str:
         if child.leaf is not None and child.leaf.kind == "mcp_servers":
@@ -313,23 +474,52 @@ class ConfigScreen(ModalScreen[None]):
         body.mount(text_input)
         text_input.focus()
 
-    def _render_mcp_manual_name(self) -> None:
-        self._mode = "mcp_manual_name"
+    def _render_mcp_manual_form(self) -> None:
+        """The "Add manually" form — name, URL, transport and headers all on
+        one screen at once, navigated with Up/Down between fields."""
+        self._mode = "mcp_manual_form"
         self._breadcrumb_text()
         self._clear_body()
         body = self.query_one("#config-body", Vertical)
-        text_input = _ConfigTextInput(placeholder="Server name")
-        body.mount(text_input)
-        text_input.focus()
+        body.mount(Static("Server name", classes="mcp-form-label"))
+        body.mount(
+            _ConfigTextInput(
+                value=self._mcp_pending_name or "",
+                placeholder="e.g. my-server",
+                id="mcp-form-name",
+            )
+        )
+        body.mount(Static("Server URL", classes="mcp-form-label"))
+        body.mount(
+            _ConfigTextInput(
+                value=self._mcp_pending_url or "",
+                placeholder="https://…",
+                id="mcp-form-url",
+            )
+        )
+        body.mount(Static("Transport", classes="mcp-form-label"))
+        body.mount(_MCPTransportField(self._mcp_pending_transport, id="mcp-form-transport"))
+        body.mount(Static("Headers (optional)", classes="mcp-form-label"))
+        body.mount(
+            _ConfigTextInput(
+                value=self._mcp_pending_headers_text,
+                placeholder="Name: Value, Name2: Value2",
+                id="mcp-form-headers",
+            )
+        )
+        action_label = "Checking connection…" if self._mcp_checking else "✔ Add server"
+        body.mount(_MCPFormAction(action_label, id="mcp-form-action"))
+        self.query_one("#mcp-form-name", _ConfigTextInput).focus()
 
-    def _render_mcp_manual_url(self, value: str = "") -> None:
-        self._mode = "mcp_manual_url"
-        self._breadcrumb_text()
-        self._clear_body()
-        body = self.query_one("#config-body", Vertical)
-        text_input = _ConfigTextInput(value=value, placeholder="Server URL")
-        body.mount(text_input)
-        text_input.focus()
+    def _move_form_focus(self, delta: int) -> None:
+        if self._mode != "mcp_manual_form":
+            return
+        focused = self.focused
+        if focused is None or focused.id not in _MCP_FORM_FIELD_IDS:
+            return
+        new_idx = _MCP_FORM_FIELD_IDS.index(focused.id) + delta
+        if 0 <= new_idx < len(_MCP_FORM_FIELD_IDS):
+            self.query_one(f"#{_MCP_FORM_FIELD_IDS[new_idx]}").focus()
 
     def _render_mcp_load_select(self) -> None:
         self._mode = "mcp_load_select"
@@ -366,7 +556,7 @@ class ConfigScreen(ModalScreen[None]):
         self._mcp_pending_name = None
         self._mcp_pending_url = None
         self._mcp_pending_transport = MCPTransport.HTTP
-        self._mcp_pending_headers = {}
+        self._mcp_pending_headers_text = ""
 
     def _handle_mcp_load_path_submit(self, value: str) -> None:
         if not value:
@@ -388,93 +578,42 @@ class ConfigScreen(ModalScreen[None]):
         self._mcp_select_cursor = 0
         self._render_mcp_load_select()
 
-    def _handle_mcp_manual_name_submit(self, value: str) -> None:
-        if not value:
-            self._render_mcp_list()
+    @on(_McpFormSubmit)
+    async def _on_mcp_form_submit(self, event: _McpFormSubmit) -> None:
+        event.stop()
+        if self._mode != "mcp_manual_form" or self._mcp_checking:
             return
-        self._mcp_pending_name = value
-        self._render_mcp_manual_url()
-
-    def _handle_mcp_manual_url_submit(self, value: str) -> None:
-        if not value or not self._mcp_pending_name:
-            self._reset_mcp_transient_state()
-            self._render_mcp_list()
+        name = (self._mcp_pending_name or "").strip()
+        url = (self._mcp_pending_url or "").strip()
+        if not name or not url:
+            self._error = "Server name and URL are required"
+            self._render_mcp_manual_form()
             return
-        self._mcp_pending_url = value
-        self._render_mcp_manual_transport()
-
-    def _render_mcp_manual_transport(self) -> None:
-        self._mode = "mcp_manual_transport"
-        self._breadcrumb_text()
-        self._clear_body()
-        body = self.query_one("#config-body", Vertical)
-        options = [
-            Option(_MCP_TRANSPORT_LABELS[transport], id=transport.value)
-            for transport in MCPTransport
-        ]
-        option_list = _ConfigOptionList(*options)
-        body.mount(option_list)
-        option_list.focus()
-
-    def _render_mcp_manual_header(self) -> None:
-        self._mode = "mcp_manual_header"
-        if not self._mcp_checking:
-            count = len(self._mcp_pending_headers)
-            self._status = (
-                f"{count} header{'s' if count != 1 else ''} added — "
-                "Enter with nothing typed to finish"
-                if count
-                else "Optional — e.g. Authorization: Bearer <token>. Enter with nothing typed to skip"
-            )
-        self._breadcrumb_text()
-        self._clear_body()
-        body = self.query_one("#config-body", Vertical)
-        text_input = _ConfigTextInput(placeholder="Header (Name: Value)")
-        body.mount(text_input)
-        text_input.focus()
-
-    async def _handle_mcp_manual_header_submit(self, value: str) -> None:
-        if not value:
-            await self._finalize_manual_mcp_add()
+        headers, header_error = _parse_headers_text(self._mcp_pending_headers_text)
+        if header_error:
+            self._error = header_error
+            self._render_mcp_manual_form()
             return
-        name, sep, header_value = value.partition(":")
-        name, header_value = name.strip(), header_value.strip()
-        if not sep or not name or not header_value:
-            self._error = "Expected 'Header-Name: value'"
-            self._render_mcp_manual_header()
-            return
-        self._error = ""
-        self._mcp_pending_headers[name] = header_value
-        self._render_mcp_manual_header()
 
-    async def _finalize_manual_mcp_add(self) -> None:
-        name = self._mcp_pending_name
-        url = self._mcp_pending_url
-        if not name or not url or self._mcp_checking:
-            return
         server = MCPServerSpec(
-            name=name,
-            url=url,
-            transport=self._mcp_pending_transport,
-            headers=dict(self._mcp_pending_headers),
+            name=name, url=url, transport=self._mcp_pending_transport, headers=headers
         )
-
         self._error = ""
         self._status = "Checking connection…"
         self._mcp_checking = True
-        self._render_mcp_manual_header()
+        self._render_mcp_manual_form()
         try:
             await check_mcp_server(server)
         except Exception as exc:
-            if self._mode != "mcp_manual_header" or not self._mcp_checking:
+            if self._mode != "mcp_manual_form" or not self._mcp_checking:
                 return  # user navigated away while the check was in flight
             self._mcp_checking = False
             self._status = ""
             self._error = f"Couldn't connect to {url}: {exc}"
-            self._render_mcp_manual_header()
+            self._render_mcp_manual_form()
             return
 
-        if self._mode != "mcp_manual_header" or not self._mcp_checking:
+        if self._mode != "mcp_manual_form" or not self._mcp_checking:
             return  # user navigated away while the check was in flight
         self._upsert_mcp_server(server)
         self._reset_mcp_transient_state()
@@ -538,7 +677,7 @@ class ConfigScreen(ModalScreen[None]):
             elif option_id == "mcp_load":
                 self._render_mcp_load_path()
             elif option_id == "mcp_manual":
-                self._render_mcp_manual_name()
+                self._render_mcp_manual_form()
             return
 
         if self._mode == "mcp_load_select":
@@ -552,11 +691,6 @@ class ConfigScreen(ModalScreen[None]):
             idx = int(option_id.split(":", 1)[1])
             self._mcp_selected.symmetric_difference_update({idx})
             self._render_mcp_load_select()
-            return
-
-        if self._mode == "mcp_manual_transport":
-            self._mcp_pending_transport = MCPTransport(option_id)
-            self._render_mcp_manual_header()
             return
 
         node = self._path[-1]
@@ -590,14 +724,10 @@ class ConfigScreen(ModalScreen[None]):
         if self._mode == "mcp_load_path":
             self._handle_mcp_load_path_submit(value)
             return
-        if self._mode == "mcp_manual_name":
-            self._handle_mcp_manual_name_submit(value)
-            return
-        if self._mode == "mcp_manual_url":
-            self._handle_mcp_manual_url_submit(value)
-            return
-        if self._mode == "mcp_manual_header":
-            await self._handle_mcp_manual_header_submit(value)
+        if self._mode == "mcp_manual_form":
+            # Enter in a text field advances to the next field rather than
+            # submitting the whole form — only the trailing action row does.
+            self._move_form_focus(1)
             return
 
         node = self._path[-1]
@@ -634,7 +764,38 @@ class ConfigScreen(ModalScreen[None]):
         if leaf.linked_field and leaf.linked_default is not None:
             self._staged[leaf.linked_field] = leaf.linked_default(value)
 
+    @on(Input.Changed)
+    def _on_text_changed(self, event: Input.Changed) -> None:
+        """Stage a text field's value as it's typed, so leaving the field via
+        Left/Escape (rather than Enter) still keeps what was typed."""
+        if self._mode == "text":
+            node = self._path[-1]
+            assert node.leaf is not None
+            leaf = node.leaf
+            value = event.value.strip()
+            if value or leaf.allow_empty:
+                if value and leaf.validate is not None and leaf.validate(value) is not None:
+                    return  # invalid partial input — Enter will surface the error
+                self._stage_value(leaf, value)
+            return
+        if self._mode != "mcp_manual_form":
+            return
+        if event.input.id == "mcp-form-name":
+            self._mcp_pending_name = event.value
+        elif event.input.id == "mcp-form-url":
+            self._mcp_pending_url = event.value
+        elif event.input.id == "mcp-form-headers":
+            self._mcp_pending_headers_text = event.value
+
     # ── Navigation ─────────────────────────────────────────────────────────
+
+    def _go_back_one_level(self) -> bool:
+        """Pop one level of the config tree. Returns False at the root."""
+        if len(self._path) > 1:
+            self._path.pop()
+            self._render_level()
+            return True
+        return False
 
     @on(_NavigateBack)
     def _on_navigate_back(self, event: _NavigateBack) -> None:
@@ -646,9 +807,7 @@ class ConfigScreen(ModalScreen[None]):
             self._reset_mcp_transient_state()
             self._render_mcp_list()
             return
-        if len(self._path) > 1:
-            self._path.pop()
-            self._render_level()
+        self._go_back_one_level()
 
     @on(_RequestClose)
     def _on_request_close(self, event: _RequestClose) -> None:
@@ -660,9 +819,29 @@ class ConfigScreen(ModalScreen[None]):
             self._reset_mcp_transient_state()
             self._render_mcp_list()
             return
+        # Escape behaves like Left (step back one level) everywhere except
+        # at the tree's root, where there's nothing left to step back to —
+        # only there does it mean "leave the panel", prompting Save/Discard.
+        if self._go_back_one_level():
+            return
         if diff_values(self._initial_values, self._staged) or (
             self._mcp_servers != self._initial_mcp_servers
         ):
             self._render_confirm()
         else:
             self.dismiss()
+
+    @on(_FormNavUp)
+    def _on_form_nav_up(self, event: _FormNavUp) -> None:
+        event.stop()
+        self._move_form_focus(-1)
+
+    @on(_FormNavDown)
+    def _on_form_nav_down(self, event: _FormNavDown) -> None:
+        event.stop()
+        self._move_form_focus(1)
+
+    @on(_McpTransportToggled)
+    def _on_mcp_transport_toggled(self, event: _McpTransportToggled) -> None:
+        event.stop()
+        self._mcp_pending_transport = event.transport

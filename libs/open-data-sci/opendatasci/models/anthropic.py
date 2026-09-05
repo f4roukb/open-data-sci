@@ -49,7 +49,7 @@ def create_anthropic_model(config: OpenDataSciConfig) -> BaseChatModel:
     return ChatAnthropic(
         model=config.model,
         api_key=config.anthropic_api_key,
-        temperature=config.temperature,
+        temperature=config.primary_temperature,
         max_tokens=16000,
     )
 
