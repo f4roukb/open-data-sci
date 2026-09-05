@@ -127,7 +127,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 opendatasci data.csv
 ```
 
-Everything — provider, model, secondary model, theme — can also be changed after launch without restarting, from the `/config` panel (see [Slash Commands](#slash-commands)).
+Everything — provider, model, secondary model, theme — can also be changed after launch without restarting, from the `/config` panel (alias `/settings`; see [Slash Commands](#slash-commands)).
 
 ### Setup with a config file
 

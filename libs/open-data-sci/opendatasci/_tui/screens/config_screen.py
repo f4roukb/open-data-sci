@@ -247,7 +247,7 @@ class _MCPFormAction(Static, can_focus=True):
 
 
 class ConfigScreen(ModalScreen[None]):
-    """Tree-navigable settings panel: Display, Models, Providers."""
+    """Tree-navigable settings panel: Display, Integrations, Models, Personalization, Subagents."""
 
     DEFAULT_CSS = """
     ConfigScreen {
