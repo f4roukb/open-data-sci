@@ -49,8 +49,10 @@ from opendatasci._tui.controller import CLIController
 from opendatasci._tui.screens.config_screen import ConfigScreen
 from opendatasci._tui.screens.onboarding_screen import OnboardingScreen
 from opendatasci._tui.screens.startup_wizard_screen import StartupWizardScreen
+from opendatasci._tui.screens.system_dependencies_screen import SystemDependenciesScreen
 from opendatasci._tui.style import theme as _theme
 from opendatasci.configs import DEFAULT_MODEL, OpenDataSciConfig
+from opendatasci.sandbox.srt import get_system_dependency_status
 from opendatasci.tools.mcp import MCPServerSpec
 
 logger = logging.getLogger(__name__)
@@ -144,6 +146,13 @@ class OpenDataSciApp(App[None]):
         self._quit_requested = False
         self._quit_timer: Timer | None = None
         self.query_one("#user-input", Input).focus()
+        dependency_status = get_system_dependency_status()
+        if dependency_status.supported and not dependency_status.satisfied:
+            self.push_screen(SystemDependenciesScreen(dependency_status, self._start_wizard))
+        else:
+            self._start_wizard()
+
+    def _start_wizard(self) -> None:
         steps = self._build_wizard_steps()
         values = build_initial_values(self._initial_datasci_config, _theme.active_name)
         self.push_screen(StartupWizardScreen(steps, values, self._on_wizard_complete))
