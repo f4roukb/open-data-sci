@@ -1099,10 +1099,10 @@ class TestRunAgent:
     ) -> None:
         event = ErrorEvent(content="something went wrong")
         mock_service.astream.return_value = _aiter(event)
-        handle = mock_ui.add_message.return_value
         await loaded_controller.run_agent("query")
-        appended = "".join(str(c) for c in handle.append.call_args_list)
-        assert "something went wrong" in appended
+        call = mock_ui.add_message.call_args
+        assert call[0][0] == "error"
+        assert "something went wrong" in call[0][1]
 
     async def test_run_agent_exception_sets_error_content(
         self, loaded_controller: CLIController, mock_service: MagicMock, mock_ui: MagicMock
@@ -1112,11 +1112,10 @@ class TestRunAgent:
             yield  # make it a generator
 
         mock_service.astream.return_value = _raise()
-        handle = mock_ui.add_message.return_value
         await loaded_controller.run_agent("query")
-        handle.set_content.assert_called()
-        content = handle.set_content.call_args[0][0]
-        assert "boom" in content
+        call = mock_ui.add_message.call_args
+        assert call[0][0] == "error"
+        assert "boom" in call[0][1]
 
     async def test_run_agent_resets_agent_running_flag_on_finish(
         self, loaded_controller: CLIController, mock_service: MagicMock
