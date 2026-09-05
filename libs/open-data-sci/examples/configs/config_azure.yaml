@@ -32,7 +32,7 @@ secondary_provider: azure
 secondary_model: gpt-5.6-luna
 
 # ── Sampling ──────────────────────────────────────────────────────────────────
-temperature: 0.1
+primary_temperature: 0.1
 
 # ── Azure endpoint & API version ─────────────────────────────────────────────
 # Falls back to AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_VERSION env vars.

@@ -25,9 +25,9 @@ secondary_provider: bedrock
 secondary_model: us.anthropic.claude-haiku-4-5-20251001-v1:0
 
 # ── Sampling ──────────────────────────────────────────────────────────────────
-# temperature: not sent to Claude 4.6+ / Sonnet 5 models (they use adaptive
-# thinking and reject explicit sampling parameters); applies to other models.
-temperature: 0.1
+# primary_temperature: not sent to Claude 4.6+ / Sonnet 5 models (they use
+# adaptive thinking and reject explicit sampling parameters); applies to other models.
+primary_temperature: 0.1
 
 # ── Region ────────────────────────────────────────────────────────────────────
 # Falls back to REGION env var, then us-east-1.
