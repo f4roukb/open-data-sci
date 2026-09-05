@@ -1,4 +1,4 @@
-"""Data model for the selection-driven config panels (/config, /models, /providers).
+"""Data model for the selection-driven config panels (/config, /settings, /models).
 
 Pure logic, no Textual — the menu tree and its option lists are plain data so
 ``config_screen.py`` (rendering) and ``startup_wizard_screen.py`` (the linear
@@ -203,8 +203,10 @@ def _format_number(value: float) -> str:
 
 
 def build_config_tree() -> ConfigNode:
-    """The full /config menu. Sections, and entries within each section, are
-    kept in lexical (alphabetical) order."""
+    """The full /config (alias /settings) menu. Sections, and entries within
+    each section, are kept in lexical (alphabetical) order, except within
+    "Models": provider precedes model there since the model catalog offered
+    depends on whichever provider is currently staged."""
     return ConfigNode(
         key="root",
         label="Configure",
@@ -237,6 +239,11 @@ def build_config_tree() -> ConfigNode:
                 children=[
                     ConfigNode(key="primary_model_header", label="Primary Model", header=True),
                     ConfigNode(
+                        key="primary_provider",
+                        label="Provider",
+                        leaf=build_provider_leaf("provider", "model"),
+                    ),
+                    ConfigNode(
                         key="primary_model",
                         label="Model",
                         leaf=build_model_leaf("model", "provider", "primary"),
@@ -247,6 +254,11 @@ def build_config_tree() -> ConfigNode:
                         leaf=build_temperature_leaf(),
                     ),
                     ConfigNode(key="secondary_model_header", label="Secondary Model", header=True),
+                    ConfigNode(
+                        key="secondary_provider",
+                        label="Provider",
+                        leaf=build_provider_leaf("secondary_provider", "secondary_model"),
+                    ),
                     ConfigNode(
                         key="secondary_model",
                         label="Model",
@@ -259,22 +271,6 @@ def build_config_tree() -> ConfigNode:
                 label="Personalization",
                 children=[
                     ConfigNode(key="agent_name", label="Agent name", leaf=build_agent_name_leaf()),
-                ],
-            ),
-            ConfigNode(
-                key="providers",
-                label="Providers",
-                children=[
-                    ConfigNode(
-                        key="primary_provider",
-                        label="Primary provider",
-                        leaf=build_provider_leaf("provider", "model"),
-                    ),
-                    ConfigNode(
-                        key="secondary_provider",
-                        label="Secondary provider",
-                        leaf=build_provider_leaf("secondary_provider", "secondary_model"),
-                    ),
                 ],
             ),
             ConfigNode(

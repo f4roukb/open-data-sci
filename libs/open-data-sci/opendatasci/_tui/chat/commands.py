@@ -12,8 +12,8 @@ SLASH_COMMANDS: list[str] = [
     "/help",
     "/ls-workspace",
     "/models",
-    "/providers",
     "/reset",
+    "/settings",
 ]
 
 SLASH_COMMAND_DESCRIPTIONS: dict[str, str] = {
@@ -21,13 +21,13 @@ SLASH_COMMAND_DESCRIPTIONS: dict[str, str] = {
     "/cancel-message": "Cancel the most recently queued message",
     "/clear": "Clear conversation context",
     "/compact": "Summarize conversation history",
-    "/config": "Open the configuration panel (display, models, providers)",
+    "/config": "Open the configuration panel (display, models, personalization, and more)",
     "/exit": "Exit OpenDataSci",
     "/help": "Show all commands",
     "/ls-workspace": "List workspace files",
-    "/models": "Pick the primary and secondary model",
-    "/providers": "Pick the primary and secondary provider",
+    "/models": "Pick the primary and secondary provider and model",
     "/reset": "Reset agent session",
+    "/settings": "Same as /config",
 }
 
 # Keyboard shortcuts that duplicate a slash command, keyed by that command.
@@ -54,13 +54,13 @@ _COMMAND_HELP_TEXT: dict[str, str] = {
     "/cancel-message": "Cancel the most recently queued message",
     "/clear": "Clear all conversation context",
     "/compact": "Summarize and compress the conversation history",
-    "/config": "Open the configuration panel (display, models, providers)",
+    "/config": "Open the configuration panel (display, models, personalization, and more)",
     "/exit": "Exit OpenDataSci",
     "/help": "Show this help message",
     "/ls-workspace": "List files in the workspace",
-    "/models": "Pick the primary and secondary model",
-    "/providers": "Pick the primary and secondary provider",
+    "/models": "Pick the primary and secondary provider and model",
     "/reset": "Reset the agent session and reload data from disk",
+    "/settings": "Same as /config",
 }
 
 # Global keyboard shortcuts with no slash-command equivalent (see

@@ -6,15 +6,15 @@ Concerns deliberately kept here:
   - Slash-command dispatch
   - Choice-prompt state machine
   - Action methods (reset, clear, compact, show_help, stop, ls_workspace)
-  - The /config, /models, /providers config panel (open_config_panel + _apply_config_changes)
+  - The /config (alias /settings), /models config panel (open_config_panel + _apply_config_changes)
 
 Everything else has been extracted into focused sibling modules:
   - adapter.py — UIAdapter + handle ABCs
   - chat/      — the chat screen: widgets, streaming presenter, pending-message
                  queue, @file-refs, tab-completion, tool-display metadata, and
                  the SLASH_COMMANDS registry
-  - config/    — pure-logic data model behind /config, /models, /providers and
-                 the onboarding/secrets schema (no Textual)
+  - config/    — pure-logic data model behind /config (alias /settings), /models
+                 and the onboarding/secrets schema (no Textual)
   - screens/   — the ModalScreens that render config/'s data (ConfigScreen,
                  OnboardingScreen, StartupWizardScreen)
   - style/     — theme palettes + styles.tcss
@@ -769,12 +769,10 @@ class CLIController:
             self.cancel_last_pending_message()
         elif cmd == "/help":
             await self.show_help()
-        elif cmd == "/config":
+        elif cmd in ("/config", "/settings"):
             self.open_config_panel()
         elif cmd == "/models":
             self.open_config_panel(["models"])
-        elif cmd == "/providers":
-            self.open_config_panel(["providers"])
         elif cmd == "/vars":
             await self._ui.add_message(
                 "agent",
@@ -854,7 +852,7 @@ class CLIController:
         """Display all available slash commands with descriptions."""
         await self._ui.add_message("agent", format_help_message()).finish()
 
-    # ── Config panel (/config, /models, /providers) ──────────────────────────
+    # ── Config panel (/config, /settings, /models) ────────────────────────────
 
     def open_config_panel(self, start_path: list[str] | None = None) -> None:
         """Open the selection-driven config panel, optionally jumping to a sub-node."""

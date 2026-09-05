@@ -239,11 +239,10 @@ Type `/` in the input box to trigger autocomplete. All commands are available at
 | `/cancel-message` | Cancel the most recently queued message |
 | `/clear` | Clear conversation context (workspace files are untouched) |
 | `/compact` | Summarise and compress conversation history to free up context |
-| `/config` | Open the [configuration panel](#the-config-panel) — theme, models, providers, MCP servers, and more |
+| `/config` (alias `/settings`) | Open the [configuration panel](#the-config-panel) — theme, models, providers, MCP servers, and more |
 | `/help` | Show all available commands |
 | `/ls-workspace` | List all files currently in the workspace |
-| `/models` | Jump straight into `/config`'s Models section (primary/secondary model, primary temperature) |
-| `/providers` | Jump straight into `/config`'s Providers section (primary/secondary provider) |
+| `/models` | Jump straight into `/config`'s Models section (primary/secondary provider and model, primary temperature) |
 | `/reset` | Reset the agent session and reload data from disk |
 | `/exit` | Quit OpenDataSci |
 
@@ -257,15 +256,14 @@ When the agent schedules work in the background (e.g. concurrent worker agents r
 
 ## The `/config` Panel
 
-Run `/config` to open a navigable menu covering every setting the agent needs, organised into sections:
+Run `/config` (or `/settings` — same command, either name works) to open a navigable menu covering every setting the agent needs, organised into sections:
 
 | Section | What's in it |
 |---------|--------------|
 | **Display** | Theme (see [Themes](#themes)); Tips (toggle the rotating footer hints) |
 | **Integrations** | **MCP Servers** — add, verify, or remove [MCP servers](#mcp-servers) the agent can call, either by loading candidates from an `mcp.json` file or entering one manually (name, URL, transport, headers); **Skills directory** — point at a folder of [custom skills](#custom-skills) |
-| **Models** | Grouped under **Primary Model** (model, sampling temperature) and **Secondary Model** (model) |
+| **Models** | Grouped under **Primary Model** (provider, model, sampling temperature) and **Secondary Model** (provider, model) — picking a new provider resets its paired model to that provider's default, and the model choices offered depend on whichever provider is currently selected |
 | **Personalization** | Agent display name |
-| **Providers** | Primary provider, secondary provider — picking a new provider resets its paired model to that provider's default |
 | **Subagents** | Worker timeout (max seconds a spawned worker may run) |
 
 Navigate with arrow keys and Enter, back out a level with Escape. Changing a model or provider applies immediately in the background — a failed switch (bad key, unreachable server) leaves your current session running untouched and reports the error instead.

@@ -1,4 +1,4 @@
-"""ConfigScreen — the navigable panel behind /config, /models and /providers.
+"""ConfigScreen — the navigable panel behind /config (alias /settings) and /models.
 
 A ``ModalScreen`` pushed on top of the running app, following the same
 pattern as ``OnboardingScreen``: the chat screen underneath stays mounted and
