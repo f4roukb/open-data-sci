@@ -486,7 +486,9 @@ class ConfigScreen(ModalScreen[None]):
         self._mode = "mcp_manual_form"
         self._breadcrumb_text()
         focused = self.focused
-        refocus_id = focused.id if focused is not None and focused.id in _MCP_FORM_FIELD_IDS else None
+        refocus_id = (
+            focused.id if focused is not None and focused.id in _MCP_FORM_FIELD_IDS else None
+        )
         await self._clear_body()
         body = self.query_one("#config-body", Vertical)
         body.mount(Static("Server name", classes="mcp-form-label"))
