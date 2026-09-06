@@ -5,7 +5,6 @@
 #
 # Set your API key:
 #   export OPENAI_API_KEY=sk-...
-# TUI flags override any value here at launch.
 
 # ── Primary model ─────────────────────────────────────────────────────────────
 provider: openai

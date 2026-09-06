@@ -18,7 +18,6 @@
 #     export AZURE_CLIENT_ID=...
 #     export AZURE_CLIENT_SECRET=...
 #
-# TUI flags override any value here at launch.
 
 # ── Primary model ─────────────────────────────────────────────────────────────
 # The model value here is the *deployment name* in your Azure OpenAI resource,

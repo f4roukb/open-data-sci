@@ -13,7 +13,6 @@
 #   export AWS_SESSION_TOKEN=...        # only for temporary STS credentials
 #   # or: use ~/.aws/credentials, an IAM role, aws-vault, or AWS SSO
 #
-# TUI flags override any value here at launch.
 
 # ── Primary model ─────────────────────────────────────────────────────────────
 # Cross-region inference requires the regional prefix (us., eu., ap.).

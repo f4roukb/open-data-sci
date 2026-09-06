@@ -20,10 +20,10 @@ from typing import Awaitable, Callable
 
 from rich.markup import escape
 from rich.text import Text
-from textual import on
+from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import Input, OptionList, Static
@@ -50,14 +50,6 @@ _MCP_TRANSPORT_LABELS = {
     MCPTransport.HTTP: "HTTP (Streamable, recommended)",
     MCPTransport.SSE: "SSE (Server-Sent Events, legacy)",
 }
-# Focus order for the "Add manually" form — Up/Down cycle through these.
-_MCP_FORM_FIELD_IDS = (
-    "mcp-form-name",
-    "mcp-form-url",
-    "mcp-form-transport",
-    "mcp-form-headers",
-    "mcp-form-action",
-)
 
 
 def _hint_chip(key: str, label: str) -> str:
@@ -68,28 +60,6 @@ def _hint_chip(key: str, label: str) -> str:
 
 def _hint_bar(pairs: list[tuple[str, str]]) -> str:
     return "    ".join(_hint_chip(key, label) for key, label in pairs)
-
-
-def _parse_headers_text(text: str) -> tuple[dict[str, str], str | None]:
-    """Parse a comma-separated ``Name: Value, Name2: Value2`` string.
-
-    Returns the parsed headers, or an error message (and an empty dict) if
-    any comma-separated part isn't a well-formed ``Name: Value`` pair.
-    """
-    text = text.strip()
-    if not text:
-        return {}, None
-    headers: dict[str, str] = {}
-    for part in text.split(","):
-        part = part.strip()
-        if not part:
-            continue
-        name, sep, value = part.partition(":")
-        name, value = name.strip(), value.strip()
-        if not sep or not name or not value:
-            return {}, f"Expected 'Header-Name: value', got {part!r}"
-        headers[name] = value
-    return headers, None
 
 
 class _NavigateBack(Message):
@@ -116,6 +86,40 @@ class _McpTransportToggled(Message):
 
 class _McpFormSubmit(Message):
     pass
+
+
+class _MCPTestResultModal(ModalScreen[None]):
+    """A small pop-up reporting the outcome of testing an MCP server connection."""
+
+    DEFAULT_CSS = """
+    _MCPTestResultModal {
+        align: center middle;
+    }
+    _MCPTestResultModal > Static {
+        width: auto;
+        max-width: 70;
+        border: round $ods-accent;
+        background: $ods-surface;
+        padding: 1 3;
+    }
+    """
+    BINDINGS = [
+        Binding("escape", "dismiss_modal", show=False),
+        Binding("enter", "dismiss_modal", show=False),
+    ]
+
+    def __init__(self, message: str) -> None:
+        super().__init__()
+        self._message = message
+
+    def compose(self) -> ComposeResult:
+        yield Static(self._message)
+
+    def action_dismiss_modal(self) -> None:
+        self.dismiss()
+
+    def on_click(self) -> None:
+        self.dismiss()
 
 
 class _ConfigOptionList(OptionList):
@@ -280,6 +284,15 @@ class ConfigScreen(ModalScreen[None]):
     ConfigScreen .mcp-form-label:first-child {
         margin-top: 0;
     }
+    ConfigScreen .mcp-header-row {
+        height: auto;
+    }
+    ConfigScreen .mcp-header-row > Input {
+        width: 1fr;
+    }
+    ConfigScreen .mcp-header-row > Input:first-of-type {
+        margin-right: 1;
+    }
     """
 
     def __init__(
@@ -313,7 +326,10 @@ class ConfigScreen(ModalScreen[None]):
         self._mcp_pending_name: str | None = None
         self._mcp_pending_url: str | None = None
         self._mcp_pending_transport: MCPTransport = MCPTransport.HTTP
-        self._mcp_pending_headers_text: str = ""
+        # Header rows in the manual-add form: a list of [name, value] pairs,
+        # always ending in one blank row for the user to fill in next (see
+        # ``_on_header_field_changed``).
+        self._mcp_pending_headers: list[list[str]] = [["", ""]]
 
     @staticmethod
     def _resolve_path(root: ConfigNode, start_path: list[str]) -> list[ConfigNode]:
@@ -480,15 +496,27 @@ class ConfigScreen(ModalScreen[None]):
         body.mount(text_input)
         text_input.focus()
 
+    def _mcp_form_field_ids(self) -> list[str]:
+        """Focus order for the "Add manually" form — Up/Down cycle through these.
+
+        The header rows are dynamic (one per staged name/value pair, plus a
+        trailing blank one), so this can't be a fixed tuple.
+        """
+        ids = ["mcp-form-name", "mcp-form-url", "mcp-form-transport"]
+        for i in range(len(self._mcp_pending_headers)):
+            ids.append(f"mcp-form-header-name-{i}")
+            ids.append(f"mcp-form-header-value-{i}")
+        ids.append("mcp-form-action")
+        return ids
+
     async def _render_mcp_manual_form(self) -> None:
         """The "Add manually" form — name, URL, transport and headers all on
         one screen at once, navigated with Up/Down between fields."""
         self._mode = "mcp_manual_form"
         self._breadcrumb_text()
+        field_ids = self._mcp_form_field_ids()
         focused = self.focused
-        refocus_id = (
-            focused.id if focused is not None and focused.id in _MCP_FORM_FIELD_IDS else None
-        )
+        refocus_id = focused.id if focused is not None and focused.id in field_ids else None
         await self._clear_body()
         body = self.query_one("#config-body", Vertical)
         body.mount(Static("Server name", classes="mcp-form-label"))
@@ -510,14 +538,19 @@ class ConfigScreen(ModalScreen[None]):
         body.mount(Static("Transport", classes="mcp-form-label"))
         body.mount(_MCPTransportField(self._mcp_pending_transport, id="mcp-form-transport"))
         body.mount(Static("Headers (optional)", classes="mcp-form-label"))
-        body.mount(
-            _ConfigTextInput(
-                value=self._mcp_pending_headers_text,
-                placeholder="Name: Value, Name2: Value2",
-                id="mcp-form-headers",
+        for i, (name, value) in enumerate(self._mcp_pending_headers):
+            body.mount(
+                Horizontal(
+                    _ConfigTextInput(
+                        value=name, placeholder="Header name", id=f"mcp-form-header-name-{i}"
+                    ),
+                    _ConfigTextInput(
+                        value=value, placeholder="Value", id=f"mcp-form-header-value-{i}"
+                    ),
+                    classes="mcp-header-row",
+                )
             )
-        )
-        action_label = "Checking connection…" if self._mcp_checking else "✔ Add server"
+        action_label = "Checking connection…" if self._mcp_checking else "Add MCP server"
         body.mount(_MCPFormAction(action_label, id="mcp-form-action"))
         # Re-rendering to reflect a "checking..." state must keep focus where
         # the user left it (e.g. on the Add button) rather than yanking it
@@ -528,11 +561,12 @@ class ConfigScreen(ModalScreen[None]):
         if self._mode != "mcp_manual_form":
             return
         focused = self.focused
-        if focused is None or focused.id not in _MCP_FORM_FIELD_IDS:
+        field_ids = self._mcp_form_field_ids()
+        if focused is None or focused.id not in field_ids:
             return
-        new_idx = _MCP_FORM_FIELD_IDS.index(focused.id) + delta
-        if 0 <= new_idx < len(_MCP_FORM_FIELD_IDS):
-            self.query_one(f"#{_MCP_FORM_FIELD_IDS[new_idx]}").focus()
+        new_idx = field_ids.index(focused.id) + delta
+        if 0 <= new_idx < len(field_ids):
+            self.query_one(f"#{field_ids[new_idx]}").focus()
 
     async def _render_mcp_load_select(self) -> None:
         self._mode = "mcp_load_select"
@@ -569,7 +603,7 @@ class ConfigScreen(ModalScreen[None]):
         self._mcp_pending_name = None
         self._mcp_pending_url = None
         self._mcp_pending_transport = MCPTransport.HTTP
-        self._mcp_pending_headers_text = ""
+        self._mcp_pending_headers = [["", ""]]
 
     async def _handle_mcp_load_path_submit(self, value: str) -> None:
         if not value:
@@ -594,6 +628,14 @@ class ConfigScreen(ModalScreen[None]):
     @on(_McpFormSubmit)
     async def _on_mcp_form_submit(self, event: _McpFormSubmit) -> None:
         event.stop()
+        self._submit_mcp_form()
+
+    @work
+    async def _submit_mcp_form(self) -> None:
+        # ``push_screen_wait`` (used below to show the connection-result
+        # pop-up and block until it's dismissed) only works from a worker —
+        # hence this being a separate ``@work`` method rather than living
+        # directly in the ``_McpFormSubmit`` handler.
         if self._mode != "mcp_manual_form" or self._mcp_checking:
             return
         name = (self._mcp_pending_name or "").strip()
@@ -602,11 +644,16 @@ class ConfigScreen(ModalScreen[None]):
             self._error = "Server name and URL are required"
             await self._render_mcp_manual_form()
             return
-        headers, header_error = _parse_headers_text(self._mcp_pending_headers_text)
-        if header_error:
-            self._error = header_error
-            await self._render_mcp_manual_form()
-            return
+        headers: dict[str, str] = {}
+        for header_name, header_value in self._mcp_pending_headers:
+            header_name, header_value = header_name.strip(), header_value.strip()
+            if not header_name and not header_value:
+                continue
+            if not header_name or not header_value:
+                self._error = "Each header needs both a name and a value"
+                await self._render_mcp_manual_form()
+                return
+            headers[header_name] = header_value
 
         server = MCPServerSpec(
             name=name, url=url, transport=self._mcp_pending_transport, headers=headers
@@ -617,17 +664,24 @@ class ConfigScreen(ModalScreen[None]):
         await self._render_mcp_manual_form()
         try:
             await check_mcp_server(server)
-        except Exception as exc:
+        except Exception:
             if self._mode != "mcp_manual_form" or not self._mcp_checking:
                 return  # user navigated away while the check was in flight
             self._mcp_checking = False
             self._status = ""
-            self._error = f"Couldn't connect to {url}: {exc}"
+            await self.app.push_screen_wait(
+                _MCPTestResultModal(f"Failed to connect to server: {url}")
+            )
             await self._render_mcp_manual_form()
             return
 
         if self._mode != "mcp_manual_form" or not self._mcp_checking:
             return  # user navigated away while the check was in flight
+        self._mcp_checking = False
+        self._status = ""
+        await self.app.push_screen_wait(
+            _MCPTestResultModal(f"Successfully connected to server: {url}")
+        )
         self._upsert_mcp_server(server)
         self._reset_mcp_transient_state()
         await self._render_mcp_list()
@@ -778,7 +832,7 @@ class ConfigScreen(ModalScreen[None]):
             self._staged[leaf.linked_field] = leaf.linked_default(value)
 
     @on(Input.Changed)
-    def _on_text_changed(self, event: Input.Changed) -> None:
+    async def _on_text_changed(self, event: Input.Changed) -> None:
         """Stage a text field's value as it's typed, so leaving the field via
         Left/Escape (rather than Enter) still keeps what was typed."""
         if self._mode == "text":
@@ -793,12 +847,29 @@ class ConfigScreen(ModalScreen[None]):
             return
         if self._mode != "mcp_manual_form":
             return
-        if event.input.id == "mcp-form-name":
+        field_id = event.input.id or ""
+        if field_id == "mcp-form-name":
             self._mcp_pending_name = event.value
-        elif event.input.id == "mcp-form-url":
+        elif field_id == "mcp-form-url":
             self._mcp_pending_url = event.value
-        elif event.input.id == "mcp-form-headers":
-            self._mcp_pending_headers_text = event.value
+        elif field_id.startswith("mcp-form-header-name-"):
+            await self._on_header_field_changed(
+                int(field_id.removeprefix("mcp-form-header-name-")), 0, event.value
+            )
+        elif field_id.startswith("mcp-form-header-value-"):
+            await self._on_header_field_changed(
+                int(field_id.removeprefix("mcp-form-header-value-")), 1, event.value
+            )
+
+    async def _on_header_field_changed(self, row: int, col: int, value: str) -> None:
+        """Update one header field, appending a fresh blank row once the
+        current last row has both a name and a value filled in."""
+        self._mcp_pending_headers[row][col] = value
+        if row == len(self._mcp_pending_headers) - 1 and all(
+            field.strip() for field in self._mcp_pending_headers[row]
+        ):
+            self._mcp_pending_headers.append(["", ""])
+            await self._render_mcp_manual_form()
 
     # ── Navigation ─────────────────────────────────────────────────────────
 

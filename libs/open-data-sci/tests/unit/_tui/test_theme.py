@@ -12,7 +12,7 @@ from opendatasci._tui.style import theme as _theme
 # `_theme.active`/`active_name` after every test in this package, so tests
 # below are free to call set_active() without cleaning up manually.
 
-_DEFAULT_NAME = "dark, colorblind"
+_DEFAULT_NAME = "dark (colorblind)"
 
 
 class TestRequiredKeys:

@@ -15,7 +15,6 @@
 #   export GOOGLE_CLOUD_PROJECT=my-gcp-project
 #   export GOOGLE_CLOUD_LOCATION=us-central1       # optional, defaults to us-central1
 #
-# TUI flags override any value here at launch.
 
 # ── Primary model ─────────────────────────────────────────────────────────────
 provider: vertexai

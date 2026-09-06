@@ -6,6 +6,7 @@ and calls ``cleanup()`` in the ``finally`` block.
 """
 
 import logging
+import re
 import time
 
 from opendatasci._tui.adapter import (
@@ -32,6 +33,25 @@ from opendatasci.streaming.events import (
 from opendatasci.tools.factory import ToolName
 
 logger = logging.getLogger(__name__)
+
+# MCP tool names are namespaced as "mcp<5-hex-tag>__<original tool name>" (see
+# opendatasci.tools.mcp._server_tag/_discover_server_tools) so two servers
+# exposing a same-named tool never collide. That internal name is meaningless
+# to a user, so it's reformatted into "MCP: <original tool name>" for display.
+_MCP_TOOL_NAME_RE = re.compile(r"^mcp[0-9a-f]{5}__(.+)$")
+
+
+def _format_mcp_tool_name(raw_name: str) -> str:
+    """Turn a raw MCP tool name (snake_case or camelCase) into a display phrase.
+
+    ``read_microsoft_docs`` and ``readMicrosoftDocs`` both become
+    "Read microsoft docs": first word capitalized, the rest lowercased.
+    """
+    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", raw_name).replace("_", " ").replace("-", " ")
+    words = spaced.split()
+    if not words:
+        return raw_name
+    return " ".join([words[0].capitalize(), *(word.lower() for word in words[1:])])
 
 
 def apply_usage_event(event: UsageEvent, turn_status: TurnStatusHandle | None) -> None:
@@ -109,9 +129,12 @@ class _TurnPresenter:
 
     @staticmethod
     def _make_label(tool_display: ToolDisplay | None, event: ToolCallEvent) -> str:
-        return (tool_display.label if tool_display else None) or event.tool.replace(
-            "_", " "
-        ).title()
+        if tool_display:
+            return tool_display.label
+        mcp_match = _MCP_TOOL_NAME_RE.match(event.tool)
+        if mcp_match:
+            return f"MCP: {_format_mcp_tool_name(mcp_match.group(1))}"
+        return event.tool.replace("_", " ").title()
 
     @staticmethod
     def _make_summary(tool_display: ToolDisplay | None, event: ToolCallEvent) -> str:

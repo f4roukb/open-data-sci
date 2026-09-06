@@ -1903,7 +1903,7 @@ class TestOpenConfigPanel:
         try:
             controller.open_config_panel()
         finally:
-            _theme.active_name = "dark, colorblind"
+            _theme.active_name = "dark (colorblind)"
         values = mock_ui.open_config_panel.call_args[0][1]
         assert values["theme"] == "light"
         assert values["provider"] == "anthropic"
@@ -1930,7 +1930,7 @@ class TestApplyConfigChangesTheme:
             assert _theme.active_name == "light"
             mock_ui.refresh_theme.assert_called_once()
         finally:
-            _theme.active_name = "dark, colorblind"
+            _theme.active_name = "dark (colorblind)"
 
     async def test_theme_only_change_does_not_touch_the_agent(
         self, controller: CLIController, mock_ui: MagicMock
@@ -1939,7 +1939,7 @@ class TestApplyConfigChangesTheme:
             with patch("opendatasci._tui.controller.save_settings_values"):
                 await controller._apply_config_changes({"theme": "light"})
         finally:
-            _theme.active_name = "dark, colorblind"
+            _theme.active_name = "dark (colorblind)"
         assert controller._service is None  # never rebuilt
 
 

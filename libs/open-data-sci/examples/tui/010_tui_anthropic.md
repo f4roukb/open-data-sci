@@ -18,7 +18,7 @@ Pass a file, or a directory to load every data file inside it at once:
 ```bash
 opendatasci sales.csv
 opendatasci ./data/                        # all CSV, Excel, Parquet, … files in the folder
-opendatasci sales.csv --provider openai    # use GPT instead of Claude
+opendatasci sales.csv --config examples/configs/config_openai.yaml  # use GPT instead of Claude
 ```
 
 The TUI opens with a scrollable conversation panel above and an input bar at the bottom.
@@ -120,25 +120,31 @@ Works for `.py`, `.sql`, `.md`, `.ipynb`, and plain text files.
 
 ## Switching providers
 
+Pass a `--config` file to pick a different provider — the TUI's onboarding
+prompts for anything the file doesn't set. See [`examples/configs/`](../configs/)
+for an annotated file per provider.
+
 ```bash
 # Anthropic Claude (default)
 opendatasci sales.csv
 
 # OpenAI GPT
-opendatasci sales.csv --provider openai --model gpt-5.6-sol
+opendatasci sales.csv --config examples/configs/config_openai.yaml
 
 # Google Gemini
-opendatasci sales.csv --provider gemini --model gemini-3.5-flash
+opendatasci sales.csv --config examples/configs/config_gemini.yaml
 
 # Local model via Ollama  (no API key needed)
-opendatasci sales.csv --provider ollama --model qwen3.5:9b
+opendatasci sales.csv --config examples/configs/config_ollama.yaml
 
 # Self-hosted OpenAI-compatible server (e.g. vLLM)
-opendatasci sales.csv --provider openai_compatible_server --model Qwen/Qwen3.5-4B
+opendatasci sales.csv --config examples/configs/config_openai_compatible_server.yaml
 ```
 
-AWS Bedrock, Azure OpenAI, and Google Vertex AI are also supported —
-see [Getting Started](../docs/getting-started.md#choosing-a-provider) for their auth setup.
+AWS Bedrock, Azure OpenAI, and Google Vertex AI are also supported — see
+[`config_bedrock.yaml`](../configs/config_bedrock.yaml),
+[`config_azure.yaml`](../configs/config_azure.yaml), and
+[`config_vertexai.yaml`](../configs/config_vertexai.yaml) for their auth setup.
 
 ---
 

@@ -6,9 +6,6 @@
 # Set your API key:
 #   export ANTHROPIC_API_KEY=sk-ant-...
 #
-# TUI flags override any value here at launch:
-#   opendatasci data.csv --config examples/config_anthropic.yaml --model claude-opus-4-8
-#
 # Fields that cannot coexist with others are commented out with an explanation.
 # All remaining fields are active and can be tuned freely.
 
