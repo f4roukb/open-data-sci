@@ -39,7 +39,7 @@ worker_timeout_seconds: 600
 
 # ── Context management ────────────────────────────────────────────────────────
 # Token count after which the agent's context is compacted mid-turn (execution mode only).
-midturn_compaction_threshold: 80000
+autocompaction_threshold: 80000
 
 # ── API keys & endpoints ──────────────────────────────────────────────────────
 # Per-provider API key fields — prefer setting the env var instead of

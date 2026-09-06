@@ -26,7 +26,7 @@ name: Sai
 worker_timeout_seconds: 600
 
 # ── Context management ────────────────────────────────────────────────────────
-midturn_compaction_threshold: 80000
+autocompaction_threshold: 80000
 
 # ── API key ───────────────────────────────────────────────────────────────────
 # Prefer the OPENAI_API_KEY env var over hardcoding here.

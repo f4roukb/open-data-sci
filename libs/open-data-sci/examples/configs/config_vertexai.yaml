@@ -40,6 +40,6 @@ name: Sai
 worker_timeout_seconds: 600
 
 # ── Context management ────────────────────────────────────────────────────────
-midturn_compaction_threshold: 80000
+autocompaction_threshold: 80000
 
 # ── Diagnostics ───────────────────────────────────────────────────────────────

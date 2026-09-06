@@ -40,6 +40,6 @@ worker_timeout_seconds: 600
 
 # ── Context management ────────────────────────────────────────────────────────
 # Smaller open-weight models often have shorter context windows; compact earlier.
-midturn_compaction_threshold: 40000
+autocompaction_threshold: 40000
 
 # ── Diagnostics ───────────────────────────────────────────────────────────────

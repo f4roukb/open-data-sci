@@ -130,7 +130,7 @@ class OpenDataSciConfig(BaseSettings):
         worker_timeout_seconds: Maximum seconds to wait for all spawned
                          workers to finish.  ``None`` disables the timeout.
                          Defaults to ``300.0`` (5 minutes).
-        midturn_compaction_threshold: Token count after which the agent's
+        autocompaction_threshold: Token count after which the agent's
                          context is compacted mid-turn (during a single turn's
                          reasoning/acting loop).  Must be strictly positive.
                          Defaults to ``96000``.
@@ -208,10 +208,18 @@ class OpenDataSciConfig(BaseSettings):
     # ── MCP ───────────────────────────────────────────────────────────
     mcp_servers: List[MCPServerSpec] = Field(default_factory=list, alias="MCP_SERVERS")
 
+    # ── Tool capability gates ───────────────────────────────────────────────
+    # Controls whether the render_image tool is offered to the agent. The TUI
+    # detects whether it's attached to a real interactive terminal at startup
+    # and sets this via model_copy before the agent's tools are built --
+    # inline pixel rendering vs. a clickable link is then chosen per-image by
+    # ImageBlock, based on the terminal's actual graphics-protocol support.
+    enable_image_rendering: bool = Field(default=False, alias="ENABLE_IMAGE_RENDERING")
+
     # ── Context management ───────────────────────────────────────────────────────
-    midturn_compaction_threshold: int = Field(
+    autocompaction_threshold: int = Field(
         default=96000,
-        alias="MIDTURN_COMPACTION_THRESHOLD",
+        alias="AUTOCOMPACTION_THRESHOLD",
         gt=0,
         description="Token count after which the agent's context is compacted mid-turn. Only applies in execution mode.",
     )

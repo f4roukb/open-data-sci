@@ -70,6 +70,7 @@ from opendatasci.streaming import AgentStreamEvent, BaseAgentStreamEvent
 from opendatasci.streaming.events import (
     ApprovalRequiredEvent,
     ErrorEvent,
+    ImageRenderEvent,
     InputRequiredEvent,
     ReasoningEvent,
     ResponseEvent,
@@ -621,6 +622,8 @@ class CLIController:
             presenter.handle_subagent_event(event)
         elif isinstance(event, ToolResultEvent):
             presenter.handle_tool_result(event)
+        elif isinstance(event, ImageRenderEvent):
+            presenter.handle_image_render(event)
         elif isinstance(event, UsageEvent):
             apply_usage_event(event, self._active_turn_status)
         elif isinstance(event, InputRequiredEvent):
@@ -801,6 +804,7 @@ class CLIController:
             except Exception:
                 logger.exception("Failed to reset session")
         self._ui.clear_messages()
+        self._ui.clear_turn_status()
         await self._ui.add_message("user", "/reset").finish()
 
     async def clear_conv(self) -> None:
@@ -820,6 +824,7 @@ class CLIController:
             except Exception:
                 logger.exception("Failed to clear service context")
         self._ui.clear_messages()
+        self._ui.clear_turn_status()
         await self._ui.add_message("user", "/clear").finish()
 
     async def compact(self) -> None:
@@ -842,6 +847,7 @@ class CLIController:
             if compact_timer is not None:
                 compact_timer.stop()
         self._ui.clear_messages()
+        self._ui.clear_turn_status()
         await self._ui.add_message("user", "/compact").finish()
 
     async def show_help(self) -> None:

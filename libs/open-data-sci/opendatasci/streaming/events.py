@@ -59,6 +59,26 @@ class ToolResultEvent(BaseAgentStreamEvent):
     is_error: bool = False
 
 
+# Marker used in a ToolMessage.artifact dict (response_format="content_and_artifact")
+# to say "this artifact is an image to display inline" — keeps the artifact
+# payload self-describing without a new event/ToolMessage shape per artifact kind.
+IMAGE_ARTIFACT_KIND = "image"
+
+
+class ImageRenderEvent(BaseAgentStreamEvent):
+    """A tool pointed at a static image to render inline in the conversation.
+
+    Only ``path`` crosses this boundary — the TUI alone is responsible for
+    resolving, decoding, and rendering the file; no image bytes are carried
+    by this event or ever fed back into the LLM's context.
+    """
+
+    type: ClassVar[str] = "image_render"
+    tool_call_id: str | None = None
+    path: str = ""
+    caption: str = ""
+
+
 class MessageEvent(BaseAgentStreamEvent):
     """A completed ``BaseMessage`` for callers that own conversation-history accumulation."""
 
@@ -148,6 +168,7 @@ AgentStreamEvent = (
     | ToolCallEvent
     | ToolCommunicationEvent
     | ToolResultEvent
+    | ImageRenderEvent
     | MessageEvent
     | TaskDoneEvent
     | SubagentEvent

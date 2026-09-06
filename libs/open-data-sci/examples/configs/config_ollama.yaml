@@ -39,6 +39,6 @@ worker_timeout_seconds: 600
 # ── Context management ────────────────────────────────────────────────────────
 # Smaller local models often have 4 K–8 K token context windows; compact more
 # aggressively by lowering this threshold.
-midturn_compaction_threshold: 40000
+autocompaction_threshold: 40000
 
 # ── Diagnostics ───────────────────────────────────────────────────────────────

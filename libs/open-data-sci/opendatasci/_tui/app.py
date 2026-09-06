@@ -46,6 +46,7 @@ from opendatasci._tui.config.onboarding import (
     compute_missing_selection_fields,
 )
 from opendatasci._tui.controller import CLIController
+from opendatasci._tui.graphics_utils import terminal_is_interactive
 from opendatasci._tui.screens.config_screen import ConfigScreen
 from opendatasci._tui.screens.onboarding_screen import OnboardingScreen
 from opendatasci._tui.screens.startup_wizard_screen import StartupWizardScreen
@@ -211,6 +212,9 @@ class OpenDataSciApp(App[None]):
     def add_turn_status_bar(self) -> TurnStatusBar:
         return self.query_one(ChatPane).add_turn_status_bar()
 
+    def clear_turn_status(self) -> None:
+        self.query_one(ChatPane).clear_turn_status()
+
     def add_pending_message(self, text: str) -> PendingMessageBubble:
         return self.query_one(ChatPane).add_pending_message(text)
 
@@ -249,6 +253,9 @@ class OpenDataSciApp(App[None]):
 
     def hide_attachment(self) -> None:
         self.query_one(ChatPane).hide_attachment()
+
+    def add_image_block(self, path: str, caption: str) -> None:
+        self.query_one(ChatPane).add_image_block(path, caption)
 
     def open_config_panel(
         self,
@@ -486,8 +493,8 @@ Examples:
 
     overrides: dict[str, object] = {}
     _apply_global_config_fallback(overrides, global_cfg)
-    if overrides:
-        datasci_config = datasci_config.model_copy(update=overrides)
+    overrides["enable_image_rendering"] = terminal_is_interactive()
+    datasci_config = datasci_config.model_copy(update=overrides)
 
     missing_selection = compute_missing_selection_fields(yaml_data)
     session_id = uuid.uuid4().hex
