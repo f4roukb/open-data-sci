@@ -116,7 +116,7 @@ class TestMainArgparse:
             ):
                 main()
         finally:
-            _theme.set_active("default (dark, colorblind)")
+            _theme.set_active("dark, colorblind")
         missing = app_cls.call_args[1]["missing_selection"]
         assert "theme" not in missing
         assert "provider" not in missing
