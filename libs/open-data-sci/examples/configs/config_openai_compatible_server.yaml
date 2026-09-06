@@ -14,7 +14,6 @@
 #   huggingface-cli login
 #
 # No API key required for most local servers.
-# TUI flags override any value here at launch.
 
 # ── Primary model ─────────────────────────────────────────────────────────────
 provider: openai_compatible_server

@@ -9,7 +9,6 @@
 # Set your API key:
 #   export GOOGLE_API_KEY=AIza...
 #
-# TUI flags override any value here at launch.
 
 # ── Primary model ─────────────────────────────────────────────────────────────
 provider: gemini

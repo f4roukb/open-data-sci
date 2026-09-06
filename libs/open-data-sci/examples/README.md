@@ -76,7 +76,6 @@ cell is a follow-up turn in the same conversation.
 ## Config files
 
 Annotated `OpenDataSciConfig` YAML files — pass to any example with `--config`.
-TUI flags override values set here.
 
 | File | Provider | Auth |
 |------|----------|------|
@@ -93,7 +92,7 @@ Usage:
 
 ```bash
 opendatasci data.csv --config examples/configs/config_gemini.yaml
-opendatasci data.csv --config examples/configs/config_vertexai.yaml --model gemini-3.5-flash
+opendatasci data.csv --config examples/configs/config_vertexai.yaml
 ```
 
 See the [full provider list and default models](../README.md#models) for all

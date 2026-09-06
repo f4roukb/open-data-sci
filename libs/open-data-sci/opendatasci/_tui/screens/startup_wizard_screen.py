@@ -6,8 +6,11 @@ from ``--config``/env/persisted settings — see
 ``opendatasci._tui.config.onboarding.compute_missing_selection_fields``), each
 step shown only when its value isn't already resolved, one per screen, using
 the same option-list/text-input rendering as ``ConfigScreen``.
-No back-navigation and no Escape-to-cancel: this stands in for the CLI flags
-that used to make these choices, so it must run to completion before boot.
+Enter moves forward; Escape steps back to the previous step (a no-op on the
+first step) so a bad choice can be fixed without running the whole wizard
+to completion and reopening it via /config. There is still no Escape-to-cancel
+the wizard entirely: this stands in for the CLI flags that used to make these
+choices, so it must run to completion before boot.
 """
 
 from typing import Callable
@@ -15,6 +18,7 @@ from typing import Callable
 from rich.markup import escape
 from textual import on
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, OptionList, Static
@@ -39,6 +43,8 @@ def _hint_chip(key: str, label: str) -> str:
 
 class StartupWizardScreen(ModalScreen[None]):
     """One-shot linear picker for theme + whichever provider/model fields are unset."""
+
+    BINDINGS = [Binding("escape", "go_back", "Back", show=False)]
 
     DEFAULT_CSS = f"""
     StartupWizardScreen {{
@@ -92,11 +98,14 @@ class StartupWizardScreen(ModalScreen[None]):
     def _render_step(self) -> None:
         title, leaf = self._current
         dots = _progress_dots(self._index, len(self._steps))
+        hints = _hint_chip("↑↓", "move") + "    " + _hint_chip("Enter", "select")
+        if self._index > 0:
+            hints += "    " + _hint_chip("Esc", "back")
         lines = [
             f"[bold {theme['accent']}]{escape(title)}[/bold {theme['accent']}]"
             f"  [{theme['accent']}]{dots}[/{theme['accent']}]",
             "",
-            _hint_chip("↑↓", "move") + "    " + _hint_chip("Enter", "select"),
+            hints,
         ]
         self.query_one("#wizard-title", Static).update("\n".join(lines))
 
@@ -150,6 +159,12 @@ class StartupWizardScreen(ModalScreen[None]):
             self._on_complete(self._staged)
         else:
             self._render_step()
+
+    def action_go_back(self) -> None:
+        if self._index == 0:
+            return
+        self._index -= 1
+        self._render_step()
 
     @on(OptionList.OptionSelected)
     def _on_option_selected(self, event: OptionList.OptionSelected) -> None:

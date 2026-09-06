@@ -100,14 +100,14 @@ REQUIRED_KEYS: frozenset[str] = frozenset(DARK)
 # the user — they're picked from a list in /config (or /settings) ▸ Display ▸ Theme — so
 # they double as the display label.
 THEMES: dict[str, dict[str, str]] = {
-    "dark, colorblind": DARK_COLORBLIND,
+    "dark (colorblind)": DARK_COLORBLIND,
     "dark": DARK,
     "light": LIGHT,
     "light (colorblind)": LIGHT_COLORBLIND,
 }
 
 THEME_DESCRIPTIONS: dict[str, str] = {
-    "dark, colorblind": "Dark background, Okabe-Ito colour-blind safe palette",
+    "dark (colorblind)": "Dark background, Okabe-Ito colour-blind safe palette",
     "dark": "Dark background with muted blue accents",
     "light": "Light background with dark text",
     "light (colorblind)": "Light background, Okabe-Ito colour-blind safe palette",
@@ -117,7 +117,7 @@ THEME_DESCRIPTIONS: dict[str, str] = {
 # /config (or /settings) ▸ Display ▸ Theme (and once, for the initial pick, by the
 # mandatory startup wizard).
 active: dict[str, str] = dict(DARK_COLORBLIND)
-active_name: str = "dark, colorblind"
+active_name: str = "dark (colorblind)"
 
 
 def set_active(name: str) -> bool:

@@ -410,7 +410,7 @@ class TestStartupWizard:
                     stub.apply_config_updates.assert_called_once()
                     stub.boot.assert_awaited_once()
                 finally:
-                    _theme.set_active("dark, colorblind")
+                    _theme.set_active("dark (colorblind)")
 
 
 # ---------------------------------------------------------------------------

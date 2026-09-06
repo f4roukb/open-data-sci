@@ -12,7 +12,6 @@
 #   ollama serve               # starts on http://localhost:11434 by default
 #
 # No API key required.
-# TUI flags override any value here at launch.
 
 # ── Primary model ─────────────────────────────────────────────────────────────
 provider: ollama

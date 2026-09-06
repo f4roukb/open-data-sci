@@ -8,8 +8,8 @@ electricity. A modern GPU (or a recent Apple Silicon Mac) is required for
 most servers.
 
 This walkthrough uses vLLM as the example server; swap in any other
-OpenAI-compatible server and the `--provider openai_compatible_server` flag
-still applies.
+OpenAI-compatible server and the same `openai_compatible_server` provider
+config still applies.
 
 ## When to choose a self-hosted server
 
@@ -71,17 +71,15 @@ huggingface-cli login
 ## Launching
 
 ```bash
-# Default model (Qwen/Qwen3.5-4B)
-opendatasci sales.csv --provider openai_compatible_server
+# Default model (Qwen/Qwen3.5-4B), from the bundled config
+opendatasci sales.csv --config examples/configs/config_openai_compatible_server.yaml
 
-# Choose a different model — must match what the running server is serving
-opendatasci sales.csv --provider openai_compatible_server --model Qwen/Qwen3.5-9B
+# Choose a different model — edit `model:` in a copy of the config to match
+# what the running server is serving
 
 # Custom server URL
-LLM_SERVER_BASE_URL=http://192.168.1.10:8000/v1 opendatasci sales.csv --provider openai_compatible_server
-
-# Load config from file
-opendatasci sales.csv --config examples/configs/config_openai_compatible_server.yaml
+LLM_SERVER_BASE_URL=http://192.168.1.10:8000/v1 \
+  opendatasci sales.csv --config examples/configs/config_openai_compatible_server.yaml
 ```
 
 ---
@@ -142,7 +140,8 @@ but may struggle with complex multi-step ML pipelines. Upgrade to a larger model
 
 **Secondary model:** The secondary model (used for memory summarisation) defaults to
 the same model as the primary. This is fine for local setups but doubles VRAM usage
-if both are running concurrently. Pass `--secondary-provider anthropic` to offload
-lightweight tasks to a cloud model if you prefer.
+if both are running concurrently. Set `secondary_provider: anthropic` (and
+`secondary_model`) in your config file to offload lightweight tasks to a cloud
+model if you prefer.
 
 **Keyboard shortcuts:** identical to [`010_tui_anthropic.md`](010_tui_anthropic.md).
