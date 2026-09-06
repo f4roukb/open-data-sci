@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from mcp.types import TextContent
 
+import opendatasci.tools.mcp as mcp_module
 from opendatasci.tools.mcp import (
     MCPServerSpec,
     MCPTool,
@@ -19,9 +20,9 @@ from opendatasci.tools.mcp import (
     _server_tag,
     check_mcp_server,
     discover_mcp_tools,
+    load_global_mcp_servers,
     load_named_mcp_servers,
-    load_workspace_mcp_servers,
-    save_workspace_mcp_servers,
+    save_global_mcp_servers,
 )
 
 _HTTP_SERVER = MCPServerSpec(name="server-a", url="http://localhost:8080")
@@ -90,49 +91,54 @@ class TestParseMcpServers:
 
 
 # ---------------------------------------------------------------------------
-# load_workspace_mcp_servers / save_workspace_mcp_servers
+# load_global_mcp_servers / save_global_mcp_servers
 # ---------------------------------------------------------------------------
 
 
-class TestLoadWorkspaceMcpServers:
-    def test_returns_empty_list_when_file_absent(self, tmp_path: Path) -> None:
-        assert load_workspace_mcp_servers(tmp_path) == []
+@pytest.fixture
+def _global_mcp_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point the module's global MCP config path at a scratch file."""
+    config_path = tmp_path / "integrations" / "mcp.json"
+    monkeypatch.setattr(mcp_module, "_MCP_GLOBAL_CONFIG_PATH", config_path)
+    return config_path
 
-    def test_returns_specs_from_valid_config(self, tmp_path: Path) -> None:
-        config_path = tmp_path / ".opendatasci" / "mcp.json"
-        config_path.parent.mkdir(parents=True)
+
+class TestLoadGlobalMcpServers:
+    def test_returns_empty_list_when_file_absent(self, _global_mcp_path: Path) -> None:
+        assert load_global_mcp_servers() == []
+
+    def test_returns_specs_from_valid_config(self, _global_mcp_path: Path) -> None:
+        _global_mcp_path.parent.mkdir(parents=True)
         config = {
             "mcpServers": {
                 "server-a": {"url": "http://localhost:8080"},
                 "server-b": {"url": "http://localhost:9000", "type": "sse"},
             }
         }
-        config_path.write_text(json.dumps(config))
-        result = load_workspace_mcp_servers(tmp_path)
+        _global_mcp_path.write_text(json.dumps(config))
+        result = load_global_mcp_servers()
         assert MCPServerSpec(name="server-a", url="http://localhost:8080") in result
         assert (
             MCPServerSpec(name="server-b", url="http://localhost:9000", transport=MCPTransport.SSE)
             in result
         )
 
-    def test_returns_empty_list_for_malformed_json(self, tmp_path: Path) -> None:
-        config_path = tmp_path / ".opendatasci" / "mcp.json"
-        config_path.parent.mkdir(parents=True)
-        config_path.write_text("not valid json {{{")
-        assert load_workspace_mcp_servers(tmp_path) == []
+    def test_returns_empty_list_for_malformed_json(self, _global_mcp_path: Path) -> None:
+        _global_mcp_path.parent.mkdir(parents=True)
+        _global_mcp_path.write_text("not valid json {{{")
+        assert load_global_mcp_servers() == []
 
-    def test_prints_warning_for_malformed_json(self, tmp_path: Path) -> None:
-        config_path = tmp_path / ".opendatasci" / "mcp.json"
-        config_path.parent.mkdir(parents=True)
-        config_path.write_text("not valid json")
+    def test_prints_warning_for_malformed_json(self, _global_mcp_path: Path) -> None:
+        _global_mcp_path.parent.mkdir(parents=True)
+        _global_mcp_path.write_text("not valid json")
         captured = StringIO()
         with patch("sys.stderr", captured):
-            load_workspace_mcp_servers(tmp_path)
+            load_global_mcp_servers()
         assert "Warning" in captured.getvalue()
 
 
-class TestSaveWorkspaceMcpServers:
-    def test_writes_url_type_and_headers(self, tmp_path: Path) -> None:
+class TestSaveGlobalMcpServers:
+    def test_writes_url_type_and_headers(self, _global_mcp_path: Path) -> None:
         servers = [
             MCPServerSpec(
                 name="server-a",
@@ -141,22 +147,22 @@ class TestSaveWorkspaceMcpServers:
                 headers={"X-Api-Key": "secret"},
             )
         ]
-        save_workspace_mcp_servers(tmp_path, servers)
-        data = json.loads((tmp_path / ".opendatasci" / "mcp.json").read_text())
+        save_global_mcp_servers(servers)
+        data = json.loads(_global_mcp_path.read_text())
         entry = data["mcpServers"]["server-a"]
         assert entry["url"] == "http://localhost:8080"
         assert entry["type"] == "sse"
         assert entry["headers"] == {"X-Api-Key": "secret"}
 
-    def test_omits_headers_key_when_empty(self, tmp_path: Path) -> None:
-        save_workspace_mcp_servers(tmp_path, [MCPServerSpec(name="a", url="http://x")])
-        data = json.loads((tmp_path / ".opendatasci" / "mcp.json").read_text())
+    def test_omits_headers_key_when_empty(self, _global_mcp_path: Path) -> None:
+        save_global_mcp_servers([MCPServerSpec(name="a", url="http://x")])
+        data = json.loads(_global_mcp_path.read_text())
         assert "headers" not in data["mcpServers"]["a"]
 
-    def test_round_trips_through_load(self, tmp_path: Path) -> None:
+    def test_round_trips_through_load(self, _global_mcp_path: Path) -> None:
         servers = [MCPServerSpec(name="a", url="http://x", transport=MCPTransport.SSE)]
-        save_workspace_mcp_servers(tmp_path, servers)
-        assert load_workspace_mcp_servers(tmp_path) == servers
+        save_global_mcp_servers(servers)
+        assert load_global_mcp_servers() == servers
 
 
 class TestLoadNamedMcpServers:

@@ -9,8 +9,8 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, Static
 
-from opendatasci._tui.config.global_config import save_global_config_value
 from opendatasci._tui.config.onboarding import RequiredField
+from opendatasci._tui.config.secrets import save_secret_value
 from opendatasci._tui.screens._wizard_layout import WIZARD_BOX_WIDTH
 from opendatasci._tui.style.theme import active as theme
 
@@ -101,7 +101,7 @@ class OnboardingScreen(ModalScreen[None]):
             return
         self._error = ""
         self._collected[rf.field] = value
-        save_global_config_value(rf.field, value)
+        save_secret_value(rf.field, value)
         self._index += 1
         if self._index >= len(self._fields):
             self._on_complete(self._collected)

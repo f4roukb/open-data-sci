@@ -40,6 +40,18 @@ DEFAULT_SECONDARY_MODEL: MappingProxyType[Provider, str] = MappingProxyType(
     }
 )
 
+# Models that are the secondary default for their provider but are not
+# offered as a *primary* model choice in the TUI's model picker — currently
+# Claude Haiku on Anthropic and Bedrock, which is incompatible with the
+# current primary-model configuration (adaptive-thinking agent loop).  Still
+# fully supported as a secondary model.
+PRIMARY_INCOMPATIBLE_MODELS: MappingProxyType[Provider, frozenset[str]] = MappingProxyType(
+    {
+        Provider.ANTHROPIC: frozenset({DEFAULT_SECONDARY_MODEL[Provider.ANTHROPIC]}),
+        Provider.BEDROCK: frozenset({DEFAULT_SECONDARY_MODEL[Provider.BEDROCK]}),
+    }
+)
+
 # Maps a provider to the OpenDataSciConfig field that holds its API key.
 # Providers that use cloud-native auth (bedrock, vertexai, ollama) have no
 # key field, so switching to them never requires an API key check.

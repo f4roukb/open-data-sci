@@ -47,6 +47,8 @@ class TestMainArgparse:
             patch("sys.argv", ["opendatasci"] + argv),
             patch("opendatasci._tui.app.OpenDataSciApp", app_cls),
             patch("dotenv.load_dotenv"),
+            patch("opendatasci._tui.app.load_secrets", return_value={}),
+            patch("opendatasci._tui.app.load_settings", return_value={}),
         ):
             main()
 
@@ -77,13 +79,46 @@ class TestMainArgparse:
     def test_missing_selection_includes_all_four_fields_by_default(self) -> None:
         app_cls = self._run_main(["data.csv"])
         missing = app_cls.call_args[1]["missing_selection"]
-        assert set(missing) == {"provider", "model", "secondary_provider", "secondary_model"}
+        assert set(missing) == {
+            "provider",
+            "model",
+            "secondary_provider",
+            "secondary_model",
+            "theme",
+        }
 
     def test_missing_selection_excludes_fields_set_by_config_yaml(self, tmp_path: Path) -> None:
         yaml_file = tmp_path / "cfg.yaml"
         yaml_file.write_text("provider: openai\nmodel: gpt-4o\n")
         app_cls = self._run_main(["data.csv", "--config", str(yaml_file)])
         missing = app_cls.call_args[1]["missing_selection"]
+        assert "provider" not in missing
+        assert "model" not in missing
+        assert "secondary_provider" in missing
+        assert "secondary_model" in missing
+
+    def test_missing_selection_excludes_fields_set_by_persisted_settings(self) -> None:
+        from opendatasci._tui.style import theme as _theme
+
+        app_instance = MagicMock()
+        app_instance.run = MagicMock()
+        app_cls = MagicMock(return_value=app_instance)
+        try:
+            with (
+                patch("sys.argv", ["opendatasci", "data.csv"]),
+                patch("opendatasci._tui.app.OpenDataSciApp", app_cls),
+                patch("dotenv.load_dotenv"),
+                patch("opendatasci._tui.app.load_secrets", return_value={}),
+                patch(
+                    "opendatasci._tui.app.load_settings",
+                    return_value={"theme": "light", "provider": "openai", "model": "gpt-4o"},
+                ),
+            ):
+                main()
+        finally:
+            _theme.set_active("dark, colorblind")
+        missing = app_cls.call_args[1]["missing_selection"]
+        assert "theme" not in missing
         assert "provider" not in missing
         assert "model" not in missing
         assert "secondary_provider" in missing

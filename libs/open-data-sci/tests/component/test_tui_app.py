@@ -335,22 +335,37 @@ class TestStartupWizard:
         stub = _make_controller_stub(str(tmp_path))
         with patch.object(app_module, "CLIController", return_value=stub):
             app = OpenDataSciApp(
-                workspace_path=str(tmp_path), session_id="sess", datasci_config=datasci_config
+                workspace_path=str(tmp_path),
+                session_id="sess",
+                datasci_config=datasci_config,
+                missing_selection=["theme"],
             )
             async with app.run_test(size=(100, 40)) as pilot:
                 await pilot.pause()
                 assert isinstance(app.screen, StartupWizardScreen)
         stub.boot.assert_not_awaited()
 
-    def test_theme_step_is_always_first_regardless_of_missing_selection(self) -> None:
+    def test_no_steps_when_nothing_is_missing(self) -> None:
         app = OpenDataSciApp.__new__(OpenDataSciApp)
         app._missing_selection = []
+        steps = app._build_wizard_steps()
+        assert steps == []
+
+    def test_theme_step_included_when_missing(self) -> None:
+        app = OpenDataSciApp.__new__(OpenDataSciApp)
+        app._missing_selection = ["theme"]
         steps = app._build_wizard_steps()
         assert [title for title, _leaf in steps] == ["Theme"]
 
     def test_missing_selection_fields_become_steps_in_dependency_order(self) -> None:
         app = OpenDataSciApp.__new__(OpenDataSciApp)
-        app._missing_selection = ["secondary_model", "model", "secondary_provider", "provider"]
+        app._missing_selection = [
+            "secondary_model",
+            "model",
+            "secondary_provider",
+            "provider",
+            "theme",
+        ]
         steps = app._build_wizard_steps()
         assert [title for title, _leaf in steps] == [
             "Theme",
@@ -370,9 +385,13 @@ class TestStartupWizard:
         with (
             patch.object(app_module, "CLIController", return_value=stub),
             patch.object(app_module, "compute_missing_fields", return_value=[]),
+            patch.object(app_module, "save_settings_values"),
         ):
             app = OpenDataSciApp(
-                workspace_path=str(tmp_path), session_id="sess", datasci_config=datasci_config
+                workspace_path=str(tmp_path),
+                session_id="sess",
+                datasci_config=datasci_config,
+                missing_selection=["theme"],
             )
             async with app.run_test(size=(100, 40)) as pilot:
                 await pilot.pause()
@@ -391,7 +410,7 @@ class TestStartupWizard:
                     stub.apply_config_updates.assert_called_once()
                     stub.boot.assert_awaited_once()
                 finally:
-                    _theme.set_active("default (dark, colorblind)")
+                    _theme.set_active("dark, colorblind")
 
 
 # ---------------------------------------------------------------------------
@@ -419,7 +438,11 @@ class TestGetVersion:
 @pytest.fixture
 def app_cls_stub():
     """Patch OpenDataSciApp inside main() and capture its constructor kwargs."""
-    with patch.object(app_module, "OpenDataSciApp") as cls:
+    with (
+        patch.object(app_module, "OpenDataSciApp") as cls,
+        patch.object(app_module, "load_secrets", return_value={}),
+        patch.object(app_module, "load_settings", return_value={}),
+    ):
         cls.return_value.run = MagicMock()
         yield cls
 
@@ -451,7 +474,13 @@ class TestMainArgParsing:
         data.write_text("a\n1\n")
         _run_main(monkeypatch, str(data))
         missing = app_cls_stub.call_args.kwargs["missing_selection"]
-        assert set(missing) == {"provider", "model", "secondary_provider", "secondary_model"}
+        assert set(missing) == {
+            "provider",
+            "model",
+            "secondary_provider",
+            "secondary_model",
+            "theme",
+        }
 
     def test_missing_path_defaults_to_cwd(self, monkeypatch, app_cls_stub) -> None:
         _run_main(monkeypatch)
@@ -483,8 +512,9 @@ class TestMainArgParsing:
         assert config.provider == Provider.OPENAI
         assert config.model == "gpt-4o"
         assert config.secondary_model == "gpt-4o-mini"
-        # Every field was explicit in the YAML, so the wizard has nothing left to ask.
-        assert app_cls_stub.call_args.kwargs["missing_selection"] == []
+        # Every provider/model field was explicit in the YAML — only theme
+        # (which --config never sets) is left for the wizard to ask.
+        assert app_cls_stub.call_args.kwargs["missing_selection"] == ["theme"]
 
     def test_config_file_partial_fields_leave_the_rest_for_the_wizard(
         self, monkeypatch, app_cls_stub, tmp_path

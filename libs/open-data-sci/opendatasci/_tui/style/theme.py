@@ -27,27 +27,6 @@ DARK: dict[str, str] = {
     "tool_done": "#3fb950",
 }
 
-# Neutral dark grey — no colour tint, just greys
-DARK_GREY: dict[str, str] = {
-    "background": "#121212",
-    "surface": "#1e1e1e",
-    "surface_alt": "#262626",
-    "warning_bg": "#2a2318",
-    "accent": "#8ab4f8",
-    "success": "#81c995",
-    "error": "#f28b82",
-    "warning": "#fdd663",
-    "text_primary": "#e8e8e8",
-    "text_secondary": "#b0b0b0",
-    "text_muted": "#808080",
-    "text_dim": "#333333",
-    "separator": "#3a3a3a",
-    "logo": "#c9a86c",
-    "timer": "bright_white",
-    "tool_running": "#8ab4f8",
-    "tool_done": "#81c995",
-}
-
 # Light theme — light background, dark text (GitHub-inspired)
 LIGHT: dict[str, str] = {
     "background": "#ffffff",
@@ -118,29 +97,27 @@ LIGHT_COLORBLIND: dict[str, str] = {
 REQUIRED_KEYS: frozenset[str] = frozenset(DARK)
 
 # Registry of selectable themes, in display order. Keys are never typed by
-# the user — they're picked from a list in /config ▸ Display ▸ Theme — so
+# the user — they're picked from a list in /config (or /settings) ▸ Display ▸ Theme — so
 # they double as the display label.
 THEMES: dict[str, dict[str, str]] = {
-    "default (dark, colorblind)": DARK_COLORBLIND,
+    "dark, colorblind": DARK_COLORBLIND,
     "dark": DARK,
-    "dark-grey": DARK_GREY,
     "light": LIGHT,
     "light (colorblind)": LIGHT_COLORBLIND,
 }
 
 THEME_DESCRIPTIONS: dict[str, str] = {
-    "default (dark, colorblind)": "Dark background, Okabe-Ito colour-blind safe palette",
+    "dark, colorblind": "Dark background, Okabe-Ito colour-blind safe palette",
     "dark": "Dark background with muted blue accents",
-    "dark-grey": "Neutral dark grey, no colour tint",
     "light": "Light background with dark text",
     "light (colorblind)": "Light background, Okabe-Ito colour-blind safe palette",
 }
 
 # Mutated at runtime by set_active() when the user switches themes via
-# /config ▸ Display ▸ Theme (and once, for the initial pick, by the
+# /config (or /settings) ▸ Display ▸ Theme (and once, for the initial pick, by the
 # mandatory startup wizard).
 active: dict[str, str] = dict(DARK_COLORBLIND)
-active_name: str = "default (dark, colorblind)"
+active_name: str = "dark, colorblind"
 
 
 def set_active(name: str) -> bool:

@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from opendatasci._utils.pydantic_utils import FrozenStrictBaseModel
 from opendatasci.agents.interrupts import InterruptKind
 from opendatasci.configs import OpenDataSciConfig
-from opendatasci.models.factory import create_secondary_model
+from opendatasci.models.factory import bind_structured_output, create_secondary_model
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +125,7 @@ class HumanApprovalManager(HumanApprovalBaseManager):
     """
 
     def __init__(self, config: OpenDataSciConfig) -> None:
-        self._llm = create_secondary_model(config).with_structured_output(_CommandImpactAssessment)
+        self._llm = bind_structured_output(create_secondary_model(config), _CommandImpactAssessment)
 
     async def ask_for_command_approval(self, command: str) -> bool:
         try:
@@ -154,5 +154,5 @@ class HumanApprovalManager(HumanApprovalBaseManager):
             SystemMessage(content=_ASSESSMENT_SYSTEM_PROMPT),
             HumanMessage(content=f"Command the agent wants to run:\n```\n{command}\n```"),
         ]
-        raw: _CommandImpactAssessment = await self._llm.ainvoke(messages)  # type: ignore[assignment]
+        raw: _CommandImpactAssessment = await self._llm.ainvoke(messages)
         return CommandImpactAssessment.from_structured(raw)

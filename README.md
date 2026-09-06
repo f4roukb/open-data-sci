@@ -12,7 +12,7 @@
 
 </div>
 
-**A Claude Code-adjacent experience for data science and machine learning**: an open-source, Python-native agent that runs anywhere, from your own Linux or macOS device to the cloud or a self-hosted cluster. It works entirely on its own — planning, coding, and correcting itself as it goes, and remembering what it learns from one session to the next. A from-scratch run scored top-30% among 3,000+ teams in a live Kaggle competition, with zero guidance.
+OpenDataSci is a secure AI agent specialized in data science and machine learning. It works autonomously: plans, codes, corrects itself, iterates, and accumulates knowledge about your data across sessions. A from-scratch run scored **top-30% among 3,000+ teams** in a live Kaggle competition, with **zero guidance**. OpenDataSci runs anywhere: It ships to run locally on your **Linux/macOS device** offering a Claude-Code-adjacent experience, it's **cloud-portable** (AWS, GCP, Azure), and is compatible with **self-hosted deployments** (any OpenAI-compatible server). 
 
 <div align="center">
   <img src="resources/demo/run-open-data-sci-fast.gif" alt="OpenDataSci demo" width="95%" />

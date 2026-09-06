@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from opendatasci._utils.message_utils import render_turn
 from opendatasci.memory.messages import TaskMessage, is_ongoing_turn
+from opendatasci.models.factory import bind_structured_output
 from opendatasci.prompts.prompt_templates import MIDTURN_COMPACTOR_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ class AgentLoopCompactor:
 
     def __init__(self, llm: Any) -> None:
         self._llm = llm
-        self._structured_llm = llm.with_structured_output(_CompactedAgentLoop)
+        self._structured_llm = bind_structured_output(llm, _CompactedAgentLoop)
         self._system_prompt = MIDTURN_COMPACTOR_SYSTEM_PROMPT
 
     def estimate_tokens(self, messages: list[BaseMessage]) -> int:

@@ -4,7 +4,7 @@ import logging
 import os
 import uuid
 from pathlib import Path
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, cast
 
 from dotenv import load_dotenv
 from rich.console import Console
@@ -16,6 +16,7 @@ from textual.containers import Horizontal
 from textual.timer import Timer
 from textual.widgets import Footer, Input
 
+from opendatasci._tui import tips as _tips
 from opendatasci._tui.adapter import SubmitAction
 from opendatasci._tui.chat.widgets import (
     AppHeader,
@@ -40,12 +41,13 @@ from opendatasci._tui.config.config_tree import (
 from opendatasci._tui.config.config_tree import (
     initial_values as build_initial_values,
 )
-from opendatasci._tui.config.global_config import load_global_config
 from opendatasci._tui.config.onboarding import (
     compute_missing_fields,
     compute_missing_selection_fields,
 )
-from opendatasci._tui.controller import CLIController
+from opendatasci._tui.config.secrets import load_secrets
+from opendatasci._tui.config.settings import load_settings, save_settings_values
+from opendatasci._tui.controller import CLIController, _coerce_config_values
 from opendatasci._tui.graphics_utils import terminal_is_interactive
 from opendatasci._tui.screens.config_screen import ConfigScreen
 from opendatasci._tui.screens.onboarding_screen import OnboardingScreen
@@ -155,24 +157,36 @@ class OpenDataSciApp(App[None]):
 
     def _start_wizard(self) -> None:
         steps = self._build_wizard_steps()
+        self._wizard_steps = steps
         values = build_initial_values(self._initial_datasci_config, _theme.active_name)
+        if not steps:
+            # Theme and every selection field are already resolved (persisted
+            # settings, --config, or env) — nothing left to ask.
+            self._on_wizard_complete(values)
+            return
         self.push_screen(StartupWizardScreen(steps, values, self._on_wizard_complete))
 
     def _build_wizard_steps(self) -> list[tuple[str, ConfigLeaf]]:
-        """Always-shown theme step, plus whichever provider/model fields weren't
-        already resolved via --config/env (see ``compute_missing_selection_fields``)."""
-        steps: list[tuple[str, ConfigLeaf]] = [("Theme", build_theme_leaf())]
+        """The Theme step, plus whichever provider/model fields weren't already
+        resolved via --config/env/persisted settings (see
+        ``compute_missing_selection_fields``) — each shown only when missing."""
+        steps: list[tuple[str, ConfigLeaf]] = []
+        if "theme" in self._missing_selection:
+            steps.append(("Theme", build_theme_leaf()))
         if "provider" in self._missing_selection:
             steps.append(("Provider", build_provider_leaf("provider", "model")))
         if "model" in self._missing_selection:
-            steps.append(("Model", build_model_leaf("model", "provider")))
+            steps.append(("Model", build_model_leaf("model", "provider", "primary")))
         if "secondary_provider" in self._missing_selection:
             steps.append(
                 ("Secondary provider", build_provider_leaf("secondary_provider", "secondary_model"))
             )
         if "secondary_model" in self._missing_selection:
             steps.append(
-                ("Secondary model", build_model_leaf("secondary_model", "secondary_provider"))
+                (
+                    "Secondary model",
+                    build_model_leaf("secondary_model", "secondary_provider", "secondary"),
+                )
             )
         return steps
 
@@ -183,10 +197,18 @@ class OpenDataSciApp(App[None]):
         self._controller.apply_config_updates(config_updates)
         self.query_one("#user-input", Input).focus()
 
+        collected = {
+            leaf.field: values[leaf.field]
+            for _label, leaf in self._wizard_steps
+            if leaf.field in values
+        }
+        if collected:
+            save_settings_values(collected)
+
         base_config = self._controller.base_config
-        global_cfg = load_global_config()
+        secrets = load_secrets()
         missing_fields = compute_missing_fields(
-            [base_config.provider, base_config.secondary_provider], {}, global_cfg
+            [base_config.provider, base_config.secondary_provider], {}, secrets
         )
         if missing_fields:
             self.push_screen(OnboardingScreen(missing_fields, self._on_onboarding_complete))
@@ -482,7 +504,13 @@ Examples:
         return
 
     workspace_or_file = args.workspace_or_file or str(Path.cwd())
-    global_cfg = load_global_config()
+    secrets = load_secrets()
+    settings = load_settings()
+
+    if "theme" in settings:
+        _theme.set_active(settings["theme"])
+    if "tips" in settings:
+        _tips.set_enabled(settings["tips"] == "on")
 
     if args.config:
         datasci_config = OpenDataSciConfig.from_yaml(args.config)
@@ -492,11 +520,17 @@ Examples:
         yaml_data = {}
 
     overrides: dict[str, object] = {}
-    _apply_global_config_fallback(overrides, global_cfg)
+    _apply_global_config_fallback(overrides, {**secrets, **settings})
+    overrides, coerce_error = _coerce_config_values(cast("dict[str, str]", overrides))
+    if coerce_error is not None:
+        logger.warning("Dropping invalid persisted config value: %s", coerce_error)
+        overrides.pop("worker_timeout_seconds", None)
     overrides["enable_image_rendering"] = terminal_is_interactive()
     datasci_config = datasci_config.model_copy(update=overrides)
 
-    missing_selection = compute_missing_selection_fields(yaml_data)
+    missing_selection = compute_missing_selection_fields(yaml_data, settings)
+    if "theme" not in settings:
+        missing_selection.append("theme")
     session_id = uuid.uuid4().hex
 
     OpenDataSciApp(

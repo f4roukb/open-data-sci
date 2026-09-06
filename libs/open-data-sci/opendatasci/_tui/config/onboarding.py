@@ -60,16 +60,21 @@ PROVIDER_REQUIRED_FIELDS: MappingProxyType[Provider, tuple[RequiredField, ...]] 
 SELECTION_FIELDS: tuple[str, ...] = ("provider", "model", "secondary_provider", "secondary_model")
 
 
-def compute_missing_selection_fields(yaml_data: dict[str, object]) -> list[str]:
+def compute_missing_selection_fields(
+    yaml_data: dict[str, object], persisted_settings: dict[str, object] | None = None
+) -> list[str]:
     """Return which of ``SELECTION_FIELDS`` still need interactive selection.
 
     A field is considered already resolved when *yaml_data* (the raw
-    ``--config`` file contents, or ``{}`` when none was given) sets it, or
-    its aliased environment variable is set.
+    ``--config`` file contents, or ``{}`` when none was given) sets it, its
+    aliased environment variable is set, or *persisted_settings* (the
+    ``settings/global.yaml`` contents) already has it from a previous wizard
+    run or ``/config`` change.
     """
+    persisted_settings = persisted_settings or {}
     missing: list[str] = []
     for field_name in SELECTION_FIELDS:
-        if yaml_data.get(field_name):
+        if yaml_data.get(field_name) or persisted_settings.get(field_name):
             continue
         model_field = OpenDataSciConfig.model_fields[field_name]
         if model_field.alias and os.environ.get(model_field.alias):

@@ -209,7 +209,7 @@ class TestCompletionStateOnInputChangedAtMode:
 
 # ---------------------------------------------------------------------------
 # on_input_changed — no command takes a free-text first argument any more
-# (/config, /models, /providers open a panel instead of completing text).
+# (/config, /settings, /models open a panel instead of completing text).
 # ---------------------------------------------------------------------------
 
 

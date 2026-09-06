@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field, PrivateAttr, model_validator
 
 from opendatasci.configs import OpenDataSciConfig
 from opendatasci.human_inputs.human_approval import HumanApprovalBaseManager
-from opendatasci.models.factory import create_model
+from opendatasci.models.factory import bind_structured_output, create_model
 from opendatasci.sandbox.base import BaseSandbox, SandboxExecResult
 from opendatasci.tasks.base import BackgroundTaskManagerBase, RunMode
 from opendatasci.tools.base import OpenDataSciBaseTool
@@ -454,7 +454,7 @@ Args:
 
     @model_validator(mode="after")
     def _build_llm(self) -> "VerifyPythonCodeTool":
-        self._llm = create_model(self.datasci_config).with_structured_output(self._CodeReview)
+        self._llm = bind_structured_output(create_model(self.datasci_config), self._CodeReview)
         return self
 
     @override

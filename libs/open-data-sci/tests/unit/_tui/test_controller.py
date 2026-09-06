@@ -788,8 +788,8 @@ class TestShowHelp:
             "/compact",
             "/ls-workspace",
             "/models",
-            "/providers",
             "/config",
+            "/settings",
             "/exit",
             "/reset",
         ]:
@@ -1453,7 +1453,7 @@ class TestSessionId:
             patch("opendatasci._tui.controller.create_agent", mock_create_agent),
             patch("opendatasci._tui.controller.OpenDataSciTuiService", mock_service_cls),
             patch("opendatasci._tui.session.CLISessionInfo.from_path", return_value=fake_info),
-            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
+            patch("opendatasci._tui.controller.load_global_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
         ):
             await ctrl.boot()
@@ -1472,7 +1472,7 @@ class TestSessionId:
 # ---------------------------------------------------------------------------
 
 _BOOT_PATCHES = (
-    "opendatasci.tools.mcp.load_workspace_mcp_servers",
+    "opendatasci._tui.controller.load_global_mcp_servers",
     "pathlib.Path.resolve",
     "pathlib.Path.is_dir",
 )
@@ -1496,7 +1496,7 @@ class TestBootFailures:
             patch("opendatasci._tui.controller.create_agent", side_effect=FileNotFoundError()),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
             patch("opendatasci._tui.session.CLISessionInfo.from_path"),
-            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
+            patch("opendatasci._tui.controller.load_global_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
             patch("opendatasci._tui.controller.CLIController._did_you_mean", return_value=""),
         ):
@@ -1521,7 +1521,7 @@ class TestBootFailures:
             patch("opendatasci._tui.controller.create_agent", side_effect=FileNotFoundError()),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
             patch("opendatasci._tui.session.CLISessionInfo.from_path"),
-            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
+            patch("opendatasci._tui.controller.load_global_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path(typo)),
         ):
             await ctrl.boot()
@@ -1543,7 +1543,7 @@ class TestBootFailures:
             patch("opendatasci._tui.controller.create_agent", side_effect=FileNotFoundError()),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
             patch("opendatasci._tui.session.CLISessionInfo.from_path"),
-            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
+            patch("opendatasci._tui.controller.load_global_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path(typo)),
         ):
             await ctrl.boot()
@@ -1559,7 +1559,7 @@ class TestBootFailures:
             patch("opendatasci._tui.controller.create_agent", side_effect=PermissionError()),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
             patch("opendatasci._tui.session.CLISessionInfo.from_path"),
-            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
+            patch("opendatasci._tui.controller.load_global_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
         ):
             await ctrl.boot()
@@ -1580,7 +1580,7 @@ class TestBootFailures:
             ),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
             patch("opendatasci._tui.session.CLISessionInfo.from_path"),
-            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
+            patch("opendatasci._tui.controller.load_global_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
         ):
             await ctrl.boot()
@@ -1602,7 +1602,7 @@ class TestBootFailures:
             ),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
             patch("opendatasci._tui.session.CLISessionInfo.from_path"),
-            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
+            patch("opendatasci._tui.controller.load_global_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
         ):
             await ctrl.boot()
@@ -1711,17 +1711,17 @@ class TestSlashDispatch:
         mock_ui.open_config_panel.assert_called_once()
         assert mock_ui.open_config_panel.call_args[0][2] == ["models"]
 
-    async def test_slash_providers_opens_config_panel_at_providers_node(
-        self, loaded_controller: CLIController, mock_ui: MagicMock
-    ) -> None:
-        await loaded_controller.on_submit("/providers")
-        mock_ui.open_config_panel.assert_called_once()
-        assert mock_ui.open_config_panel.call_args[0][2] == ["providers"]
-
     async def test_slash_config_opens_config_panel_at_root(
         self, loaded_controller: CLIController, mock_ui: MagicMock
     ) -> None:
         await loaded_controller.on_submit("/config")
+        mock_ui.open_config_panel.assert_called_once()
+        assert mock_ui.open_config_panel.call_args[0][2] == []
+
+    async def test_slash_settings_opens_config_panel_at_root(
+        self, loaded_controller: CLIController, mock_ui: MagicMock
+    ) -> None:
+        await loaded_controller.on_submit("/settings")
         mock_ui.open_config_panel.assert_called_once()
         assert mock_ui.open_config_panel.call_args[0][2] == []
 
@@ -1818,7 +1818,7 @@ class TestBootFailedState:
             patch("opendatasci._tui.controller.create_agent", side_effect=FileNotFoundError()),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
             patch("opendatasci._tui.session.CLISessionInfo.from_path"),
-            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
+            patch("opendatasci._tui.controller.load_global_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
             patch("opendatasci._tui.controller.CLIController._did_you_mean", return_value=""),
         ):
@@ -1871,8 +1871,8 @@ class TestControllerStateProperties:
 
 
 # ---------------------------------------------------------------------------
-# CLIController.open_config_panel / _apply_config_changes — /config, /models,
-# /providers
+# CLIController.open_config_panel / _apply_config_changes — /config,
+# /settings, /models
 # ---------------------------------------------------------------------------
 
 
@@ -1892,9 +1892,9 @@ class TestOpenConfigPanel:
     def test_jumps_to_the_requested_start_path(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
-        controller.open_config_panel(["providers"])
+        controller.open_config_panel(["models"])
         start_path = mock_ui.open_config_panel.call_args[0][2]
-        assert start_path == ["providers"]
+        assert start_path == ["models"]
 
     def test_initial_values_reflect_the_active_config_and_theme(
         self, controller: CLIController, mock_ui: MagicMock
@@ -1903,7 +1903,7 @@ class TestOpenConfigPanel:
         try:
             controller.open_config_panel()
         finally:
-            _theme.active_name = "default (dark, colorblind)"
+            _theme.active_name = "dark, colorblind"
         values = mock_ui.open_config_panel.call_args[0][1]
         assert values["theme"] == "light"
         assert values["provider"] == "anthropic"
@@ -1924,20 +1924,22 @@ class TestApplyConfigChangesTheme:
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         try:
-            error = await controller._apply_config_changes({"theme": "light"})
+            with patch("opendatasci._tui.controller.save_settings_values"):
+                error = await controller._apply_config_changes({"theme": "light"})
             assert error is None
             assert _theme.active_name == "light"
             mock_ui.refresh_theme.assert_called_once()
         finally:
-            _theme.active_name = "default (dark, colorblind)"
+            _theme.active_name = "dark, colorblind"
 
     async def test_theme_only_change_does_not_touch_the_agent(
         self, controller: CLIController, mock_ui: MagicMock
     ) -> None:
         try:
-            await controller._apply_config_changes({"theme": "light"})
+            with patch("opendatasci._tui.controller.save_settings_values"):
+                await controller._apply_config_changes({"theme": "light"})
         finally:
-            _theme.active_name = "default (dark, colorblind)"
+            _theme.active_name = "dark, colorblind"
         assert controller._service is None  # never rebuilt
 
 
@@ -1985,15 +1987,17 @@ class TestApplyConfigChangesModelProvider:
             patch("pathlib.Path.is_file", return_value=True),
             patch("pathlib.Path.is_dir", return_value=False),
             patch("opendatasci._tui.controller.create_agent", side_effect=_fake_create_agent),
-            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
+            patch("opendatasci._tui.controller.load_global_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
             patch("opendatasci._tui.controller.OpenDataSciTuiService"),
+            patch("opendatasci._tui.controller.save_settings_values") as mock_save_settings,
         ):
             error = await controller._apply_config_changes({"model": "claude-opus-4-8"})
 
         assert error is None
         assert controller._base_config.model == "claude-opus-4-8"
         old_service.close.assert_awaited_once()
+        mock_save_settings.assert_called_once_with({"model": "claude-opus-4-8"})
 
     async def test_failed_rebuild_keeps_old_service_and_reports_error(
         self, controller: CLIController
@@ -2010,7 +2014,7 @@ class TestApplyConfigChangesModelProvider:
                 "opendatasci._tui.controller.create_agent",
                 side_effect=RuntimeError("boom"),
             ),
-            patch("opendatasci.tools.mcp.load_workspace_mcp_servers", return_value=[]),
+            patch("opendatasci._tui.controller.load_global_mcp_servers", return_value=[]),
             patch("pathlib.Path.resolve", return_value=Path("/fake/data.csv")),
         ):
             error = await controller._apply_config_changes({"model": "claude-opus-4-8"})

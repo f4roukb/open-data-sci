@@ -249,10 +249,9 @@ _TIPS: tuple[str, ...] = (
     "Tip: type @path/to/file to attach a file",
     "Tip: press Tab to autocomplete a command or file path",
     "Tip: press ↑ / ↓ to browse your input history",
-    "Tip: type /config to configure the app",
+    "Tip: type /config (or /settings) to configure the app",
     "Tip: press Esc to stop the agent mid-turn",
-    "Tip: type /models to switch the active model",
-    "Tip: type /providers to switch the active provider",
+    "Tip: type /models to switch the active provider or model",
     "Tip: type /compact to summarise a long conversation",
     "Tip: type /clear to wipe the conversation and start fresh",
     "Tip: type /reset to reload your data from disk",
@@ -260,7 +259,7 @@ _TIPS: tuple[str, ...] = (
     "Tip: type /cancel-message to drop the last queued message",
     "Tip: press Ctrl+R to reset the session",
     "Tip: press Ctrl+L to clear the conversation",
-    "Tip: disable tips in /config menu",
+    "Tip: disable tips in /config (or /settings) menu",
 )
 
 _TIP_INTERVAL_SECONDS = 7
@@ -295,7 +294,7 @@ class TipsBar(Static):
         self.update(_TIPS[self._index] if tips.enabled else "")
 
     def apply_settings(self) -> None:
-        """Re-render immediately after /config ▸ Display ▸ Tips is toggled."""
+        """Re-render immediately after /config (or /settings) ▸ Display ▸ Tips is toggled."""
         self._render_tip()
 
 

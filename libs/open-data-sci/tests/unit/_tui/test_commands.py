@@ -52,9 +52,9 @@ class TestFormatHelpMessage:
         msg = format_help_message()
         assert "/models" in msg
 
-    def test_providers_command_described(self) -> None:
+    def test_settings_command_described(self) -> None:
         msg = format_help_message()
-        assert "/providers" in msg
+        assert "/settings" in msg
 
     def test_help_command_described(self) -> None:
         msg = format_help_message()
@@ -90,8 +90,11 @@ class TestSlashCommandsRegistry:
     def test_models_command_registered(self) -> None:
         assert "/models" in SLASH_COMMANDS
 
-    def test_providers_command_registered(self) -> None:
-        assert "/providers" in SLASH_COMMANDS
+    def test_settings_command_registered(self) -> None:
+        assert "/settings" in SLASH_COMMANDS
+
+    def test_providers_command_not_registered(self) -> None:
+        assert "/providers" not in SLASH_COMMANDS
 
 
 # ---------------------------------------------------------------------------

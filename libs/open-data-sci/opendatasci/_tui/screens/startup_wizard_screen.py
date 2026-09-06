@@ -1,10 +1,11 @@
 """StartupWizardScreen — the mandatory, once-per-launch selection flow.
 
-Walks a fixed sequence of ``ConfigLeaf`` steps (always theme first, then
-whichever of provider/model/secondary_provider/secondary_model weren't
-already resolved from ``--config``/env — see
-``opendatasci._tui.config.onboarding.compute_missing_selection_fields``), one per
-screen, using the same option-list/text-input rendering as ``ConfigScreen``.
+Walks a fixed sequence of ``ConfigLeaf`` steps (theme, and whichever of
+provider/model/secondary_provider/secondary_model weren't already resolved
+from ``--config``/env/persisted settings — see
+``opendatasci._tui.config.onboarding.compute_missing_selection_fields``), each
+step shown only when its value isn't already resolved, one per screen, using
+the same option-list/text-input rendering as ``ConfigScreen``.
 No back-navigation and no Escape-to-cancel: this stands in for the CLI flags
 that used to make these choices, so it must run to completion before boot.
 """
@@ -106,18 +107,22 @@ class StartupWizardScreen(ModalScreen[None]):
             current = self._staged.get(leaf.field)
             # Pad every label to the widest one in this step so descriptions
             # start in the same column regardless of how long their label is
-            # (e.g. "dark" vs. "default (dark, colorblind)").
+            # (e.g. "dark" vs. "dark, colorblind").
             widest_label = max((len(choice.label) for choice in choices), default=0)
             options = []
-            for choice in choices:
+            current_index = 0
+            for i, choice in enumerate(choices):
                 marker = "●" if choice.value == current else "○"
                 label = f"{marker} {choice.label}"
                 if choice.description:
                     label += " " * (widest_label - len(choice.label))
                     label += f"  [dim]{choice.description}[/dim]"
                 options.append(Option(label, id=choice.value))
+                if choice.value == current:
+                    current_index = i
             option_list = OptionList(*options)
             body.mount(option_list)
+            option_list.highlighted = current_index
             option_list.focus()
         else:
             text_input = Input(

@@ -1,4 +1,4 @@
-"""ConfigScreen — the navigable panel behind /config, /models and /providers.
+"""ConfigScreen — the navigable panel behind /config (alias /settings) and /models.
 
 A ``ModalScreen`` pushed on top of the running app, following the same
 pattern as ``OnboardingScreen``: the chat screen underneath stays mounted and
@@ -247,7 +247,7 @@ class _MCPFormAction(Static, can_focus=True):
 
 
 class ConfigScreen(ModalScreen[None]):
-    """Tree-navigable settings panel: Display, Models, Providers."""
+    """Tree-navigable settings panel: Display, Integrations, Models, Personalization, Subagents."""
 
     DEFAULT_CSS = """
     ConfigScreen {
@@ -332,8 +332,8 @@ class ConfigScreen(ModalScreen[None]):
             yield Static(id="config-breadcrumb")
             yield Vertical(id="config-body")
 
-    def on_mount(self) -> None:
-        self._render_level()
+    async def on_mount(self) -> None:
+        await self._render_level()
 
     # ── Rendering ──────────────────────────────────────────────────────────
 
@@ -377,15 +377,18 @@ class ConfigScreen(ModalScreen[None]):
             lines.append(f"[{theme['text_muted']}]{escape(self._status)}[/{theme['text_muted']}]")
         self.query_one("#config-breadcrumb", Static).update("\n".join(lines))
 
-    def _clear_body(self) -> None:
-        self.query_one("#config-body", Vertical).remove_children()
+    async def _clear_body(self) -> None:
+        # Must be awaited: mounting new widgets with fixed IDs (as every
+        # ``_render_*`` method below does) before the previous same-ID
+        # widgets have finished being removed raises Textual's DuplicateIds.
+        await self.query_one("#config-body", Vertical).remove_children()
 
-    def _render_level(self) -> None:
+    async def _render_level(self) -> None:
         self._error = ""
         self._mode = "browse"
         node = self._path[-1]
         self._breadcrumb_text()
-        self._clear_body()
+        await self._clear_body()
         body = self.query_one("#config-body", Vertical)
 
         if node.children:
@@ -407,19 +410,22 @@ class ConfigScreen(ModalScreen[None]):
         assert node.leaf is not None
         leaf = node.leaf
         if leaf.kind == "mcp_servers":
-            self._render_mcp_list()
+            await self._render_mcp_list()
             return
 
         choices = leaf.options(self._staged)
         if choices:
             options = []
             current = self._staged.get(leaf.field)
-            for choice in choices:
+            current_index = 0
+            for i, choice in enumerate(choices):
                 marker = "●" if choice.value == current else "○"
                 options.append(Option(f"{marker} {choice.label}", id=choice.value))
+                if choice.value == current:
+                    current_index = i
             option_list = _ConfigOptionList(*options)
             body.mount(option_list)
-            option_list.highlighted = self._cursor_by_path.get(self._path_key(), 0)
+            option_list.highlighted = self._cursor_by_path.get(self._path_key(), current_index)
             option_list.focus()
         else:
             self._mode = "text"
@@ -445,11 +451,11 @@ class ConfigScreen(ModalScreen[None]):
 
     # ── MCP servers editor ──────────────────────────────────────────────────
 
-    def _render_mcp_list(self) -> None:
+    async def _render_mcp_list(self) -> None:
         self._mode = "mcp_list"
         self._error = ""
         self._breadcrumb_text()
-        self._clear_body()
+        await self._clear_body()
         body = self.query_one("#config-body", Vertical)
         options = [
             Option(
@@ -465,21 +471,25 @@ class ConfigScreen(ModalScreen[None]):
         option_list.highlighted = self._cursor_by_path.get((*self._path_key(), "mcp_list"), 0)
         option_list.focus()
 
-    def _render_mcp_load_path(self) -> None:
+    async def _render_mcp_load_path(self) -> None:
         self._mode = "mcp_load_path"
         self._breadcrumb_text()
-        self._clear_body()
+        await self._clear_body()
         body = self.query_one("#config-body", Vertical)
         text_input = _ConfigTextInput(placeholder="Path to mcp.json")
         body.mount(text_input)
         text_input.focus()
 
-    def _render_mcp_manual_form(self) -> None:
+    async def _render_mcp_manual_form(self) -> None:
         """The "Add manually" form — name, URL, transport and headers all on
         one screen at once, navigated with Up/Down between fields."""
         self._mode = "mcp_manual_form"
         self._breadcrumb_text()
-        self._clear_body()
+        focused = self.focused
+        refocus_id = (
+            focused.id if focused is not None and focused.id in _MCP_FORM_FIELD_IDS else None
+        )
+        await self._clear_body()
         body = self.query_one("#config-body", Vertical)
         body.mount(Static("Server name", classes="mcp-form-label"))
         body.mount(
@@ -509,7 +519,10 @@ class ConfigScreen(ModalScreen[None]):
         )
         action_label = "Checking connection…" if self._mcp_checking else "✔ Add server"
         body.mount(_MCPFormAction(action_label, id="mcp-form-action"))
-        self.query_one("#mcp-form-name", _ConfigTextInput).focus()
+        # Re-rendering to reflect a "checking..." state must keep focus where
+        # the user left it (e.g. on the Add button) rather than yanking it
+        # back to the name field every time.
+        self.query_one(f"#{refocus_id or 'mcp-form-name'}").focus()
 
     def _move_form_focus(self, delta: int) -> None:
         if self._mode != "mcp_manual_form":
@@ -521,10 +534,10 @@ class ConfigScreen(ModalScreen[None]):
         if 0 <= new_idx < len(_MCP_FORM_FIELD_IDS):
             self.query_one(f"#{_MCP_FORM_FIELD_IDS[new_idx]}").focus()
 
-    def _render_mcp_load_select(self) -> None:
+    async def _render_mcp_load_select(self) -> None:
         self._mode = "mcp_load_select"
         self._breadcrumb_text()
-        self._clear_body()
+        await self._clear_body()
         body = self.query_one("#config-body", Vertical)
         options = []
         for idx, server in enumerate(self._mcp_candidates):
@@ -558,25 +571,25 @@ class ConfigScreen(ModalScreen[None]):
         self._mcp_pending_transport = MCPTransport.HTTP
         self._mcp_pending_headers_text = ""
 
-    def _handle_mcp_load_path_submit(self, value: str) -> None:
+    async def _handle_mcp_load_path_submit(self, value: str) -> None:
         if not value:
-            self._render_mcp_list()
+            await self._render_mcp_list()
             return
         try:
             candidates = load_named_mcp_servers(Path(value))
         except Exception as exc:
             self._error = f"Couldn't read {value}: {exc}"
-            self._render_mcp_load_path()
+            await self._render_mcp_load_path()
             return
         if not candidates:
             self._error = f"No MCP servers found in {value}"
-            self._render_mcp_load_path()
+            await self._render_mcp_load_path()
             return
         self._error = ""
         self._mcp_candidates = candidates
         self._mcp_selected = set()
         self._mcp_select_cursor = 0
-        self._render_mcp_load_select()
+        await self._render_mcp_load_select()
 
     @on(_McpFormSubmit)
     async def _on_mcp_form_submit(self, event: _McpFormSubmit) -> None:
@@ -587,12 +600,12 @@ class ConfigScreen(ModalScreen[None]):
         url = (self._mcp_pending_url or "").strip()
         if not name or not url:
             self._error = "Server name and URL are required"
-            self._render_mcp_manual_form()
+            await self._render_mcp_manual_form()
             return
         headers, header_error = _parse_headers_text(self._mcp_pending_headers_text)
         if header_error:
             self._error = header_error
-            self._render_mcp_manual_form()
+            await self._render_mcp_manual_form()
             return
 
         server = MCPServerSpec(
@@ -601,7 +614,7 @@ class ConfigScreen(ModalScreen[None]):
         self._error = ""
         self._status = "Checking connection…"
         self._mcp_checking = True
-        self._render_mcp_manual_form()
+        await self._render_mcp_manual_form()
         try:
             await check_mcp_server(server)
         except Exception as exc:
@@ -610,19 +623,19 @@ class ConfigScreen(ModalScreen[None]):
             self._mcp_checking = False
             self._status = ""
             self._error = f"Couldn't connect to {url}: {exc}"
-            self._render_mcp_manual_form()
+            await self._render_mcp_manual_form()
             return
 
         if self._mode != "mcp_manual_form" or not self._mcp_checking:
             return  # user navigated away while the check was in flight
         self._upsert_mcp_server(server)
         self._reset_mcp_transient_state()
-        self._render_mcp_list()
+        await self._render_mcp_list()
 
-    def _render_confirm(self) -> None:
+    async def _render_confirm(self) -> None:
         self._mode = "confirm"
         self._breadcrumb_text()
-        self._clear_body()
+        await self._clear_body()
         body = self.query_one("#config-body", Vertical)
         options = [
             Option(
@@ -661,7 +674,7 @@ class ConfigScreen(ModalScreen[None]):
                     self._error = error
                     self._initial_values = dict(self._staged)
                     self._initial_mcp_servers = list(self._mcp_servers)
-                    self._render_level()
+                    await self._render_level()
                     return
             # Both Save (on success) and Discard close the whole panel.
             self.dismiss()
@@ -673,11 +686,11 @@ class ConfigScreen(ModalScreen[None]):
             )
             if option_id.startswith("remove:"):
                 del self._mcp_servers[int(option_id.split(":", 1)[1])]
-                self._render_mcp_list()
+                await self._render_mcp_list()
             elif option_id == "mcp_load":
-                self._render_mcp_load_path()
+                await self._render_mcp_load_path()
             elif option_id == "mcp_manual":
-                self._render_mcp_manual_form()
+                await self._render_mcp_manual_form()
             return
 
         if self._mode == "mcp_load_select":
@@ -686,11 +699,11 @@ class ConfigScreen(ModalScreen[None]):
                 for idx in sorted(self._mcp_selected):
                     self._upsert_mcp_server(self._mcp_candidates[idx])
                 self._reset_mcp_transient_state()
-                self._render_mcp_list()
+                await self._render_mcp_list()
                 return
             idx = int(option_id.split(":", 1)[1])
             self._mcp_selected.symmetric_difference_update({idx})
-            self._render_mcp_load_select()
+            await self._render_mcp_load_select()
             return
 
         node = self._path[-1]
@@ -698,16 +711,16 @@ class ConfigScreen(ModalScreen[None]):
             self._cursor_by_path[self._path_key()] = event.option_list.highlighted or 0
             child = next(c for c in node.children if c.key == option_id)
             self._path.append(child)
-            self._render_level()
+            await self._render_level()
             return
 
         assert node.leaf is not None
         self._stage_value(node.leaf, option_id)
         self._path.pop()
-        self._render_level()
+        await self._render_level()
 
     @on(_ToggleSelectAll)
-    def _on_toggle_select_all(self, event: _ToggleSelectAll) -> None:
+    async def _on_toggle_select_all(self, event: _ToggleSelectAll) -> None:
         event.stop()
         if self._mode != "mcp_load_select":
             return
@@ -715,14 +728,14 @@ class ConfigScreen(ModalScreen[None]):
             self._mcp_selected = set()
         else:
             self._mcp_selected = set(range(len(self._mcp_candidates)))
-        self._render_mcp_load_select()
+        await self._render_mcp_load_select()
 
     @on(Input.Submitted)
     async def _on_text_submitted(self, event: Input.Submitted) -> None:
         event.stop()
         value = event.value.strip()
         if self._mode == "mcp_load_path":
-            self._handle_mcp_load_path_submit(value)
+            await self._handle_mcp_load_path_submit(value)
             return
         if self._mode == "mcp_manual_form":
             # Enter in a text field advances to the next field rather than
@@ -738,13 +751,13 @@ class ConfigScreen(ModalScreen[None]):
                 error = leaf.validate(value)
                 if error is not None:
                     self._error = error
-                    self._render_leaf_text_retry(leaf, value)
+                    await self._render_leaf_text_retry(leaf, value)
                     return
             self._stage_value(leaf, value)
         self._path.pop()
-        self._render_level()
+        await self._render_level()
 
-    def _render_leaf_text_retry(self, leaf: ConfigLeaf, value: str) -> None:
+    async def _render_leaf_text_retry(self, leaf: ConfigLeaf, value: str) -> None:
         """Re-show a leaf's text input after a validation error.
 
         Unlike ``_render_level``, this keeps ``self._error`` (so the message
@@ -753,7 +766,7 @@ class ConfigScreen(ModalScreen[None]):
         """
         self._mode = "text"
         self._breadcrumb_text()
-        self._clear_body()
+        await self._clear_body()
         body = self.query_one("#config-body", Vertical)
         text_input = _ConfigTextInput(value=value, placeholder=leaf.text_placeholder)
         body.mount(text_input)
@@ -789,45 +802,45 @@ class ConfigScreen(ModalScreen[None]):
 
     # ── Navigation ─────────────────────────────────────────────────────────
 
-    def _go_back_one_level(self) -> bool:
+    async def _go_back_one_level(self) -> bool:
         """Pop one level of the config tree. Returns False at the root."""
         if len(self._path) > 1:
             self._path.pop()
-            self._render_level()
+            await self._render_level()
             return True
         return False
 
     @on(_NavigateBack)
-    def _on_navigate_back(self, event: _NavigateBack) -> None:
+    async def _on_navigate_back(self, event: _NavigateBack) -> None:
         event.stop()
         if self._mode == "confirm":
-            self._render_level()
+            await self._render_level()
             return
         if self._mode in _MCP_WIZARD_MODES:
             self._reset_mcp_transient_state()
-            self._render_mcp_list()
+            await self._render_mcp_list()
             return
-        self._go_back_one_level()
+        await self._go_back_one_level()
 
     @on(_RequestClose)
-    def _on_request_close(self, event: _RequestClose) -> None:
+    async def _on_request_close(self, event: _RequestClose) -> None:
         event.stop()
         if self._mode == "confirm":
             self.dismiss()
             return
         if self._mode in _MCP_WIZARD_MODES:
             self._reset_mcp_transient_state()
-            self._render_mcp_list()
+            await self._render_mcp_list()
             return
         # Escape behaves like Left (step back one level) everywhere except
         # at the tree's root, where there's nothing left to step back to —
         # only there does it mean "leave the panel", prompting Save/Discard.
-        if self._go_back_one_level():
+        if await self._go_back_one_level():
             return
         if diff_values(self._initial_values, self._staged) or (
             self._mcp_servers != self._initial_mcp_servers
         ):
-            self._render_confirm()
+            await self._render_confirm()
         else:
             self.dismiss()
 

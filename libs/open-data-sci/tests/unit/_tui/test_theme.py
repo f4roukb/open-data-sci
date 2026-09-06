@@ -12,7 +12,7 @@ from opendatasci._tui.style import theme as _theme
 # `_theme.active`/`active_name` after every test in this package, so tests
 # below are free to call set_active() without cleaning up manually.
 
-_DEFAULT_NAME = "default (dark, colorblind)"
+_DEFAULT_NAME = "dark, colorblind"
 
 
 class TestRequiredKeys:
@@ -36,7 +36,6 @@ class TestThemeRegistry:
         assert list(_theme.THEMES.keys()) == [
             _DEFAULT_NAME,
             "dark",
-            "dark-grey",
             "light",
             "light (colorblind)",
         ]
@@ -62,8 +61,8 @@ class TestSetActive:
         assert _theme.active == _theme.LIGHT
 
     def test_valid_name_updates_active_name(self) -> None:
-        _theme.set_active("dark-grey")
-        assert _theme.active_name == "dark-grey"
+        _theme.set_active("light")
+        assert _theme.active_name == "light"
 
     def test_unknown_name_returns_false(self) -> None:
         assert _theme.set_active("does-not-exist") is False

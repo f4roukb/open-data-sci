@@ -26,6 +26,7 @@ from opendatasci.memory.messages import (
     get_turn_end_timestamp,
     get_turn_start_timestamp,
 )
+from opendatasci.models.factory import bind_structured_output
 from opendatasci.prompts.prompt_templates import (
     CHAT_COMPACTOR_SYSTEM_PROMPT,
     TURN_SUMMARIZER_SYSTEM_PROMPT,
@@ -209,7 +210,9 @@ class ChatTurnSummarizer:
         self._structured_llm: Any = None
         if summarizer_llm is not None:
             try:
-                self._structured_llm = summarizer_llm.with_structured_output(_ChatTurnSummaryOutput)
+                self._structured_llm = bind_structured_output(
+                    summarizer_llm, _ChatTurnSummaryOutput
+                )
             except Exception:
                 logger.warning(
                     "Could not bind structured output to summarizer LLM; summarization disabled",
