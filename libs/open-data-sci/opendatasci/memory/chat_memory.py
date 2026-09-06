@@ -50,15 +50,17 @@ class TurnStepBatchSummary(FrozenStrictBaseModel):
     goal: str
     actions: str
     outcome: str
+    key_observations: str
     artifacts: list[str]
 
     def render(self, index: int) -> str:
-        artifacts = "; ".join(self.artifacts) if self.artifacts else "none"
+        artifacts = "; ".join(self.artifacts) if self.artifacts else "No artifacts"
         return (
             f'    <batch index="{index}">\n'
             f"      <goal>{self.goal}</goal>\n"
             f"      <actions>{self.actions}</actions>\n"
             f"      <outcome>{self.outcome}</outcome>\n"
+            f"      <key_observations>{self.key_observations}</key_observations>\n"
             f"      <artifacts>{artifacts}</artifacts>\n"
             f"    </batch>"
         )
@@ -135,6 +137,13 @@ class _TurnStepBatchSummaryOutput(FrozenBaseModel):
             "explicitly rather than only reporting the final state."
         )
     )
+    key_observations: str = Field(
+        description=(
+            "Any notable facts, constraints, or discoveries surfaced in this batch that "
+            "aren't already captured by goal/actions/outcome — e.g. a surprising finding, "
+            "a caveat the user should know about."
+        )
+    )
     artifacts: list[str] = Field(
         description=(
             "Paths of files this batch created or modified, especially anything written "
@@ -186,6 +195,7 @@ def _build_fallback_step_batches(turn_messages: list[BaseMessage]) -> list[TurnS
                     goal=goal,
                     actions=f"{tc['name']}({tc.get('args', {})})",
                     outcome=outcome.strip() if outcome else "(no result captured)",
+                    key_observations="(none)",
                     artifacts=[],
                 )
             )
@@ -250,6 +260,7 @@ class ChatTurnSummarizer:
                             goal=batch.goal,
                             actions=batch.actions,
                             outcome=batch.outcome,
+                            key_observations=batch.key_observations,
                             artifacts=batch.artifacts,
                         )
                         for batch in output.step_batches

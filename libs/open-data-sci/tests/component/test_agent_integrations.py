@@ -314,6 +314,7 @@ class TestTurnSummarizerIntegration:
                     goal="Greet the user.",
                     actions="Replied directly, no tools used.",
                     outcome="Said hello.",
+                    key_observations="None.",
                     artifacts=[],
                 )
             ]
