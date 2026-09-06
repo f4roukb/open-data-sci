@@ -154,5 +154,5 @@ class HumanApprovalManager(HumanApprovalBaseManager):
             SystemMessage(content=_ASSESSMENT_SYSTEM_PROMPT),
             HumanMessage(content=f"Command the agent wants to run:\n```\n{command}\n```"),
         ]
-        raw: _CommandImpactAssessment = await self._llm.ainvoke(messages)  # type: ignore[assignment]
+        raw: _CommandImpactAssessment = await self._llm.ainvoke(messages)
         return CommandImpactAssessment.from_structured(raw)

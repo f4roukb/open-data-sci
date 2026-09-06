@@ -4,7 +4,7 @@ import logging
 import os
 import uuid
 from pathlib import Path
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, cast
 
 from dotenv import load_dotenv
 from rich.console import Console
@@ -521,7 +521,7 @@ Examples:
 
     overrides: dict[str, object] = {}
     _apply_global_config_fallback(overrides, {**secrets, **settings})
-    overrides, coerce_error = _coerce_config_values(overrides)
+    overrides, coerce_error = _coerce_config_values(cast("dict[str, str]", overrides))
     if coerce_error is not None:
         logger.warning("Dropping invalid persisted config value: %s", coerce_error)
         overrides.pop("worker_timeout_seconds", None)
