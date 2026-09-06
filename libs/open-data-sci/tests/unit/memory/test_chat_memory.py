@@ -45,10 +45,15 @@ def _step_batch(
     goal: str = "did something",
     actions: str = "tried a tool",
     outcome: str = "it worked",
+    key_observations: str = "nothing notable",
     artifacts: list[str] | None = None,
 ) -> TurnStepBatchSummary:
     return TurnStepBatchSummary(
-        goal=goal, actions=actions, outcome=outcome, artifacts=artifacts or []
+        goal=goal,
+        actions=actions,
+        outcome=outcome,
+        key_observations=key_observations,
+        artifacts=artifacts or [],
     )
 
 
@@ -99,6 +104,7 @@ class TestChatTurnSummary:
         assert "<goal>" in content
         assert "<actions>" in content
         assert "<outcome>" in content
+        assert "<key_observations>" in content
         assert "<artifacts>" in content
         assert "<agent_response>" in content
 
@@ -106,9 +112,9 @@ class TestChatTurnSummary:
         content = _summary(step_batches=[]).to_content()
         assert "(no steps)" in content
 
-    def test_to_content_renders_empty_artifacts_as_none(self) -> None:
+    def test_to_content_renders_empty_artifacts_as_no_artifacts(self) -> None:
         content = _summary(step_batches=[_step_batch(artifacts=[])]).to_content()
-        assert "<artifacts>none</artifacts>" in content
+        assert "<artifacts>No artifacts</artifacts>" in content
 
     def test_to_content_joins_multiple_artifacts(self) -> None:
         content = _summary(
@@ -205,7 +211,9 @@ class TestChatTurnSummarizer:
         structured_llm.ainvoke = AsyncMock(
             return_value=_ChatTurnSummaryOutput(
                 step_batches=[
-                    _TurnStepBatchSummaryOutput(goal="g", actions="a", outcome="o", artifacts=[])
+                    _TurnStepBatchSummaryOutput(
+                        goal="g", actions="a", outcome="o", key_observations="k", artifacts=[]
+                    )
                 ]
             )
         )
