@@ -82,10 +82,14 @@ pip install "open-data-sci[aws,gemini,deep-learning,finance]"
 
 ## Choosing a provider
 
-OpenDataSci works with every major LLM provider. Select one via the `--provider` TUI flag or the `provider` field in `OpenDataSciConfig`.
+OpenDataSci works with every major LLM provider. Choose one by passing a `--config`
+file that sets the `provider` field in `OpenDataSciConfig` (see
+[`examples/configs/`](../examples/configs/) for an annotated file per provider) —
+or leave it unset and the TUI's onboarding wizard prompts for a choice interactively
+on first launch.
 
-| Provider | `--provider` | Default model | Auth |
-|----------|-------------|---------------|------|
+| Provider | `provider` value | Default model | Auth |
+|----------|-------------------|---------------|------|
 | Anthropic *(default)* | `anthropic` | `claude-sonnet-5` | `ANTHROPIC_API_KEY` |
 | OpenAI | `openai` | `gpt-5.6-sol` | `OPENAI_API_KEY` |
 | AWS Bedrock | `bedrock` | `us.anthropic.claude-sonnet-5` | boto3 credential chain |
@@ -94,8 +98,6 @@ OpenDataSci works with every major LLM provider. Select one via the `--provider`
 | Azure OpenAI | `azure` | `gpt-5.6-sol` | `AZURE_OPENAI_API_KEY` or service principal |
 | Ollama | `ollama` | `qwen3.5:9b` | none (local server) |
 | OpenAI-compatible server (e.g. vLLM) | `openai_compatible_server` | `Qwen/Qwen3.5-4B` | none (self-hosted) |
-
-Run `opendatasci --list-providers` to print this table at any time.
 
 ### Authentication
 
@@ -110,7 +112,7 @@ Run `opendatasci --list-providers` to print this table at any time.
 
     ```bash
     export OPENAI_API_KEY=sk-...
-    opendatasci data.csv --provider openai
+    opendatasci data.csv --config examples/configs/config_openai.yaml
     ```
 
 === "AWS Bedrock"
@@ -120,7 +122,7 @@ Run `opendatasci --list-providers` to print this table at any time.
     export AWS_ACCESS_KEY_ID=...
     export AWS_SECRET_ACCESS_KEY=...
     export REGION=us-east-1
-    opendatasci data.csv --provider bedrock
+    opendatasci data.csv --config examples/configs/config_bedrock.yaml
 
     # Or use an IAM role / EC2 instance profile — no env vars needed
     ```
@@ -129,7 +131,7 @@ Run `opendatasci --list-providers` to print this table at any time.
 
     ```bash
     export GOOGLE_API_KEY=AIza...
-    opendatasci data.csv --provider gemini
+    opendatasci data.csv --config examples/configs/config_gemini.yaml
     ```
 
 === "Google Vertex AI"
@@ -138,7 +140,7 @@ Run `opendatasci --list-providers` to print this table at any time.
     gcloud auth application-default login
     export GOOGLE_CLOUD_PROJECT=my-project
     export GOOGLE_CLOUD_LOCATION=us-central1
-    opendatasci data.csv --provider vertexai
+    opendatasci data.csv --config examples/configs/config_vertexai.yaml
     ```
 
 === "Azure OpenAI"
@@ -146,14 +148,14 @@ Run `opendatasci --list-providers` to print this table at any time.
     ```bash
     export AZURE_OPENAI_ENDPOINT=https://my-resource.openai.azure.com
     export AZURE_OPENAI_API_KEY=...
-    opendatasci data.csv --provider azure --model gpt-5.6-sol
+    opendatasci data.csv --config examples/configs/config_azure.yaml
     ```
 
 === "Ollama"
 
     ```bash
     # Start Ollama first: ollama serve
-    opendatasci data.csv --provider ollama --model qwen3.5:9b
+    opendatasci data.csv --config examples/configs/config_ollama.yaml
     ```
 
 === "OpenAI-compatible server"
@@ -161,7 +163,7 @@ Run `opendatasci --list-providers` to print this table at any time.
     ```bash
     # Start any OpenAI-compatible server first, e.g. vLLM:
     # vllm serve Qwen/Qwen3.5-4B
-    opendatasci data.csv --provider openai_compatible_server --model Qwen/Qwen3.5-4B
+    opendatasci data.csv --config examples/configs/config_openai_compatible_server.yaml
     ```
 
 ---
@@ -175,32 +177,20 @@ opendatasci data.csv
 # Load an entire directory of data files
 opendatasci ./my-project/
 
-# Change model
-opendatasci data.csv --provider openai --model gpt-5.6-sol
-
-# Mix providers — heavy primary model, lightweight secondary
-opendatasci data.csv --provider anthropic --secondary-provider openai --secondary-model gpt-5.6-luna
-
-# Colour-blind-safe theme
-opendatasci data.csv --theme accessible
-
-# Load settings from a YAML file (TUI flags override individual fields)
+# Change provider/model, and mix providers (heavy primary, lightweight secondary) —
+# set provider/model/secondary_provider/secondary_model in the config file instead
 opendatasci data.csv --config opendatasci_config.yaml
 ```
+
+Anything a config file doesn't set — including the colour theme — is picked
+interactively by the TUI's onboarding wizard on first launch, and can be changed
+later from `/config` (or `/settings`) without relaunching.
 
 ### All TUI options
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--provider` | `anthropic` | LLM provider for the primary model |
-| `--model` | *(provider default)* | Primary model identifier |
-| `--secondary-provider` | *(same as `--provider`)* | Provider for the secondary model |
-| `--secondary-model` | *(provider default)* | Secondary model for lightweight tasks |
-| `--api-key` | *(env var)* | API key for the primary provider |
-| `--theme` | `default` | Colour theme: `default`, `accessible`, `light`, `solarized`, `dracula`. Switchable live in-session with `/theme <name>` |
-| `--debug` | `false` | Enable debug output — writes a detailed `opendatasci_debug.log` |
 | `--config` | | Path to a YAML config file |
-| `--list-providers` | | Print all providers and default models, then exit |
 | `--version` | | Print the installed version, then exit |
 
 ---

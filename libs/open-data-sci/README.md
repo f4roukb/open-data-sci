@@ -1,6 +1,16 @@
 # OpenDataSci
 
-A production-grade AI agent for data science and machine learning. See the [project README](../../README.md) for an overview, benchmark results, and feature descriptions.
+[![PyPI version](https://img.shields.io/pypi/v/open-data-sci.svg)](https://pypi.org/project/open-data-sci/)
+[![Python versions](https://img.shields.io/pypi/pyversions/open-data-sci.svg)](https://pypi.org/project/open-data-sci/)
+[![License](https://img.shields.io/pypi/l/open-data-sci.svg)](https://pypi.org/project/open-data-sci/)
+
+A production-grade AI agent for data science and machine learning — run it as an interactive terminal app, or embed it as an async Python SDK in your own service.
+
+- **Every major LLM provider** — Anthropic, OpenAI, AWS Bedrock, Google Gemini/Vertex AI, Azure OpenAI, Ollama, or any OpenAI-compatible server ([details](#models))
+- **Sandboxed code execution** — the agent writes and runs real Python and CLI code against your data, isolated from the host
+- **Zero-config first run** — point it at a file or directory and an interactive wizard handles the rest; every setting is also scriptable through YAML, environment variables, or the Python SDK
+- **Extensible** — connect [MCP servers](#mcp-servers) for extra tools, or add [custom skills](#custom-skills) to specialise the agent for a domain
+- **Cloud-portable architecture** — every stateful dependency (workspace, sandbox, memory, sessions, background tasks) sits behind an abstract interface, so a multi-tenant deployment is a matter of swapping implementations rather than rewriting the agent ([details](#cloud-portability))
 
 ## Contents
 
@@ -96,7 +106,7 @@ pip install "open-data-sci[finance]"       # Finance data — yfinance
 
 The `[deep-learning]` extra — deep learning directly on the host, for machines with a GPU or NPU — is required to use the **Deep Learning** skill; without it, the agent's sandboxed Python environment has no training framework available. The `[finance]` extra is required to use the **`finance.yahoo.com`** skill.
 
-> **GPU access inside the sandbox is opt-in, and it's a real host-kernel exposure.** When a `[deep-learning]` package (`torch`, `jax`, `transformers`, `sentence-transformers`) is installed, the sandbox bind-mounts the host's GPU compute device nodes (`/dev/nvidia*`, `/dev/dri/renderD*` on Linux) so those frameworks can actually use the GPU — otherwise sandboxed code has no path to accelerator hardware at all. This is a materially different risk than the sandbox's filesystem/network isolation: it hands sandboxed code direct `ioctl` access to the host kernel's GPU driver (GPU driver ioctl surfaces have a real CVE history), and there's no GPU-equivalent of the CPU/memory resource limits the sandbox otherwise enforces. A warning is logged whenever this activates. See the module docstring in `opendatasci/sandbox/srt.py` for the full detail. macOS/Metal passthrough and NPU passthrough are not verified — see that docstring for current status. Uninstall the `[deep-learning]` packages to disable this entirely.
+> **GPU access inside the sandbox is opt-in, and it's a real host-kernel exposure.** When a `[deep-learning]` package (`torch`, `jax`, `transformers`, `sentence-transformers`) is installed, the sandbox bind-mounts the host's accelerator device nodes (`/dev/nvidia*`, `/dev/dri/renderD*`, `/dev/dxg` for WSL2, and `/dev/accel/*` for NPUs on Linux) so those frameworks can actually use the hardware — otherwise sandboxed code has no path to accelerator hardware at all. This is a materially different risk than the sandbox's filesystem/network isolation: it hands sandboxed code direct `ioctl` access to the host kernel's GPU driver (GPU driver ioctl surfaces have a real CVE history), and there's no GPU-equivalent of the CPU/memory resource limits the sandbox otherwise enforces. A warning is logged whenever this activates. See the module docstring in `opendatasci/sandbox/srt.py` for the full detail — deep learning on macOS runs on CPU only, with no accelerator passthrough. Uninstall the `[deep-learning]` packages to disable this entirely.
 
 Multiple extras can be combined:
 
@@ -146,7 +156,7 @@ primary_temperature: 0.1
 opendatasci data.csv --config datasci.yaml
 ```
 
-Annotated config files for every supported provider are available in [`examples/configs/`](examples/configs/).
+An annotated config file ships for every supported provider.
 
 ### Python SDK
 
@@ -160,10 +170,6 @@ async with create_agent("data.csv") as agent:
 ```
 
 There's no wizard here — the SDK is not the TUI, so provide `config=OpenDataSciConfig(...)` (or set env vars) up front. See [Embedding OpenDataSci in Your Own App](#embedding-opendatasci-in-your-own-app).
-
-### More examples
-
-The [`examples/`](examples/README.md) directory covers TUI walkthroughs, batch scripts, Jupyter notebooks, and annotated config files across every supported provider.
 
 ---
 
@@ -183,7 +189,7 @@ A short, linear flow (theme, then whichever of primary/secondary provider and mo
 
 ### 3. Provider secrets
 
-Whatever the chosen provider still needs — an API key, an Azure endpoint, a GCP project ID — is collected one field at a time. Each value is saved as you enter it (to `~/.opendatasci/config.yaml`), so quitting partway through doesn't lose what you've already typed, and it won't be asked again on a later launch. Environment variables and `.env` always take precedence over this saved file, so a value you export or add to `.env` later overrides whatever the wizard remembered.
+Whatever the chosen provider still needs — an API key, an Azure endpoint, a GCP project ID — is collected one field at a time. Each value is saved as you enter it (to `~/.opendatasci/secrets/api.yaml`), so quitting partway through doesn't lose what you've already typed, and it won't be asked again on a later launch. Environment variables and `.env` always take precedence over this saved file, so a value you export or add to `.env` later overrides whatever the wizard remembered.
 
 Everything the wizard sets can be changed afterwards, live, from the `/config` panel — see [The `/config` panel](#the-config-panel).
 
@@ -206,7 +212,6 @@ opendatasci PATH [OPTIONS]
 | Flag | Description |
 |------|-------------|
 | `--config FILE` | Path to a YAML file containing `OpenDataSciConfig` fields. Fields it sets are used as-is; anything it doesn't set (including theme, which it never sets) is picked interactively on startup |
-| `--list-providers` | Print all supported providers and their default models, then exit |
 | `--version` | Print the installed version, then exit |
 
 Provider, model, secondary provider/model, theme, and API keys are set through `--config`, environment variables/`.env`, or the interactive wizard/`/config` panel. If you're scripting a launch and want it to never prompt, use `--config` (and make sure any secrets it needs are in the environment).
@@ -222,9 +227,6 @@ opendatasci data.csv --config datasci.yaml
 
 # Bedrock, credentials from the environment, model/provider from the file
 REGION=us-west-2 opendatasci ./project/ --config examples/configs/config_bedrock.yaml
-
-# See all available providers and their default models
-opendatasci --list-providers
 ```
 
 ---
@@ -261,7 +263,7 @@ Run `/config` (or `/settings` — same command, either name works) to open a nav
 | Section | What's in it |
 |---------|--------------|
 | **Display** | Theme (see [Themes](#themes)); Tips (toggle the rotating footer hints) |
-| **Integrations** | **MCP Servers** — add, verify, or remove [MCP servers](#mcp-servers) the agent can call, either by loading candidates from an `mcp.json` file or entering one manually (name, URL, transport, headers); **Skills directory** — point at a folder of [custom skills](#custom-skills) |
+| **Integrations** | **MCP Servers** — add, verify, or remove [MCP servers](#mcp-servers) the agent can call, either by loading candidates from an `mcp.json` file or entering one manually (name, URL, transport, headers); **Custom skills** — point at a folder of [custom skills](#custom-skills) |
 | **Models** | Grouped under **Primary Model** (provider, model, sampling temperature) and **Secondary Model** (provider, model) — picking a new provider resets its paired model to that provider's default, and the model choices offered depend on whichever provider is currently selected |
 | **Personalization** | Agent display name |
 | **Subagents** | Worker timeout (max seconds a spawned worker may run) |
@@ -278,7 +280,7 @@ Attach files or code snippets to any message using the `@` prefix:
 @path/to/file.py                      # attach an entire file
 ```
 
-The agent sees the attached content as structured context inline with your message. Paths are resolved relative to your current working directory.
+While typing, matching files are discovered relative to your current working directory. The message sent to the agent carries a reference to the resolved absolute path rather than the file's content — the agent reads the file itself using its own file-reading tool.
 
 ---
 
@@ -304,8 +306,6 @@ Pick a theme in the setup wizard, or switch live any time from `/config` → Dis
 | `default` | Dark background with muted accents (built-in default) |
 | `accessible` | Okabe-Ito palette — colour-blind safe |
 | `light` | Light background with dark text |
-| `solarized` | Solarized Dark by Ethan Schoonover |
-| `dracula` | Dracula — vivid pastels on near-black |
 
 ---
 
@@ -316,17 +316,17 @@ The async-first Python API gives full programmatic control over the agent, indep
 ### Basic usage
 
 ```python
-from opendatasci import create_agent
+from opendatasci import Invocation, create_agent
 
 async with create_agent("sales.xlsx") as agent:
-    async for event in agent.astream("What is the average revenue by region?"):
+    async for event in agent.astream(Invocation.from_text("What is the average revenue by region?")):
         print(event)
 ```
 
 ### Custom provider and model
 
 ```python
-from opendatasci import OpenDataSciConfig, create_agent
+from opendatasci import Invocation, OpenDataSciConfig, create_agent
 
 config = OpenDataSciConfig(
     provider="openai",
@@ -336,7 +336,7 @@ config = OpenDataSciConfig(
 )
 
 async with create_agent("data.parquet", config=config) as agent:
-    async for event in agent.astream("Train a gradient boosting model on the target column."):
+    async for event in agent.astream(Invocation.from_text("Train a gradient boosting model on the target column.")):
         print(event)
 ```
 
@@ -379,7 +379,7 @@ The same `create_agent`/`astream` pattern the TUI is built on works unattended �
 
 ### Headless batch processing
 
-The pattern below (trimmed from [`examples/scripts/020_script_anthropic.py`](examples/scripts/020_script_anthropic.py) — see that file, plus its [OpenAI-compatible-server](examples/scripts/021_script_openai_compatible_server.py) and [Bedrock](examples/scripts/022_script_bedrock.py) variants, for the runnable version) drives the agent over a batch of files with no TUI at all — suitable for a scheduled job, a CI pipeline, or a worker process behind an API:
+The pattern below drives the agent over a batch of files with no TUI at all — suitable for a scheduled job, a CI pipeline, or a worker process behind an API:
 
 ```python
 import asyncio
@@ -430,7 +430,7 @@ async for event in agent.astream(Invocation.from_text("Now train a baseline mode
 await stack.aclose()  # tears down the sandbox and any open connections
 ```
 
-This is the shape a desktop app's backend or a long-running notebook kernel wants: one agent instance per user session, driven by whatever UI events (button clicks, chat input) your app already has, forwarding `agent.astream()`'s event stream to your own renderer instead of a terminal. See [`examples/notebooks/`](examples/notebooks/) for a full worked example (dataset profiling → model training → SHAP interpretation across several cells/turns).
+This is the shape a desktop app's backend or a long-running notebook kernel wants: one agent instance per user session, driven by whatever UI events (button clicks, chat input) your app already has, forwarding `agent.astream()`'s event stream to your own renderer instead of a terminal — for instance, a notebook that profiles a dataset, trains a model, and runs a SHAP interpretation across several cells, each a follow-up turn in the same session.
 
 ### Cloud / multi-tenant deployment notes
 
@@ -438,7 +438,7 @@ This is the shape a desktop app's backend or a long-running notebook kernel want
 - **Secrets belong to your deployment's own secret manager**, not `.env` — pass them as `OpenDataSciConfig(...)` kwargs sourced from wherever your platform already keeps them (env injected by the orchestrator, a secrets API, etc.).
 - **Sandboxed code execution needs the same [system dependencies](#system-dependencies)** (`ripgrep`, and on Linux `bubblewrap`/`socat`) baked into your container image — there's no wizard to fall back on in a headless deployment, so install them at build time.
 - **`agent.astream()`'s event stream** (`token`/`response`/`error`, plus tool-call and background-task events) is the integration surface for a custom frontend — pipe it into a WebSocket, an SSE endpoint, or your desktop app's own message-passing, rather than trying to reuse any `_tui`-internal code (that package is private and not part of the public API).
-- See [`examples/configs/`](examples/configs/) for a ready-made `OpenDataSciConfig` per provider to adapt into your deployment's own config-loading path.
+- A ready-made `OpenDataSciConfig` ships for each provider to adapt into your deployment's own config-loading path.
 
 ---
 
@@ -478,8 +478,6 @@ OpenDataSci supports every major LLM provider. Pass `provider`/`model` in your `
 | Azure OpenAI | `azure` | `open-data-sci[azure]` | `gpt-5.6-sol` |
 | Ollama | `ollama` | `open-data-sci[ollama]` | `qwen3.5:9b` |
 
-Run `opendatasci --list-providers` to print this table from the CLI at any time.
-
 ---
 
 ## MCP Servers
@@ -490,24 +488,7 @@ Connect the agent to external [Model Context Protocol](https://modelcontextproto
 
 The easiest path: `/config` → Integrations → MCP Servers. Load candidate servers from an existing `mcp.json` file (pick which to add), or add one manually (name, URL, transport, headers) — either way, the server is verified reachable before being kept.
 
-### `.opendatasci/mcp.json`
-
-Place this inside your workspace's `.opendatasci/` directory to have it picked up automatically. The format mirrors Cursor/VS Code's convention:
-
-```json
-{
-  "mcpServers": {
-    "my-server": {
-      "url": "http://localhost:8080",
-      "type": "http",
-      "headers": { "Authorization": "Bearer ..." }
-    },
-    "another": { "url": "http://localhost:9000", "type": "sse" }
-  }
-}
-```
-
-`type` defaults to `"http"` and `headers` defaults to `{}` when omitted. Tools are (re)discovered from every configured server at the start of each turn, not just once at startup, so enabling/disabling tools on the server side takes effect without restarting OpenDataSci.
+Tools are (re)discovered from every configured server at the start of each turn, not just once at startup, so enabling/disabling tools on the server side takes effect without restarting OpenDataSci.
 
 ### Via the SDK
 
@@ -583,6 +564,8 @@ async with create_agent("data.csv", config=config) as agent:
 
 ## Environment Variables
 
+Each variable below is the environment alias for the matching field in the [`OpenDataSciConfig` reference](#opendatasciconfig-reference) — use whichever fits your setup: Python SDK kwargs, or environment/`.env`.
+
 | Variable | Description |
 |----------|-------------|
 | `ANTHROPIC_API_KEY` | API key for the Anthropic provider |
@@ -605,4 +588,4 @@ async with create_agent("data.csv", config=config) as agent:
 | `AUTOCOMPACTION_THRESHOLD` | Token count at which context is compacted mid-turn (default: `96000`) |
 | `CODE_EXEC_TIMEOUT` | Max seconds for a single sandboxed code execution (default: `1800`) |
 
-A `.env` file in the working directory is loaded automatically at startup. Anything set here (or exported directly) always overrides both a `--config` YAML file's corresponding field and whatever the setup wizard has saved to `~/.opendatasci/config.yaml`.
+A `.env` file in the working directory is loaded automatically at startup. A `--config` YAML file's fields take precedence over environment variables and `.env`, which in turn take precedence over whatever the setup wizard has saved to `~/.opendatasci/settings/global.yaml` and `~/.opendatasci/secrets/api.yaml`.

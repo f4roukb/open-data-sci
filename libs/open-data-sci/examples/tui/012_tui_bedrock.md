@@ -88,8 +88,6 @@ region (`us.`, `eu.`, `ap.`). Always use the prefixed form:
 | EU | `eu.anthropic.claude-sonnet-5` |
 | AP | `ap.anthropic.claude-sonnet-5` |
 
-Pass `--list-providers` to print the full default model table at any time.
-
 ---
 
 ## A realistic session
