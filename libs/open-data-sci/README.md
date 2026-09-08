@@ -292,7 +292,7 @@ Every stateful dependency OpenDataSci relies on — where it stores data, where 
 
 ## Models
 
-OpenDataSci supports every major LLM provider. Pass `provider`/`model` in your `--config` YAML or `OpenDataSciConfig`, or pick them from the setup wizard / `/config` → Providers.
+OpenDataSci supports every major LLM provider. Pass `provider`/`model` in your `--config` YAML or `OpenDataSciConfig`, or pick them from the setup wizard / `/config` → Models.
 
 | Provider | Value | Extra required | Default model |
 |----------|-------|-----------------|---------------|
