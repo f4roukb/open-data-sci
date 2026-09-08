@@ -16,9 +16,11 @@ This background-scheduling layer is backed by `opendatasci.tasks`.
 
 | Method | Use it to |
 |---|---|
+| `submit_task(work, summary)` | Create a `BackgroundTaskRecord` and schedule `work` to run against it, returning its `task_id`. `work` receives only the `task_id`, not the record — a task manager exposes reading tasks, not writing to them from the scheduling side. |
 | `get_task(task_id)` | Look up one task's current record. |
 | `list_tasks()` | List every tracked task. |
 | `cancel_task(task_id)` | Request cancellation (best-effort). |
+| `upsert_record(record)` | Insert or overwrite a `BackgroundTaskRecord` wholesale, keyed by `record.task_id`. For a worker running independently of the manager (e.g. in a different process) to report its own state back directly. |
 | `push_activity(task_id, entry)` | Append one plain-text entry to a task's activity log (used internally by the `task` tool as a worker's tool calls complete). |
 | `monitor_task(task_id, regex_patterns)` | Register one fire-once monitor per pattern against a task's activity log; returns a monitor ID per pattern. See [Monitoring task activity](#monitoring-task-activity). |
 | `list_task_monitors(task_id)` | Return `{monitor_id: pattern}` for a task's currently active monitors. |
@@ -65,6 +67,13 @@ This is exposed to the agent as the `monitor_task` tool, alongside `check_task`/
 ---
 
 ::: opendatasci.tasks.base.BackgroundTaskUpdate
+    options:
+      show_root_heading: true
+      show_source: false
+
+---
+
+::: opendatasci.tasks.base.BackgroundTaskUpdateEvent
     options:
       show_root_heading: true
       show_source: false

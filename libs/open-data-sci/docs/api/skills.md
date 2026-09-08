@@ -39,7 +39,9 @@ async with create_agent("data.csv", config=config) as agent:
 
 Custom skills are merged with the built-in set and the workspace's own skills; a name that
 exists at more than one layer resolves to the highest-precedence one (`skills_directory` >
-workspace `.opendatasci/skills/` > built-in).
+workspace `.opendatasci/skills/` > built-in). `LocalSkillStore.load_user_defined()` returns
+just the non-built-in skills — everything from the workspace directory and the explicit
+`skills_directory` override, with the bundled built-ins excluded.
 
 ## Custom skill store
 
