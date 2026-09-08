@@ -12,7 +12,7 @@
 
 </div>
 
-**OpenDataSci is a truly autonomous AI agent purpose-built for data science and machine learning.** Point it at a dataset (single file or directory), tell it what you need: it plans with scientific rigor, writes and executes code, self-reviews its progress, and iterates fast until it gets it right. **No data science knowledge required.**
+OpenDataSci is a secure AI agent specialized in data science and machine learning. It works autonomously: plans, codes, corrects itself, iterates, and accumulates knowledge about your data across sessions. A from-scratch run scored **top-30% among 3,000+ teams** in a live Kaggle competition, with **zero guidance**. OpenDataSci runs anywhere: It ships to run locally on your **Linux/macOS device** offering a Claude-Code-adjacent experience, it's **cloud-portable** (AWS, GCP, Azure), and is compatible with **self-hosted deployments** (any OpenAI-compatible server). 
 
 <div align="center">
   <img src="resources/demo/run-open-data-sci-fast.gif" alt="OpenDataSci demo" width="95%" />
@@ -24,12 +24,13 @@
 
 - [Benchmark](#benchmark)
 - [What does OpenDataSci do?](#what-it-does)
-- [For data scientists](#for-data-scientists)
 - [Supported LLM providers](#supported-llm-providers)
+- [Cloud portability](#cloud-portability)
 - [Built-in ML library surface](#built-in-ml-library-surface)
+- [Documentation](#documentation)
 - [Setup](#setup)
 - [Examples](#examples)
-- [Documentation](#documentation)
+- [For Data Scientists](#for-data-scientists)
 
 ---
 
@@ -55,29 +56,17 @@ Most "AI for data" tools turn you into the bottleneck. Every experiment starts w
 
 | | |
 |--|--|
-| **Rich TUI** | Interactive terminal interface for real-time progress, tool calls, and agent output |
+| **Near-zero config** | Point it at your data and go — a setup wizard walks you through provider/model choice on first run |
 | **Full workflow** | EDA, cleaning, feature engineering, modelling, evaluation, visualisation, reporting |
-| **Real code execution** | Full Python in a native OS sandbox |
-| **Built-in DS methodology** | Leakage prevention, proper evaluation, causality awareness |
-| **Self-review** | Every significant step is reviewed and revised before moving forward |
-| **Parallel experimentation** | Up to 3 concurrent worker agents for ensemble runs, hyperparameter sweeps, strategy comparisons |
-| **Persistent project memory** | Data schema, profiles, and notes accumulate across sessions |
-| **Safe by default** | Sandboxed execution: everything runs safely inside your workspace |
-| **Human-in-the-loop** | At genuine decision forks that impact your intended goal, it pauses and asks, then gets on with it |
-| **Specialized Skills** | Data Science, Machine Learning, Deep Learning, Quantitative Analysis, Competitive DS, Education |
-| **Extensible** | Drop Markdown skill files into `.opendatasci/skills/` to inject your own domain knowledge |
-| **Web access** | Searches for papers, docs, and library changelogs mid-analysis |
-| **MCP-ready** | Connect any MCP-compatible tool server: internal databases, custom APIs, proprietary sources |
-
----
-
-## For data scientists
-
-If you already know what you're doing, **OpenDataSci removes the friction that eats your time**: boilerplate EDA, repetitive feature engineering cycles, juggling notebooks across experiments. You stay focused on what actually requires your judgment, like improving business metrics.
-
-Use it as a first-pass analyst: let it explore the data, surface what matters, and run the baseline while you think about strategy. Spin up parallel experiments without managing multiple environments. Inject your domain knowledge via skill files and have it applied consistently across every run. When you want to take the wheel, take it. OpenDataSci hands off cleanly.
-
-The benchmark above was a from-scratch run with no expert guidance. With yours, it will certainly further!
+| **Self-correcting** | Reviews and revises its own steps, and recovers from wrong turns without starting over |
+| **Sandboxed execution** | Runs real Python safely inside your workspace |
+| **Parallel agents** | Up to 3 concurrent subagents running parallel code executions — in the background, non-blocking |
+| **Per-project knowledge accumulation** | Data schema, profiles, and notes carry over across sessions |
+| **Skills** | Built-in skills (e.g., Data Science, Machine Learning) plus bring-your-own via Markdown files in `.opendatasci/skills/` |
+| **Web search** | Look up papers, docs, and library changelogs mid-analysis |
+| **MCP** | Connect internal tools, databases, and proprietary APIs |
+| **Built-in TUI** | Use within your development environment (e.g., VSCode, Cursor) or from any terminal |
+| **Human-in-the-loop** | Pauses at genuine decision forks, then gets on with it |
 
 ---
 
@@ -98,6 +87,12 @@ You can take it a step further and mix providers within a single session: one mo
 
 ---
 
+## Cloud portability
+
+Every stateful dependency the agent relies on is built behind a swappable interface rather than tied to your local machine. The shipped implementations all run locally, but the architecture lets you replace any of them with a cloud-backed equivalent without touching the agent itself. See [Cloud Portability](libs/open-data-sci/README.md#cloud-portability) in the library README, including the full [table of dependencies and their recommended cloud implementations](libs/open-data-sci/README.md#dependencies-and-their-interfaces).
+
+---
+
 ## Built-in ML library surface
 
 No setup friction. OpenDataSci ships with the complete stack a practitioner would need.
@@ -109,6 +104,7 @@ No setup friction. OpenDataSci ships with the complete stack a practitioner woul
 | File formats | Excel/Parquet/Feather (via Pandas), XML (lxml) |
 | Numerics | NumPy, SciPy |
 | Classical ML | scikit-learn, LightGBM, CatBoost, XGBoost, statsmodels |
+| Deep learning *(optional)* | PyTorch, JAX, Flax, Optax, Transformers, Sentence-Transformers |
 | AutoML / tuning | Optuna |
 | Forecasting | Prophet |
 | Interpretability | SHAP |
@@ -141,6 +137,16 @@ The [examples directory](libs/open-data-sci/examples/README.md) covers every sup
 - **Batch scripts**: run the agent autonomously with no human in the loop
 - **Jupyter notebooks**: end-to-end ML workflows with the agent kept alive across cells
 - **YAML config files**: annotated provider configurations ready to drop in
+
+---
+
+## For Data Scientists
+
+If you already know what you're doing, **OpenDataSci removes the friction that eats your time**: boilerplate EDA, repetitive feature engineering cycles, juggling notebooks across experiments. You stay focused on what actually requires your judgment, like improving business metrics.
+
+Use it as a first-pass analyst: let it explore the data, surface what matters, and run the baseline while you think about strategy. Spin up parallel experiments without managing multiple environments. Inject your domain knowledge via skill files and have it applied consistently across every run. When you want to take the wheel, take it. OpenDataSci hands off cleanly.
+
+The benchmark above was a from-scratch run with no expert guidance. With yours, it will certainly further!
 
 ---
 

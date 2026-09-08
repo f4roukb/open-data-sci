@@ -27,7 +27,7 @@ from opendatasci.agents.states import AgentState
 from opendatasci.skills import Skill, SkillDomain
 from opendatasci.skills.base import BaseSkillStore
 from opendatasci.skills.local import SKILL_LABELS
-from opendatasci.tools.base import OpenDataSciSyncTool
+from opendatasci.tools.base import OpenDataSciBaseTool
 
 
 def _label_for(name: str) -> str:
@@ -37,7 +37,7 @@ def _label_for(name: str) -> str:
     return tail.replace("_", " ").title()
 
 
-class LoadSkillTool(OpenDataSciSyncTool):
+class LoadSkillTool(OpenDataSciBaseTool):
     """Load a specific skill and/or a skill domain to inform your work."""
 
     class CallArgs(BaseModel):
@@ -89,10 +89,10 @@ Args:
 """
     args_schema: type[BaseModel] = CallArgs
 
-    store: BaseSkillStore
+    skill_store: BaseSkillStore
 
     @override
-    def _run(
+    async def _arun(
         self,
         summary: str,
         communication: str,
@@ -126,9 +126,9 @@ Args:
             if current_skill_domain is not None and current_skill_domain.name == skill_domain_name:
                 confirmations.append(f"Skill domain '{skill_domain_name}' is already loaded.")
             else:
-                skill_domain: SkillDomain | None = self.store.load_domain(skill_domain_name)
+                skill_domain: SkillDomain | None = self.skill_store.load_domain(skill_domain_name)
                 if skill_domain is None:
-                    available = ", ".join(sorted(self.store.list_domains())) or "(none)"
+                    available = ", ".join(sorted(self.skill_store.list_domains())) or "(none)"
                     return Command(
                         update={
                             "messages": [
@@ -150,9 +150,9 @@ Args:
             if current_skills and current_skills[0].name == skill_name:
                 confirmations.append(f"Skill '{skill_name}' is already loaded.")
             else:
-                loaded: Skill | None = self.store.load(skill_name)
+                loaded: Skill | None = self.skill_store.load(skill_name)
                 if loaded is None:
-                    available = ", ".join(sorted(self.store.list_skills())) or "(none)"
+                    available = ", ".join(sorted(self.skill_store.list_skills())) or "(none)"
                     return Command(
                         update={
                             "messages": [
@@ -174,7 +174,7 @@ Args:
         return Command(update=state_update)
 
 
-class ListSkillsTool(OpenDataSciSyncTool):
+class ListSkillsTool(OpenDataSciBaseTool):
     """List the skill domains and standalone skills available to load."""
 
     class CallArgs(BaseModel):
@@ -201,15 +201,17 @@ Args:
 """
     args_schema: type[BaseModel] = CallArgs
 
-    store: BaseSkillStore
+    skill_store: BaseSkillStore
 
     @override
-    def _run(self, summary: str, communication: str, **kwargs: Any) -> str:
-        domains = sorted(self.store.list_domains())
-        standalone_skills = sorted(name for name in self.store.list_skills() if "::" not in name)
+    async def _arun(self, summary: str, communication: str, **kwargs: Any) -> str:
+        domains = sorted(self.skill_store.list_domains())
+        standalone_skills = sorted(
+            name for name in self.skill_store.list_skills() if "::" not in name
+        )
         return json.dumps({"domains": domains, "standalone_skills": standalone_skills})
 
 
-def create_skill_tools(store: BaseSkillStore) -> list[BaseTool]:
-    """Return the ``load_skill`` and ``list_skills`` tools bound to *store*."""
-    return [LoadSkillTool(store=store), ListSkillsTool(store=store)]
+def create_skill_tools(skill_store: BaseSkillStore) -> list[BaseTool]:
+    """Return the ``load_skill`` and ``list_skills`` tools bound to *skill_store*."""
+    return [LoadSkillTool(skill_store=skill_store), ListSkillsTool(skill_store=skill_store)]

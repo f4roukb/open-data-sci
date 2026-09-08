@@ -14,7 +14,7 @@ def create_ollama_model(config: OpenDataSciConfig) -> BaseChatModel:
     model: BaseChatModel = ChatOllama(
         model=config.model,
         base_url=config.llm_server_base_url or "http://localhost:11434",
-        temperature=config.temperature,
+        temperature=config.primary_temperature,
     )
     return model
 
@@ -47,7 +47,7 @@ def create_openai_compatible_model(config: OpenDataSciConfig) -> BaseChatModel:
         model=config.model,
         base_url=config.llm_server_base_url or "http://localhost:8000/v1",
         api_key=config.openai_api_key or "EMPTY",
-        temperature=config.temperature,
+        temperature=config.primary_temperature,
     )
 
 

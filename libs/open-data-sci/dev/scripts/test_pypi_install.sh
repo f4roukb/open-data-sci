@@ -13,7 +13,7 @@ EXTRAS=""
 usage() {
     echo "Usage: $0 [-v VERSION] [-e EXTRA1,EXTRA2,...]"
     echo "  -v VERSION   Specific version to install (defaults to latest on TestPyPI)"
-    echo "  -e EXTRAS    Comma-separated list of extras (e.g. aws,gemini,gcp,azure,ollama,jax,dev)"
+    echo "  -e EXTRAS    Comma-separated list of extras (e.g. aws,gemini,gcp,azure,ollama,deep-learning,dev)"
     exit 1
 }
 

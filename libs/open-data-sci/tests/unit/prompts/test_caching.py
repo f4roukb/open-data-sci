@@ -4,7 +4,6 @@ Per-provider cached_system_prompt helpers are tested in their own model factory 
 files (test_anthropic, test_aws, test_openai, etc.).
 """
 
-
 import pytest
 
 from opendatasci.models.providers import Provider

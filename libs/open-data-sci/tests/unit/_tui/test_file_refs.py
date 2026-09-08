@@ -1,22 +1,18 @@
-"""Unit tests for opendatasci._tui.file_refs — pure parsing and path logic."""
+"""Unit tests for opendatasci._tui.chat.file_refs — pure parsing and path logic."""
 
 from pathlib import Path
-from unittest.mock import patch
 
-import pytest
-
-from opendatasci._tui.file_refs import (
+from opendatasci._tui.chat.file_refs import (
     PasteAttachment,
-    _FileRef,
     _build_agent_query,
     _build_user_display,
     _discover_files,
+    _FileRef,
     _find_at_fragment,
     _find_slash_fragment,
     _parse_file_refs,
     _split_existing_file_refs,
 )
-
 
 # ---------------------------------------------------------------------------
 # _parse_file_refs
@@ -140,6 +136,7 @@ class TestBuildAgentQuery:
         result = _build_agent_query("", refs)
         # path attribute must be an absolute path
         import re
+
         m = re.search(r'path="([^"]+)"', result)
         assert m is not None
         path_val = m.group(1)

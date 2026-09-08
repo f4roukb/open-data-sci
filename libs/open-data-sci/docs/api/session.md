@@ -2,7 +2,7 @@
 
 The **sandbox** is an isolated Python execution environment that the agent uses to run code. All data manipulation, model training, and chart generation happen inside the sandbox — your Python environment is never modified.
 
-The default sandbox is backed by [SRT (Sandbox Runtime)](https://github.com/dreadnode/sandbox-runtime), a lightweight subprocess-based executor. Each agent session gets its own sandbox instance; state (variables, DataFrames, trained models) persists across turns within a session and is cleared on `/reset`.
+The default sandbox is backed by [SRT (Sandbox Runtime)](https://github.com/dreadnode/sandbox-runtime), a lightweight subprocess-based executor. Each agent session gets its own sandbox instance. Every `execute()` call runs in a fresh interpreter — no Python-level state (variables, DataFrames, trained models) carries over from one call to the next, so code that depends on an earlier result must recompute or reload it. The workspace filesystem does persist across turns and is where durable outputs (files, artifacts) should be written.
 
 ## SandboxExecResult
 
@@ -34,6 +34,9 @@ The agent can also run read-only shell commands via `sandbox.execute_cli()`. Onl
 | Structured / binary | `jq`, `xxd`, `od` |
 | Output / info | `echo`, `printf`, `date`, `uname`, `printenv`, `env` |
 | Archive inspection | `unzip`, `tar`, `zip` |
+| GitHub CLI | `gh` |
+
+Every command above runs fully offline except `gh`, which is the sole exception: its network access is scoped to GitHub's own hosts (`github.com`, `api.github.com`, `codeload.github.com`, `objects.githubusercontent.com`, `raw.githubusercontent.com`). It also runs unauthenticated — the sandbox denies read access to `~/.config/gh`, so it can't pick up a host `gh auth login` session.
 
 ## Custom sandbox
 
@@ -43,11 +46,14 @@ Subclass `BaseSandbox` and `BaseSandboxFactory` to implement a remote or contain
 from opendatasci.sandbox.base import BaseSandbox, BaseSandboxFactory, SandboxExecResult
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncIterator
+from typing import AsyncIterator, Awaitable, Callable
 
 class MyRemoteSandbox(BaseSandbox):
-    async def execute(self, code: str) -> SandboxExecResult:
-        # send code to a remote executor …
+    async def execute(
+        self, code: str, on_stdout_line: Callable[[str], Awaitable[None]] | None = None
+    ) -> SandboxExecResult:
+        # send code to a remote executor, awaiting on_stdout_line(line) per
+        # line of stdout as it's produced if streaming progress is supported …
         ...
 
     async def execute_cli(self, command: str) -> SandboxExecResult: ...

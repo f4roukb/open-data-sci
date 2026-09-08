@@ -73,6 +73,11 @@ def create_bedrock_model(config: OpenDataSciConfig) -> BaseChatModel:
     )
 
 
+def is_bedrock_model(llm: Any) -> bool:
+    """Return True if *llm* is a Bedrock Converse chat model instance."""
+    return _BedrockBase is not None and isinstance(llm, _BedrockBase)
+
+
 def create_bedrock_secondary_model(config: OpenDataSciConfig) -> BaseChatModel:
     """Instantiate a cheap Bedrock model for auxiliary tasks (thinking disabled)."""
     if _BedrockBase is None:

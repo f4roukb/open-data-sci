@@ -1,5 +1,4 @@
-﻿"""Unit tests for opendatasci._tui.app."""
-
+"""Unit tests for opendatasci._tui.app."""
 
 import importlib.metadata
 from pathlib import Path
@@ -7,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 
+from opendatasci._tui.adapter import SubmitAction
 from opendatasci._tui.app import OpenDataSciApp, _get_version, main
 from opendatasci.configs import OpenDataSciConfig
 
@@ -47,6 +47,8 @@ class TestMainArgparse:
             patch("sys.argv", ["opendatasci"] + argv),
             patch("opendatasci._tui.app.OpenDataSciApp", app_cls),
             patch("dotenv.load_dotenv"),
+            patch("opendatasci._tui.app.load_secrets", return_value={}),
+            patch("opendatasci._tui.app.load_settings", return_value={}),
         ):
             main()
 
@@ -66,67 +68,61 @@ class TestMainArgparse:
     def test_default_model_anthropic_is_claude_sonnet(self) -> None:
         assert self._agent_config(["data.csv"]).model == "claude-sonnet-5"
 
-    def test_default_model_openai_resolves_from_provider_default(self) -> None:
-        cfg = self._agent_config(["data.csv", "--provider", "openai"])
-        assert cfg.provider == "openai"
-        assert cfg.model == "gpt-5.6-sol"
-
-    def test_explicit_model_overrides_default(self) -> None:
-        assert (
-            self._agent_config(["data.csv", "--model", "claude-opus-4-6"]).model
-            == "claude-opus-4-6"
-        )
-
-    @pytest.mark.parametrize(
-        "theme_name", ["default", "accessible", "light", "solarized", "dracula"]
-    )
-    def test_theme_flag_accepts_all_registered_palettes(self, theme_name: str) -> None:
-        app_cls = self._run_main(["data.csv", "--theme", theme_name])
-        assert app_cls.call_args[1]["theme"] == theme_name
-
-    def test_api_key_stored_in_agent_config(self) -> None:
-        assert (
-            self._agent_config(["data.csv", "--api-key", "sk-test"]).anthropic_api_key == "sk-test"
-        )
-
     def test_region_flag_is_removed(self) -> None:
         """--region is no longer a valid flag; aws_region defaults via OpenDataSciConfig."""
         with pytest.raises(SystemExit):
             self._run_main(["data.csv", "--region", "us-east-2"])
 
-    def test_secondary_model_flag(self) -> None:
-        cfg = self._agent_config(["data.csv", "--secondary-model", "gpt-4o-mini"])
-        assert cfg.secondary_model == "gpt-4o-mini"
-
-    def test_secondary_provider_flag(self) -> None:
-        cfg = self._agent_config(
-            ["data.csv", "--secondary-provider", "openai", "--secondary-model", "gpt-4o-mini"]
-        )
-        assert cfg.secondary_provider == "openai"
-        assert cfg.secondary_model == "gpt-4o-mini"
-
-    def test_secondary_provider_defaults_to_primary_provider(self) -> None:
+    def test_secondary_provider_defaults_to_anthropic(self) -> None:
         assert self._agent_config(["data.csv"]).secondary_provider == "anthropic"
 
-    def test_secondary_provider_resolves_to_main_when_not_set(self) -> None:
-        cfg = self._agent_config(["data.csv", "--provider", "openai"])
-        assert cfg.secondary_provider == "openai"
+    def test_missing_selection_includes_all_four_fields_by_default(self) -> None:
+        app_cls = self._run_main(["data.csv"])
+        missing = app_cls.call_args[1]["missing_selection"]
+        assert set(missing) == {
+            "provider",
+            "model",
+            "secondary_provider",
+            "secondary_model",
+            "theme",
+        }
 
-    def test_cross_provider_resolved_secondary_model(self) -> None:
-        cfg = self._agent_config(
-            [
-                "data.csv",
-                "--provider",
-                "anthropic",
-                "--secondary-provider",
-                "openai",
-                "--secondary-model",
-                "gpt-4o-mini",
-            ]
-        )
-        assert cfg.provider == "anthropic"
-        assert cfg.secondary_provider == "openai"
-        assert cfg.secondary_model == "gpt-4o-mini"
+    def test_missing_selection_excludes_fields_set_by_config_yaml(self, tmp_path: Path) -> None:
+        yaml_file = tmp_path / "cfg.yaml"
+        yaml_file.write_text("provider: openai\nmodel: gpt-4o\n")
+        app_cls = self._run_main(["data.csv", "--config", str(yaml_file)])
+        missing = app_cls.call_args[1]["missing_selection"]
+        assert "provider" not in missing
+        assert "model" not in missing
+        assert "secondary_provider" in missing
+        assert "secondary_model" in missing
+
+    def test_missing_selection_excludes_fields_set_by_persisted_settings(self) -> None:
+        from opendatasci._tui.style import theme as _theme
+
+        app_instance = MagicMock()
+        app_instance.run = MagicMock()
+        app_cls = MagicMock(return_value=app_instance)
+        try:
+            with (
+                patch("sys.argv", ["opendatasci", "data.csv"]),
+                patch("opendatasci._tui.app.OpenDataSciApp", app_cls),
+                patch("dotenv.load_dotenv"),
+                patch("opendatasci._tui.app.load_secrets", return_value={}),
+                patch(
+                    "opendatasci._tui.app.load_settings",
+                    return_value={"theme": "light", "provider": "openai", "model": "gpt-4o"},
+                ),
+            ):
+                main()
+        finally:
+            _theme.set_active("dark (colorblind)")
+        missing = app_cls.call_args[1]["missing_selection"]
+        assert "theme" not in missing
+        assert "provider" not in missing
+        assert "model" not in missing
+        assert "secondary_provider" in missing
+        assert "secondary_model" in missing
 
     def test_session_id_is_passed_to_app(self) -> None:
         app_cls = self._run_main(["data.csv"])
@@ -153,15 +149,6 @@ class TestMainArgparse:
         assert cfg.secondary_provider == "anthropic"
         assert cfg.secondary_model == "claude-haiku-4-5"
 
-    def test_config_flag_cli_overrides_yaml(self, tmp_path: Path) -> None:
-        yaml_file = tmp_path / "cfg.yaml"
-        yaml_file.write_text("provider: openai\nmodel: gpt-4o\n")
-        cfg = self._agent_config(
-            ["data.csv", "--config", str(yaml_file), "--model", "gpt-5.5"]
-        )
-        assert cfg.provider == "openai"
-        assert cfg.model == "gpt-5.5"
-
 
 # ---------------------------------------------------------------------------
 # OpenDataSciApp.on_submit — history wiring
@@ -174,14 +161,29 @@ def _make_app() -> tuple[OpenDataSciApp, MagicMock]:
     mock_input = MagicMock()
     app.query_one = MagicMock(return_value=mock_input)
     app._controller = MagicMock()
-    app._controller._completing = False
+    app._controller.accept_completion = MagicMock(return_value=False)
     return app, mock_input
+
+
+# ---------------------------------------------------------------------------
+# OpenDataSciApp.refresh_theme — live /theme <name> switching
+# ---------------------------------------------------------------------------
+
+
+class TestRefreshTheme:
+    def test_refresh_theme_calls_refresh_css(self) -> None:
+        app, _ = _make_app()
+        app.refresh_css = MagicMock()
+
+        app.refresh_theme()
+
+        app.refresh_css.assert_called_once()
 
 
 class TestOnSubmitHistory:
     async def test_push_history_called_for_non_empty_submission(self) -> None:
         app, mock_input = _make_app()
-        app._controller.on_submit = AsyncMock(return_value=("", ""))
+        app._controller.on_submit = AsyncMock(return_value=(SubmitAction.NONE, ""))
         event = MagicMock()
         event.value = "  analyse the data  "
 
@@ -191,7 +193,7 @@ class TestOnSubmitHistory:
 
     async def test_push_history_not_called_for_whitespace_only(self) -> None:
         app, mock_input = _make_app()
-        app._controller.on_submit = AsyncMock(return_value=("", ""))
+        app._controller.on_submit = AsyncMock(return_value=(SubmitAction.NONE, ""))
         event = MagicMock()
         event.value = "   "
 
@@ -222,6 +224,8 @@ class TestOnInputKeyHistory:
         mock_input.navigate_history.assert_called_once_with(-1)
         event.stop.assert_called_once()
         event.prevent_default.assert_called_once()
+        app._controller.suppress_next_input_change.assert_called_once()
+        app._controller.cancel_input_change_suppression.assert_not_called()
 
     def test_down_navigates_history_when_no_completions(self) -> None:
         app, mock_input = self._app()
@@ -260,7 +264,8 @@ class TestOnInputKeyHistory:
             app.on_input_key(event)
 
         event.stop.assert_not_called()
-        assert app._controller._completing is False
+        app._controller.suppress_next_input_change.assert_called_once()
+        app._controller.cancel_input_change_suppression.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -329,6 +334,7 @@ class TestEscDuringTurn:
         controller.awaiting_choice = awaiting_choice
         controller.stop_agent = AsyncMock()
         app._run_agent = MagicMock()
+        app._resume_with_input = MagicMock()
         return app
 
     async def test_bare_esc_stops_running_turn(self) -> None:
@@ -367,5 +373,5 @@ class TestEscDuringTurn:
 
         await app.action_focus_input()
 
-        app._run_agent.assert_called_once_with("cancel")
+        app._resume_with_input.assert_called_once_with("cancel")
         app._controller.stop_agent.assert_not_awaited()

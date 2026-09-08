@@ -1,9 +1,6 @@
-"""Unit tests for opendatasci._tui.message_queue.PendingMessageQueue."""
+"""Unit tests for opendatasci._tui.chat.message_queue.PendingMessageQueue."""
 
-import pytest
-
-from opendatasci._tui.message_queue import PendingMessage, PendingMessageQueue
-
+from opendatasci._tui.chat.message_queue import PendingMessage, PendingMessageQueue
 
 # ---------------------------------------------------------------------------
 # Enqueue
@@ -11,10 +8,10 @@ from opendatasci._tui.message_queue import PendingMessage, PendingMessageQueue
 
 
 class TestPendingMessageQueueEnqueue:
-    def test_enqueue_creates_message_with_agent_query(self) -> None:
+    def test_enqueue_creates_message_with_content(self) -> None:
         q = PendingMessageQueue()
         msg = q.enqueue("SELECT * FROM data", "Tell me about the data")
-        assert msg.agent_query == "SELECT * FROM data"
+        assert msg.content == "SELECT * FROM data"
 
     def test_enqueue_creates_message_with_display_text(self) -> None:
         q = PendingMessageQueue()
@@ -96,7 +93,7 @@ class TestPendingMessageQueuePopNext:
         for i in range(5):
             msg = q.pop_next()
             assert msg is not None
-            assert msg.agent_query == f"q{i}"
+            assert msg.content == f"q{i}"
 
     def test_pop_next_returns_none_after_all_messages_consumed(self) -> None:
         q = PendingMessageQueue()
@@ -106,7 +103,7 @@ class TestPendingMessageQueuePopNext:
 
     def test_pop_next_second_message_becomes_first_after_first_popped(self) -> None:
         q = PendingMessageQueue()
-        m1 = q.enqueue("q1", "d1")
+        q.enqueue("q1", "d1")
         m2 = q.enqueue("q2", "d2")
         q.pop_next()  # removes m1
         result = q.pop_next()

@@ -1,9 +1,9 @@
 """Unit tests for opendatasci.tools.skills."""
 
-
 import json
 from pathlib import Path
 
+import pytest
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
@@ -26,10 +26,12 @@ def _make_store(skills_dir: Path | None = None) -> BaseSkillStore:
     return LocalSkillStore()
 
 
-def _invoke(tool, args: dict, *, state: AgentState | None = None) -> Command:
+async def _invoke(tool, args: dict, *, state: AgentState | None = None) -> Command:
     """Invoke a tool in ToolCall format, injecting state manually."""
     call_args = {**args, "state": state if state is not None else AgentState()}
-    return tool.invoke({"name": tool.name, "id": _CALL_ID, "args": call_args, "type": "tool_call"})
+    return await tool.ainvoke(
+        {"name": tool.name, "id": _CALL_ID, "args": call_args, "type": "tool_call"}
+    )
 
 
 def _message_content(result: Command) -> str:
@@ -101,15 +103,17 @@ class TestGetSkillTools:
 
 
 class TestListSkillsTool:
-    def test_returns_json_with_domains(self) -> None:
-        result = _list_skills_tool().invoke({"summary": "s", "communication": "c"})
+    @pytest.mark.asyncio
+    async def test_returns_json_with_domains(self) -> None:
+        result = await _list_skills_tool().ainvoke({"summary": "s", "communication": "c"})
         payload = json.loads(result)
         assert "competitive_data_science" in payload["domains"]
         assert "data_science" in payload["domains"]
         assert "machine_learning" in payload["domains"]
 
-    def test_domain_scoped_skills_excluded_from_standalone_list(self) -> None:
-        result = _list_skills_tool().invoke({"summary": "s", "communication": "c"})
+    @pytest.mark.asyncio
+    async def test_domain_scoped_skills_excluded_from_standalone_list(self) -> None:
+        result = await _list_skills_tool().ainvoke({"summary": "s", "communication": "c"})
         payload = json.loads(result)
         assert not any("::" in name for name in payload["standalone_skills"])
         assert "competitive_data_science::reconnaissance" not in payload["standalone_skills"]
@@ -122,68 +126,96 @@ class TestListSkillsTool:
 
 
 class TestLoadSkillTool:
-    def test_no_args_returns_llm_friendly_error(self) -> None:
-        result = _invoke(_load_skill_tool(), {"summary": "s", "communication": "c"})
+    @pytest.mark.asyncio
+    async def test_no_args_returns_llm_friendly_error(self) -> None:
+        result = await _invoke(_load_skill_tool(), {"summary": "s", "communication": "c"})
         content = _message_content(result)
         assert "skill_domain_name" in content
         assert "skill_name" in content
 
-    def test_already_loaded_skill_returns_message(self) -> None:
+    @pytest.mark.asyncio
+    async def test_already_loaded_skill_returns_message(self) -> None:
         skill = Skill(name="data_science::exploratory_analysis", content="x")
-        result = _invoke(
+        result = await _invoke(
             _load_skill_tool(),
-            {"skill_name": "data_science::exploratory_analysis", "summary": "s", "communication": "c"},
+            {
+                "skill_name": "data_science::exploratory_analysis",
+                "summary": "s",
+                "communication": "c",
+            },
             state=AgentState(active_skills=[skill]),
         )
         assert "already loaded" in _message_content(result)
 
-    def test_unknown_skill_returns_error_with_available_list(self) -> None:
-        result = _invoke(
+    @pytest.mark.asyncio
+    async def test_unknown_skill_returns_error_with_available_list(self) -> None:
+        result = await _invoke(
             _load_skill_tool(),
             {"skill_name": "nonexistent", "summary": "s", "communication": "c"},
         )
         assert "Unknown skill" in _message_content(result)
         assert "data_science::exploratory_analysis" in _message_content(result)
 
-    def test_loading_known_skill_returns_confirmation(self) -> None:
-        result = _invoke(
+    @pytest.mark.asyncio
+    async def test_loading_known_skill_returns_confirmation(self) -> None:
+        result = await _invoke(
             _load_skill_tool(),
-            {"skill_name": "data_science::exploratory_analysis", "summary": "s", "communication": "c"},
+            {
+                "skill_name": "data_science::exploratory_analysis",
+                "summary": "s",
+                "communication": "c",
+            },
         )
         assert "loaded" in _message_content(result).lower()
 
-    def test_loading_skill_sets_active_skills_in_state(self) -> None:
-        result = _invoke(
+    @pytest.mark.asyncio
+    async def test_loading_skill_sets_active_skills_in_state(self) -> None:
+        result = await _invoke(
             _load_skill_tool(),
-            {"skill_name": "machine_learning::problem_framing", "summary": "s", "communication": "c"},
+            {
+                "skill_name": "machine_learning::problem_framing",
+                "summary": "s",
+                "communication": "c",
+            },
         )
         assert isinstance(result, Command)
         skills = result.update.get("active_skills", [])
         assert len(skills) == 1
         assert skills[0].name == "machine_learning::problem_framing"
 
-    def test_switching_skill_replaces_previous(self) -> None:
+    @pytest.mark.asyncio
+    async def test_switching_skill_replaces_previous(self) -> None:
         existing = Skill(name="data_science::exploratory_analysis", content="x")
-        result = _invoke(
+        result = await _invoke(
             _load_skill_tool(),
-            {"skill_name": "machine_learning::problem_framing", "summary": "s", "communication": "c"},
+            {
+                "skill_name": "machine_learning::problem_framing",
+                "summary": "s",
+                "communication": "c",
+            },
             state=AgentState(active_skills=[existing]),
         )
         skills = result.update.get("active_skills", [])
         assert skills[0].name == "machine_learning::problem_framing"
 
-    def test_command_includes_tool_message_with_correct_id(self) -> None:
-        result = _invoke(
+    @pytest.mark.asyncio
+    async def test_command_includes_tool_message_with_correct_id(self) -> None:
+        result = await _invoke(
             _load_skill_tool(),
-            {"skill_name": "data_science::exploratory_analysis", "summary": "s", "communication": "c"},
+            {
+                "skill_name": "data_science::exploratory_analysis",
+                "summary": "s",
+                "communication": "c",
+            },
         )
         msgs = result.update.get("messages", [])
         assert len(msgs) == 1
         assert isinstance(msgs[0], ToolMessage)
         assert msgs[0].tool_call_id == _CALL_ID
 
-    def test_error_message_lists_all_available_skills(self) -> None:
-        result = _invoke(
+    @pytest.mark.asyncio
+    async def test_error_message_lists_all_available_skills(self) -> None:
+        result = await _invoke(
             _load_skill_tool(),
             {"skill_name": "bad_skill", "summary": "s", "communication": "c"},
         )
@@ -195,8 +227,9 @@ class TestLoadSkillTool:
         ):
             assert name in content
 
-    def test_loading_domain_scoped_skill_by_qualified_name(self) -> None:
-        result = _invoke(
+    @pytest.mark.asyncio
+    async def test_loading_domain_scoped_skill_by_qualified_name(self) -> None:
+        result = await _invoke(
             _load_skill_tool(),
             {
                 "skill_name": "competitive_data_science::reconnaissance",
@@ -207,8 +240,9 @@ class TestLoadSkillTool:
         skills = result.update.get("active_skills", [])
         assert skills[0].name == "competitive_data_science::reconnaissance"
 
-    def test_loading_known_domain_returns_confirmation(self) -> None:
-        result = _invoke(
+    @pytest.mark.asyncio
+    async def test_loading_known_domain_returns_confirmation(self) -> None:
+        result = await _invoke(
             _load_skill_tool(),
             {"skill_domain_name": "competitive_data_science", "summary": "s", "communication": "c"},
         )
@@ -217,8 +251,9 @@ class TestLoadSkillTool:
         assert len(domains) == 1
         assert domains[0].name == "competitive_data_science"
 
-    def test_unknown_domain_returns_error_with_available_list(self) -> None:
-        result = _invoke(
+    @pytest.mark.asyncio
+    async def test_unknown_domain_returns_error_with_available_list(self) -> None:
+        result = await _invoke(
             _load_skill_tool(),
             {"skill_domain_name": "nonexistent", "summary": "s", "communication": "c"},
         )
@@ -226,17 +261,19 @@ class TestLoadSkillTool:
         assert "Unknown skill domain" in content
         assert "competitive_data_science" in content
 
-    def test_already_loaded_domain_returns_message(self) -> None:
+    @pytest.mark.asyncio
+    async def test_already_loaded_domain_returns_message(self) -> None:
         domain = SkillDomain(name="competitive_data_science", content="x")
-        result = _invoke(
+        result = await _invoke(
             _load_skill_tool(),
             {"skill_domain_name": "competitive_data_science", "summary": "s", "communication": "c"},
             state=AgentState(active_skill_domains=[domain]),
         )
         assert "already loaded" in _message_content(result)
 
-    def test_loading_domain_and_skill_together(self) -> None:
-        result = _invoke(
+    @pytest.mark.asyncio
+    async def test_loading_domain_and_skill_together(self) -> None:
+        result = await _invoke(
             _load_skill_tool(),
             {
                 "skill_domain_name": "competitive_data_science",

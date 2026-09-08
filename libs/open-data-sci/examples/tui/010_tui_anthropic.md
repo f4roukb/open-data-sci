@@ -18,7 +18,7 @@ Pass a file, or a directory to load every data file inside it at once:
 ```bash
 opendatasci sales.csv
 opendatasci ./data/                        # all CSV, Excel, Parquet, … files in the folder
-opendatasci sales.csv --provider openai    # use GPT instead of Claude
+opendatasci sales.csv --config examples/configs/config_openai.yaml  # use GPT instead of Claude
 ```
 
 The TUI opens with a scrollable conversation panel above and an input bar at the bottom.
@@ -89,12 +89,11 @@ Type `/` and press **Tab** to autocomplete. All commands take effect immediately
 | `/cancel-message` | Cancels the most recently queued message |
 | `/compact` | Summarises the conversation and replaces it with a compressed version — use this when sessions get long instead of losing context |
 | `/reset` | Clears sandbox state and conversation; data is reloaded fresh from disk |
-| `/clear` | Clears conversation history but keeps sandbox variables (DataFrames, models, etc.) |
+| `/clear` | Clears conversation history |
 | `/ls-workspace` | Lists every file in the current workspace |
 | `/models` | Shows which primary model and secondary model are in use |
-| `/themes` | Lists available colour themes and marks the active one |
+| `/config` (alias `/settings`) | Opens the configuration panel (display, models, personalization, and more) |
 | `/help` | Prints all available commands with descriptions |
-| `/stop` | Interrupts a running agent turn |
 | `/exit` | Quit |
 
 Sending a message while the agent is busy doesn't get rejected — it's pinned above the input box and runs automatically once the agent is free (unless it's waiting on your answer to a question). Use `/cancel-message` or `/cancel-all-messages` to drop queued messages instead.
@@ -114,37 +113,37 @@ after `@`, so you can browse your filesystem without typing full paths.
 > @src/etl_pipeline.py What does this script do and are there any obvious bugs?
 ```
 
-Line-range syntax keeps context focused on the relevant section:
-
-```
-> @src/etl_pipeline.py:L45-L80 Can you simplify this section?
-```
-
 Works for `.py`, `.sql`, `.md`, `.ipynb`, and plain text files.
 
 ---
 
 ## Switching providers
 
+Pass a `--config` file to pick a different provider — the TUI's onboarding
+prompts for anything the file doesn't set. See [`examples/configs/`](../configs/)
+for an annotated file per provider.
+
 ```bash
 # Anthropic Claude (default)
 opendatasci sales.csv
 
 # OpenAI GPT
-opendatasci sales.csv --provider openai --model gpt-5.6-sol
+opendatasci sales.csv --config examples/configs/config_openai.yaml
 
 # Google Gemini
-opendatasci sales.csv --provider gemini --model gemini-3.5-flash
+opendatasci sales.csv --config examples/configs/config_gemini.yaml
 
 # Local model via Ollama  (no API key needed)
-opendatasci sales.csv --provider ollama --model qwen3.5:9b
+opendatasci sales.csv --config examples/configs/config_ollama.yaml
 
 # Self-hosted OpenAI-compatible server (e.g. vLLM)
-opendatasci sales.csv --provider openai_compatible_server --model Qwen/Qwen3.5-4B
+opendatasci sales.csv --config examples/configs/config_openai_compatible_server.yaml
 ```
 
-AWS Bedrock, Azure OpenAI, and Google Vertex AI are also supported —
-see [Getting Started](../docs/getting-started.md#choosing-a-provider) for their auth setup.
+AWS Bedrock, Azure OpenAI, and Google Vertex AI are also supported — see
+[`config_bedrock.yaml`](../configs/config_bedrock.yaml),
+[`config_azure.yaml`](../configs/config_azure.yaml), and
+[`config_vertexai.yaml`](../configs/config_vertexai.yaml) for their auth setup.
 
 ---
 

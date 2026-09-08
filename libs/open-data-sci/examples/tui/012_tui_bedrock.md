@@ -59,9 +59,9 @@ metadata service.
 **AWS Vault / SSO:**
 
 ```bash
-aws-vault exec my-profile -- opendatasci sales.csv --provider bedrock
+aws-vault exec my-profile -- opendatasci sales.csv --config examples/configs/config_bedrock.yaml
 # or
-aws sso login && opendatasci sales.csv --provider bedrock
+aws sso login && opendatasci sales.csv --config examples/configs/config_bedrock.yaml
 ```
 
 ---
@@ -70,14 +70,10 @@ aws sso login && opendatasci sales.csv --provider bedrock
 
 ```bash
 # Default region (us-east-1) and default model
-REGION=us-east-1 opendatasci sales.csv --provider bedrock
+REGION=us-east-1 opendatasci sales.csv --config examples/configs/config_bedrock.yaml
 
-# Explicit region and model
-REGION=us-west-2 opendatasci sales.csv --provider bedrock \
-  --model us.anthropic.claude-sonnet-5
-
-# Load config from file (region set inside the file)
-opendatasci sales.csv --config examples/configs/config_bedrock.yaml
+# Explicit region — edit `model:` in a copy of the config for a different model
+REGION=us-west-2 opendatasci sales.csv --config examples/configs/config_bedrock.yaml
 ```
 
 ### Cross-region inference model IDs
@@ -91,8 +87,6 @@ region (`us.`, `eu.`, `ap.`). Always use the prefixed form:
 | US | `us.anthropic.claude-haiku-4-5-20251001-v1:0` |
 | EU | `eu.anthropic.claude-sonnet-5` |
 | AP | `ap.anthropic.claude-sonnet-5` |
-
-Pass `--list-providers` to print the full default model table at any time.
 
 ---
 
@@ -131,10 +125,10 @@ only the setup and launch command differ.
 | `/cancel-message` | Cancel the most recently queued message |
 | `/compact` | Summarise and compress the conversation to free context |
 | `/reset` | Clear sandbox state and reload data from disk |
-| `/clear` | Clear conversation history, keep sandbox variables |
+| `/clear` | Clear conversation history |
 | `/ls-workspace` | List every file in the workspace |
 | `/models` | Show primary and secondary model in use |
-| `/stop` | Interrupt a running agent turn |
+| `/config` (alias `/settings`) | Open the configuration panel (display, models, personalization, and more) |
 | `/exit` | Quit |
 
 ---

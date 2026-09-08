@@ -18,7 +18,7 @@ def create_gemini_model(config: OpenDataSciConfig) -> BaseChatModel:
         ChatGoogleGenerativeAI(
             model=config.model,
             google_api_key=config.google_api_key,
-            temperature=config.temperature,
+            temperature=config.primary_temperature,
         ),
     )
 
@@ -56,7 +56,7 @@ def create_vertexai_model(config: OpenDataSciConfig) -> BaseChatModel:
             model=config.model,
             project=config.google_cloud_project,
             location=config.google_cloud_location,
-            temperature=config.temperature,
+            temperature=config.primary_temperature,
         ),
     )
 

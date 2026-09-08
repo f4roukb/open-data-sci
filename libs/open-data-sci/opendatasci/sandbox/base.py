@@ -4,13 +4,22 @@ import re
 import shlex
 from abc import ABC, abstractmethod
 from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
+
+from opendatasci._utils.pydantic_utils import MutableStrictBaseModel
+
+# Marks the runner's final JSON-payload line within a sandboxed Python
+# execution's combined stdout stream, so a streaming reader can tell "this
+# line is progress output" from "this line is the terminal result" without
+# waiting for EOF. Duplicated verbatim as a literal in
+# ``sandbox/_runner.py``, which must stay a self-contained standalone script
+# (see its module docstring) and so cannot import this module from inside
+# the sandboxed subprocess.
+PAYLOAD_SENTINEL: str = "###OPENDATASCI_PAYLOAD###"
 
 
-@dataclass
-class SandboxExecResult:
+class SandboxExecResult(MutableStrictBaseModel):
     """Result of a single Python or TUI execution in the sandbox."""
 
     success: bool
@@ -67,6 +76,13 @@ ALLOWED_CLI_COMMANDS: frozenset[str] = frozenset(
         "unzip",
         "tar",
         "zip",
+        # GitHub CLI — network scoped to GitHub's hosts only (see
+        # SRTSandbox._make_cli_config); intended for read-oriented subcommands
+        # (view/list/diff/search/api GET). Only the binary name is checked
+        # here, so this trusts callers to stick to that contract rather than
+        # write subcommands (create/merge/delete), same as the existing trust
+        # placed in e.g. `tar`/`zip` being used for inspection only.
+        "gh",
     }
 )
 
@@ -113,16 +129,29 @@ def validate_cli_command(command: str) -> str | None:
 
 
 class BaseSandbox(ABC):
-    """Stateful code execution sandbox scoped to a single agent session.
+    """Code execution sandbox scoped to a single agent session.
 
-    Responsible for running Python code and TUI commands, capturing output,
-    and preserving state (variables, results) across turns within the same
-    conversation.
+    Responsible for running Python code and TUI commands and capturing
+    output. Each :meth:`execute` call is independent — no Python-level state
+    (variables, results) carries over from one call to the next; only the
+    workspace filesystem persists across turns within the same conversation.
     """
 
     @abstractmethod
-    async def execute(self, code: str) -> SandboxExecResult:
-        """Execute Python *code* and return the result."""
+    async def execute(
+        self,
+        code: str,
+        on_stdout_line: Callable[[str], Awaitable[None]] | None = None,
+    ) -> SandboxExecResult:
+        """Execute Python *code* and return the result.
+
+        If *on_stdout_line* is given, it is awaited once per line of stdout
+        the code produces, in the order produced, while execution is still
+        in progress rather than only once the whole run has finished. Used
+        to stream progress into a background task's activity log (e.g.
+        :meth:`opendatasci.tasks.base.BackgroundTaskManagerBase.push_activity`)
+        so a long-running background execution can be monitored mid-run.
+        """
 
     @abstractmethod
     async def execute_cli(self, command: str) -> SandboxExecResult:

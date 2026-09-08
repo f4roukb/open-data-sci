@@ -17,7 +17,7 @@ def create_openai_model(config: OpenDataSciConfig) -> BaseChatModel:
     return ChatOpenAI(
         model=config.model,
         api_key=config.openai_api_key,
-        temperature=config.temperature,
+        temperature=config.primary_temperature,
         reasoning_effort="medium",
         model_kwargs={"prompt_cache_key": _PROMPT_CACHE_KEY},
     )

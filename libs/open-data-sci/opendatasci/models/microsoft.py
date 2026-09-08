@@ -29,7 +29,7 @@ def create_azure_model(config: OpenDataSciConfig) -> BaseChatModel:
         azure_endpoint=_resolve_azure_endpoint(config),
         api_key=config.azure_api_key,
         api_version=config.azure_api_version,
-        temperature=config.temperature,
+        temperature=config.primary_temperature,
         model_kwargs={"prompt_cache_key": _PROMPT_CACHE_KEY},
     )
 

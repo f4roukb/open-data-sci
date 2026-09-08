@@ -4,7 +4,7 @@ Patterns for working with OpenDataSci across every supported LLM provider.
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.12
 - An API key or server running for the provider you choose
 
 ```bash
@@ -50,7 +50,7 @@ Key pattern (identical across all variants):
 
 ```python
 async with create_agent(path, config=config) as agent:
-    async for event in agent.astream(prompt):
+    async for event in agent.astream(Invocation.from_text(prompt)):
         if event.type == "token":
             print(event.content, end="", flush=True)
         elif event.type == "response":
@@ -76,7 +76,6 @@ cell is a follow-up turn in the same conversation.
 ## Config files
 
 Annotated `OpenDataSciConfig` YAML files — pass to any example with `--config`.
-TUI flags override values set here.
 
 | File | Provider | Auth |
 |------|----------|------|
@@ -93,7 +92,7 @@ Usage:
 
 ```bash
 opendatasci data.csv --config examples/configs/config_gemini.yaml
-opendatasci data.csv --config examples/configs/config_vertexai.yaml --model gemini-3.5-flash
+opendatasci data.csv --config examples/configs/config_vertexai.yaml
 ```
 
 See the [full provider list and default models](../README.md#models) for all

@@ -4,7 +4,7 @@
 # (vLLM, LM Studio, llama.cpp's server, text-generation-inference, etc.).
 #
 # Usage:
-#   opendatasci data.csv --config examples/config_openai_compatible_server.yaml
+#   opendatasci data.csv --config examples/configs/config_openai_compatible_server.yaml
 #
 # Example with vLLM:
 #   pip install vllm
@@ -14,7 +14,6 @@
 #   huggingface-cli login
 #
 # No API key required for most local servers.
-# TUI flags override any value here at launch.
 
 # ── Primary model ─────────────────────────────────────────────────────────────
 provider: openai_compatible_server
@@ -25,7 +24,7 @@ secondary_provider: openai_compatible_server
 secondary_model: Qwen/Qwen3.5-4B
 
 # ── Sampling ──────────────────────────────────────────────────────────────────
-temperature: 0.1
+primary_temperature: 0.1
 
 # ── Server URL ────────────────────────────────────────────────────────────────
 # Falls back to LLM_SERVER_BASE_URL env var, then http://localhost:8000/v1.
@@ -35,18 +34,11 @@ temperature: 0.1
 # ── Agent identity ────────────────────────────────────────────────────────────
 name: Sai
 
-# ── Web access ────────────────────────────────────────────────────────────────
-extra_web_domains:
-  - arxiv.org
-  - huggingface.co
-  - paperswithcode.com
-  - kaggle.com
-
 # ── Parallelism ───────────────────────────────────────────────────────────────
 worker_timeout_seconds: 600
 
 # ── Context management ────────────────────────────────────────────────────────
 # Smaller open-weight models often have shorter context windows; compact earlier.
-midturn_compaction_threshold: 40000
+autocompaction_threshold: 40000
 
 # ── Diagnostics ───────────────────────────────────────────────────────────────

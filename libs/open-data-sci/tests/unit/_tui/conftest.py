@@ -1,12 +1,23 @@
-﻿"""Shared fixtures for TUI unit tests."""
-
+"""Shared fixtures for TUI unit tests."""
 
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from opendatasci._tui.controller import CLIController, UIAdapter
+from opendatasci._tui.style import theme as _theme
 from opendatasci.configs import OpenDataSciConfig
+
+
+@pytest.fixture(autouse=True)
+def _restore_active_theme():
+    """theme.set_active() mutates module-level globals; keep tests isolated."""
+    saved_active = dict(_theme.active)
+    saved_name = _theme.active_name
+    yield
+    _theme.active.clear()
+    _theme.active.update(saved_active)
+    _theme.active_name = saved_name
 
 
 def _make_message_handle() -> MagicMock:
@@ -22,9 +33,9 @@ def _make_ephemeral_handle() -> MagicMock:
     handle.dismiss = MagicMock()
     handle.set_done = MagicMock()
     handle.is_running = MagicMock(return_value=True)
-    handle.mark_worker_done = MagicMock()
-    handle.mark_worker_error = MagicMock()
-    handle.update_worker_activity = MagicMock()
+    handle.mark_task_done = MagicMock()
+    handle.mark_task_error = MagicMock()
+    handle.update_task_activity = MagicMock()
     handle.set_communication = MagicMock()
     handle.upgrade = MagicMock()
     return handle
@@ -44,7 +55,7 @@ def mock_ui() -> MagicMock:
     ui.add_message.return_value = _make_message_handle()
     ui.add_turn_status_bar.return_value = _make_timer_handle()
     ui.add_ephemeral_block.return_value = _make_ephemeral_handle()
-    ui.add_worker_block.return_value = _make_ephemeral_handle()
+    ui.add_task_block.return_value = _make_ephemeral_handle()
     ui.stop_agent = MagicMock()
     return ui
 
@@ -71,6 +82,11 @@ def mock_service() -> MagicMock:
     svc.get_workspace_files = MagicMock(return_value=["data.csv", "output.csv"])
     svc.rewind_turn = AsyncMock()
     svc.astream = MagicMock(return_value=_empty_aiter())
+    svc.resume_with_input = MagicMock(return_value=_empty_aiter())
+    svc.resume_with_approval = MagicMock(return_value=_empty_aiter())
+    svc.is_user_input_required = MagicMock(return_value=False)
+    svc.task_manager = MagicMock()
+    svc.task_manager.has_task_updates = MagicMock(return_value=False)
     return svc
 
 

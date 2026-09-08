@@ -1,7 +1,7 @@
 # OpenDataSci — Azure OpenAI config
 #
 # Usage:
-#   opendatasci data.csv --config examples/config_azure.yaml
+#   opendatasci data.csv --config examples/configs/config_azure.yaml
 #
 # Prerequisites:
 #   pip install "open-data-sci[azure]"
@@ -18,7 +18,6 @@
 #     export AZURE_CLIENT_ID=...
 #     export AZURE_CLIENT_SECRET=...
 #
-# TUI flags override any value here at launch.
 
 # ── Primary model ─────────────────────────────────────────────────────────────
 # The model value here is the *deployment name* in your Azure OpenAI resource,
@@ -32,7 +31,7 @@ secondary_provider: azure
 secondary_model: gpt-5.6-luna
 
 # ── Sampling ──────────────────────────────────────────────────────────────────
-temperature: 0.1
+primary_temperature: 0.1
 
 # ── Azure endpoint & API version ─────────────────────────────────────────────
 # Falls back to AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_VERSION env vars.
@@ -42,17 +41,10 @@ temperature: 0.1
 # ── Agent identity ────────────────────────────────────────────────────────────
 name: Sai
 
-# ── Web access ────────────────────────────────────────────────────────────────
-extra_web_domains:
-  - arxiv.org
-  - huggingface.co
-  - paperswithcode.com
-  - kaggle.com
-
 # ── Parallelism ───────────────────────────────────────────────────────────────
 worker_timeout_seconds: 600
 
 # ── Context management ────────────────────────────────────────────────────────
-midturn_compaction_threshold: 80000
+autocompaction_threshold: 80000
 
 # ── Diagnostics ───────────────────────────────────────────────────────────────

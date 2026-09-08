@@ -1,7 +1,7 @@
 # OpenDataSci — Google Gemini (AI Studio) config
 #
 # Usage:
-#   opendatasci data.csv --config examples/config_gemini.yaml
+#   opendatasci data.csv --config examples/configs/config_gemini.yaml
 #
 # Prerequisites:
 #   pip install "open-data-sci[gemini]"
@@ -9,7 +9,6 @@
 # Set your API key:
 #   export GOOGLE_API_KEY=AIza...
 #
-# TUI flags override any value here at launch.
 
 # ── Primary model ─────────────────────────────────────────────────────────────
 provider: gemini
@@ -20,23 +19,16 @@ secondary_provider: gemini
 secondary_model: gemini-3.1-flash-lite
 
 # ── Sampling ──────────────────────────────────────────────────────────────────
-temperature: 0.1
+primary_temperature: 0.1
 
 # ── Agent identity ────────────────────────────────────────────────────────────
 name: Sai
-
-# ── Web access ────────────────────────────────────────────────────────────────
-extra_web_domains:
-  - arxiv.org
-  - huggingface.co
-  - paperswithcode.com
-  - kaggle.com
 
 # ── Parallelism ───────────────────────────────────────────────────────────────
 worker_timeout_seconds: 600
 
 # ── Context management ────────────────────────────────────────────────────────
-midturn_compaction_threshold: 80000
+autocompaction_threshold: 80000
 
 # ── API key ───────────────────────────────────────────────────────────────────
 # Prefer the GOOGLE_API_KEY env var over hardcoding here.

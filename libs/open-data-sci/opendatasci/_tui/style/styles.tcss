@@ -1,0 +1,280 @@
+/* ─── OpenDataSci TUI stylesheet ────────────────────────────────────────────
+   All colors come from the active theme palette (theme.py), exported as
+   $ods-* CSS variables by OpenDataSciApp.get_css_variables(). Do not add
+   color literals here — add a palette key instead. */
+
+Screen {
+    background: $ods-background;
+    color: $ods-text-primary;
+}
+
+AppHeader {
+    dock: top;
+    height: 6;
+    background: $ods-surface;
+    border-bottom: solid $ods-separator;
+}
+
+#header-logo {
+    width: 23;
+    height: 6;
+    padding-left: 2;
+    content-align: center middle;
+}
+
+#header-info {
+    height: 6;
+    padding: 1 3 1 2;
+    content-align: left middle;
+}
+
+/* ─── Main layout ─────────────────────────────────────────────────────────── */
+
+#main {
+    height: 1fr;
+    layout: horizontal;
+}
+
+/* ─── Chat Pane ───────────────────────────────────────────────────────────── */
+
+ChatPane {
+    width: 100%;
+    layout: vertical;
+    background: $ods-background;
+}
+
+#messages {
+    height: 1fr;
+    padding: 1 2;
+    scrollbar-color: $ods-text-muted $ods-surface-alt;
+    scrollbar-background: $ods-surface-alt;
+    scrollbar-corner-color: $ods-surface-alt;
+}
+
+#input-bar {
+    height: auto;
+    border-top: solid $ods-separator;
+    padding: 1 2 1 2;
+    background: $ods-background;
+}
+
+#status-bar {
+    height: auto;
+    layout: horizontal;
+    background: $ods-background;
+}
+
+#completion-popup {
+    display: none;
+    height: auto;
+    background: $ods-surface;
+    border: solid $ods-text-dim;
+    padding: 0 1;
+    margin-bottom: 1;
+}
+
+#completion-popup.active {
+    display: block;
+}
+
+#attachment-bar {
+    display: none;
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+}
+
+#attachment-bar.active {
+    display: block;
+}
+
+#user-input {
+    background: $ods-surface;
+    border: solid $ods-separator;
+    color: $ods-text-primary;
+    padding: 0 1;
+    width: 100%;
+    height: 3;
+}
+
+#user-input:focus {
+    border: solid $ods-accent;
+}
+
+#user-input.awaiting-choice {
+    border: solid $ods-warning;
+}
+
+
+/* ─── Workspace Panel ─────────────────────────────────────────────────────── */
+
+WorkspacePanel {
+    display: none;
+    height: auto;
+    max-height: 10;
+    border-top: solid $ods-separator;
+    background: $ods-surface;
+    padding: 0 2 1 2;
+}
+
+WorkspacePanel.active {
+    display: block;
+}
+
+/* ─── OptionList (config panels, startup wizard) ──────────────────────────── */
+/* Textual's own defaults use its built-in design tokens, not our palette —
+   without this, every selection list in the app renders unthemed. */
+
+OptionList {
+    background: $ods-surface;
+    color: $ods-text-primary;
+    border: solid $ods-separator;
+    padding: 0 2;
+    scrollbar-color: $ods-text-muted $ods-surface-alt;
+    scrollbar-background: $ods-surface-alt;
+}
+
+OptionList:focus {
+    border: solid $ods-accent;
+}
+
+OptionList > .option-list--option-highlighted {
+    background: $ods-accent 25%;
+    color: $ods-accent;
+    text-style: bold;
+}
+
+OptionList > .option-list--option-hover {
+    background: $ods-accent 12%;
+}
+
+/* ─── Message widgets ─────────────────────────────────────────────────────── */
+
+MessageBubble {
+    height: auto;
+    padding: 0;
+    margin-bottom: 1;
+}
+
+MessageBubble.user {
+    background: $ods-surface-alt;
+    border-left: thick $ods-accent;
+    padding: 0 2;
+}
+
+MessageBubble.question {
+    background: $ods-warning-bg;
+    border-left: thick $ods-warning;
+    padding: 0 2;
+}
+
+MessageBubble.error {
+    border-left: thick $ods-error;
+    padding: 0 2;
+}
+
+MessageBubble.agent {
+    /* No border-left like .user/.question, but the same 3-column text start
+       (1 for their border + 2 for their padding) so agent and user text
+       line up on the same left edge. */
+    padding: 0 0 0 3;
+}
+
+.msg-divider {
+    height: 1;
+    color: $ods-separator;
+    margin: 0 0 1 0;
+}
+
+/* ─── Footer ──────────────────────────────────────────────────────────────── */
+
+Footer {
+    background: $ods-surface;
+    color: $ods-text-secondary;
+    border-top: solid $ods-separator;
+}
+
+Footer > .footer--key {
+    background: $ods-separator;
+    color: $ods-text-primary;
+}
+
+Footer > .footer--highlight {
+    background: $ods-accent 15%;
+    color: $ods-accent;
+}
+
+/* ─── Markdown (agent response) ───────────────────────────────────────────── */
+
+Markdown {
+    background: transparent;
+    height: auto;
+    padding: 0;
+    margin: 0;
+}
+
+MarkdownH1 {
+    background: transparent;
+    border: none;
+    color: $ods-accent;
+    text-style: bold underline;
+    padding: 0 0 1 0;
+    margin: 0 0 1 0;
+    text-align: left;
+}
+
+MarkdownH2 {
+    background: transparent;
+    border: none;
+    color: $ods-accent;
+    text-style: bold;
+    padding: 0;
+    margin: 0 0 1 0;
+    text-align: left;
+}
+
+MarkdownH3, MarkdownH4, MarkdownH5, MarkdownH6 {
+    background: transparent;
+    border: none;
+    color: $ods-text-secondary;
+    text-style: bold;
+    padding: 0;
+    margin: 0 0 1 0;
+    text-align: left;
+}
+
+MarkdownParagraph {
+    background: transparent;
+    color: $ods-text-primary;
+    padding: 0;
+    margin: 0 0 1 0;
+}
+
+MarkdownFence {
+    background: $ods-surface;
+    border: solid $ods-separator;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+MarkdownBlockQuote {
+    background: $ods-surface-alt;
+    border-left: thick $ods-success;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+MarkdownBulletList, MarkdownOrderedList {
+    background: transparent;
+    padding: 0;
+    margin: 0 0 1 0;
+}
+
+MarkdownHorizontalRule {
+    color: $ods-separator;
+    margin: 1 0;
+}
+
+MarkdownTable {
+    margin: 0 0 1 0;
+}

@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from opendatasci.agents.interrupts import InterruptKind
 from opendatasci.human_inputs.human_approval import (
-    APPROVAL_INTERRUPT_KIND,
     CommandImpactAssessment,
     HumanApprovalBaseManager,
     HumanApprovalManager,
@@ -69,11 +69,11 @@ class TestAskForCommandApproval:
         manager, _ = _make_manager(
             description="Deletes tmp.txt.", has_negative_impact=True, heads_up="File is gone."
         )
-        with patch(f"{_MODULE}.interrupt", return_value="yes") as mock_intr:
+        with patch(f"{_MODULE}.interrupt", return_value=True) as mock_intr:
             await manager.ask_for_command_approval("rm tmp.txt")
         mock_intr.assert_called_once_with(
             {
-                "kind": APPROVAL_INTERRUPT_KIND,
+                "kind": InterruptKind.APPROVAL_REQUIRED,
                 "command": "rm tmp.txt",
                 "description": "Deletes tmp.txt.",
                 "heads_up": "File is gone.",
@@ -83,38 +83,26 @@ class TestAskForCommandApproval:
     @pytest.mark.asyncio
     async def test_heads_up_empty_when_no_negative_impact(self) -> None:
         manager, _ = _make_manager(has_negative_impact=False, heads_up="spurious warning")
-        with patch(f"{_MODULE}.interrupt", return_value="yes") as mock_intr:
+        with patch(f"{_MODULE}.interrupt", return_value=True) as mock_intr:
             await manager.ask_for_command_approval("ls")
         assert mock_intr.call_args[0][0]["heads_up"] == ""
 
     @pytest.mark.asyncio
     async def test_yes_answer_returns_true(self) -> None:
         manager, _ = _make_manager()
-        with patch(f"{_MODULE}.interrupt", return_value="yes"):
-            assert await manager.ask_for_command_approval("ls") is True
-
-    @pytest.mark.asyncio
-    async def test_yes_answer_is_case_and_whitespace_insensitive(self) -> None:
-        manager, _ = _make_manager()
-        with patch(f"{_MODULE}.interrupt", return_value="  Yes "):
+        with patch(f"{_MODULE}.interrupt", return_value=True):
             assert await manager.ask_for_command_approval("ls") is True
 
     @pytest.mark.asyncio
     async def test_no_answer_returns_false(self) -> None:
         manager, _ = _make_manager()
-        with patch(f"{_MODULE}.interrupt", return_value="no"):
-            assert await manager.ask_for_command_approval("ls") is False
-
-    @pytest.mark.asyncio
-    async def test_unrecognised_answer_returns_false(self) -> None:
-        manager, _ = _make_manager()
-        with patch(f"{_MODULE}.interrupt", return_value="cancel"):
+        with patch(f"{_MODULE}.interrupt", return_value=False):
             assert await manager.ask_for_command_approval("ls") is False
 
     @pytest.mark.asyncio
     async def test_llm_receives_system_and_human_messages(self) -> None:
         manager, mock_structured_llm = _make_manager()
-        with patch(f"{_MODULE}.interrupt", return_value="yes"):
+        with patch(f"{_MODULE}.interrupt", return_value=True):
             await manager.ask_for_command_approval("ls -la")
         messages = mock_structured_llm.ainvoke.call_args[0][0]
         assert any(isinstance(m, SystemMessage) for m in messages)
@@ -123,7 +111,7 @@ class TestAskForCommandApproval:
     @pytest.mark.asyncio
     async def test_command_is_embedded_in_human_message(self) -> None:
         manager, mock_structured_llm = _make_manager()
-        with patch(f"{_MODULE}.interrupt", return_value="yes"):
+        with patch(f"{_MODULE}.interrupt", return_value=True):
             await manager.ask_for_command_approval("grep -r secret .")
         human_msg = next(
             m for m in mock_structured_llm.ainvoke.call_args[0][0] if isinstance(m, HumanMessage)
@@ -136,11 +124,11 @@ class TestAskForCommandApproval:
         showing the raw command and a fallback warning."""
         manager, mock_structured_llm = _make_manager()
         mock_structured_llm.ainvoke.side_effect = RuntimeError("LLM unavailable")
-        with patch(f"{_MODULE}.interrupt", return_value="yes") as mock_intr:
+        with patch(f"{_MODULE}.interrupt", return_value=True) as mock_intr:
             approved = await manager.ask_for_command_approval("rm tmp.txt")
         assert approved is True
         payload = mock_intr.call_args[0][0]
-        assert payload["kind"] == APPROVAL_INTERRUPT_KIND
+        assert payload["kind"] == InterruptKind.APPROVAL_REQUIRED
         assert payload["command"] == "rm tmp.txt"
         assert "rm tmp.txt" in payload["description"]
         assert payload["heads_up"]  # fallback warning is always present
@@ -149,13 +137,13 @@ class TestAskForCommandApproval:
     async def test_assessment_failure_respects_decline(self) -> None:
         manager, mock_structured_llm = _make_manager()
         mock_structured_llm.ainvoke.side_effect = RuntimeError("LLM unavailable")
-        with patch(f"{_MODULE}.interrupt", return_value="no"):
+        with patch(f"{_MODULE}.interrupt", return_value=False):
             assert await manager.ask_for_command_approval("rm tmp.txt") is False
 
     @pytest.mark.asyncio
     async def test_manager_is_stateless_across_calls(self) -> None:
         manager, mock_structured_llm = _make_manager()
-        with patch(f"{_MODULE}.interrupt", return_value="yes"):
+        with patch(f"{_MODULE}.interrupt", return_value=True):
             await manager.ask_for_command_approval("ls")
             await manager.ask_for_command_approval("ls")
         assert mock_structured_llm.ainvoke.await_count == 2

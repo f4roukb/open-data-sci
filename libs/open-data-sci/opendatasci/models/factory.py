@@ -77,6 +77,21 @@ def _supported_providers() -> str:
     return ", ".join(f"'{p}'" for p in Provider)
 
 
+def bind_structured_output(llm: BaseChatModel, schema: type[Any], **kwargs: Any) -> Any:
+    """Bind *schema* as *llm*'s structured-output parser.
+
+    Bedrock models use ``method="json_schema"`` to get Bedrock's native
+    constrained-decoding structured output (``outputConfig.textFormat``),
+    which guarantees schema-conformant JSON, instead of the forced-tool-call
+    method every other provider (and Bedrock's own default) uses.
+    """
+    from opendatasci.models.aws import is_bedrock_model
+
+    if is_bedrock_model(llm):
+        return llm.with_structured_output(schema, method="json_schema", **kwargs)
+    return llm.with_structured_output(schema, **kwargs)
+
+
 def create_model(config: OpenDataSciConfig) -> BaseChatModel:
     """Instantiate the primary LLM for the agent and workers.
 

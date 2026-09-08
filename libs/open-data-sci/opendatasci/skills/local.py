@@ -12,6 +12,12 @@ _BUILTIN_NAMES = [
     "deep_learning",
     "quantitative_analysis",
     "data_science_education",
+    "kaggle.com",
+    "arxiv.org",
+    "huggingface.co",
+    "github.com",
+    "paperswithcode.com",
+    "finance.yahoo.com",
 ]
 
 SKILL_LABELS: dict[str, str] = {
@@ -21,6 +27,12 @@ SKILL_LABELS: dict[str, str] = {
     "quantitative_analysis": "Quantitative Analyst",
     "data_science_education": "Data Science Educator",
     "deep_learning": "Deep Learning Eng.",
+    "kaggle.com": "Kaggle",
+    "arxiv.org": "arXiv",
+    "huggingface.co": "Hugging Face",
+    "github.com": "GitHub",
+    "paperswithcode.com": "Papers with Code",
+    "finance.yahoo.com": "Yahoo Finance",
 }
 
 

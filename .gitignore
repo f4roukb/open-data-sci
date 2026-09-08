@@ -27,3 +27,6 @@ run-*.json
 # Secrets
 .env
 .env.local
+
+# Claude
+CLAUDE.md

@@ -33,9 +33,10 @@ if compaction is not None:
 |-------|------|---------|
 | `UserMessage` | `HumanMessage` | A message from the user. |
 | `CompactionMessage` | `HumanMessage` | A harness message carrying a compacted history recall block. |
-| `AgentToAgentMessage` | `HumanMessage` | A message sent from the orchestrator to a sub-agent. |
+| `AgentToAgentMessage` | `HumanMessage` | A message sent from OpenDataSci to a sub-agent. |
 | `SummaryMessage` | `HumanMessage` | A harness message carrying a turn-summary recall block. |
 | `PlanMessage` | `HumanMessage` | A harness message carrying the current session plan. |
+| `TaskMessage` | `HumanMessage` | A worker's output delivered back to the main agent (e.g. a finished background task). |
 | `AgentMessage` | `AIMessage` | A message produced by the LLM agent. |
 
 ## Reference
@@ -69,6 +70,13 @@ if compaction is not None:
 ---
 
 ::: opendatasci.memory.messages.PlanMessage
+    options:
+      show_root_heading: true
+      show_source: false
+
+---
+
+::: opendatasci.memory.messages.TaskMessage
     options:
       show_root_heading: true
       show_source: false

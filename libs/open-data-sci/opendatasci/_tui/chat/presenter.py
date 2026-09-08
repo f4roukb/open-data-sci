@@ -1,0 +1,307 @@
+"""_TurnPresenter — manages all UI state for a single agent-turn stream.
+
+Extracted from ``CLIController.run_agent`` to reduce its complexity.
+``CLIController`` creates one ``_TurnPresenter`` per turn, feeds it events,
+and calls ``cleanup()`` in the ``finally`` block.
+"""
+
+import logging
+import re
+import time
+
+from opendatasci._tui.adapter import (
+    EphemeralHandle,
+    MessageHandle,
+    ThinkingHandle,
+    TurnStatusHandle,
+    UIAdapter,
+)
+from opendatasci._tui.chat.tools_display import REGISTRY, ToolDisplay
+from opendatasci.streaming.events import (
+    ErrorEvent,
+    ImageRenderEvent,
+    ReasoningEvent,
+    ResponseEvent,
+    SubagentEvent,
+    TaskDoneEvent,
+    TokenEvent,
+    ToolCallEvent,
+    ToolCommunicationEvent,
+    ToolResultEvent,
+    UsageEvent,
+)
+from opendatasci.tools.factory import ToolName
+
+logger = logging.getLogger(__name__)
+
+# MCP tool names are namespaced as "mcp<5-hex-tag>__<original tool name>" (see
+# opendatasci.tools.mcp._server_tag/_discover_server_tools) so two servers
+# exposing a same-named tool never collide. That internal name is meaningless
+# to a user, so it's reformatted into "MCP: <original tool name>" for display.
+_MCP_TOOL_NAME_RE = re.compile(r"^mcp[0-9a-f]{5}__(.+)$")
+
+
+def _format_mcp_tool_name(raw_name: str) -> str:
+    """Turn a raw MCP tool name (snake_case or camelCase) into a display phrase.
+
+    ``read_microsoft_docs`` and ``readMicrosoftDocs`` both become
+    "Read microsoft docs": first word capitalized, the rest lowercased.
+    """
+    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", raw_name).replace("_", " ").replace("-", " ")
+    words = spaced.split()
+    if not words:
+        return raw_name
+    return " ".join([words[0].capitalize(), *(word.lower() for word in words[1:])])
+
+
+def apply_usage_event(event: UsageEvent, turn_status: TurnStatusHandle | None) -> None:
+    """Push token/cache counts from *event* onto *turn_status*, if present.
+
+    Not a presenter method: it only touches the turn status handle passed in
+    and has no dependency on any per-turn presenter state.
+    """
+    if turn_status is None:
+        return
+
+    input_tokens = event.input_tokens
+    output_tokens = event.output_tokens
+    cache_read_tokens = event.cache_read_tokens
+
+    context_tokens: int | None = None
+    if input_tokens is not None or output_tokens is not None:
+        context_tokens = int(input_tokens or 0) + int(output_tokens or 0)
+
+    cached_tokens: int | None = int(cache_read_tokens) if cache_read_tokens is not None else None
+
+    turn_status.update_context(context_tokens, cached_tokens)
+
+
+class _TurnPresenter:
+    """Manages ephemeral UI state (bubbles, tool blocks, thinking) for one turn.
+
+    Handlers that touch a ``MessageHandle`` (``handle_token``,
+    ``handle_tool_call``, ``handle_error``, ``handle_exception``,
+    ``cleanup``) are async, since ``MessageHandle.append/set_content/finish``
+    are async (they await Textual's ``MarkdownStream``). The rest stay
+    synchronous.
+    """
+
+    def __init__(self, ui: UIAdapter) -> None:
+        self._ui = ui
+        self._agent_msg: MessageHandle | None = None
+        self._thinking_start: float = 0.0
+        self._had_reasoning: bool = False
+        self._ephemerals: list[EphemeralHandle] = []
+        # tool_call_id → ephemeral (promoted once tool_call fires)
+        self._ephemerals_by_id: dict[str, EphemeralHandle] = {}
+        # Ephemerals created from leading tool_communication before tool_call fires
+        self._pending_ephemerals: dict[str, EphemeralHandle] = {}
+        self._task_block: EphemeralHandle | None = None
+        # tool_call_id → latest communication text (buffered until block is ready)
+        self._comm_buffers: dict[str, str] = {}
+        # tool_call_ids for tools with display_status=False — no UI created, result silently ignored
+        self._hidden_tool_call_ids: set[str] = set()
+        # Ephemeral "Thinking..." spinner shown while the LLM is processing
+        self._thinking_block: ThinkingHandle | None = None
+        self._show_thinking_block()
+
+    # ── Internal helpers ──────────────────────────────────────────────────────
+
+    def _show_thinking_block(self) -> None:
+        if self._thinking_block is None:
+            self._thinking_block = self._ui.add_thinking_block()
+            self._had_reasoning = False
+
+    def _dismiss_thinking_block(self) -> None:
+        if self._thinking_block is not None:
+            self._thinking_block.dismiss()
+            self._thinking_block = None
+
+    def _finish_thinking(self) -> None:
+        if self._thinking_block is None:
+            return
+        if self._had_reasoning:
+            elapsed = int(time.monotonic() - self._thinking_start)
+            self._thinking_block.finish(f"Thought for {elapsed}s")
+        else:
+            self._thinking_block.dismiss()
+        self._thinking_block = None
+
+    @staticmethod
+    def _make_label(tool_display: ToolDisplay | None, event: ToolCallEvent) -> str:
+        if tool_display:
+            return tool_display.label
+        mcp_match = _MCP_TOOL_NAME_RE.match(event.tool)
+        if mcp_match:
+            return f"MCP: {_format_mcp_tool_name(mcp_match.group(1))}"
+        return event.tool.replace("_", " ").title()
+
+    @staticmethod
+    def _make_summary(tool_display: ToolDisplay | None, event: ToolCallEvent) -> str:
+        return event.summary
+
+    # ── Event handlers ────────────────────────────────────────────────────────
+
+    def handle_reasoning(self, event: ReasoningEvent) -> None:
+        if not self._had_reasoning:
+            self._thinking_start = time.monotonic()
+            self._had_reasoning = True
+
+    async def handle_token(self, event: TokenEvent) -> None:
+        self._finish_thinking()
+        if self._agent_msg is None:
+            self._agent_msg = self._ui.add_message("agent", "")
+        await self._agent_msg.append(event.content)
+
+    def handle_tool_communication(self, event: ToolCommunicationEvent) -> None:
+        tool_display = REGISTRY.get(event.tool_name) if event.tool_name else None
+        hidden = tool_display is not None and not tool_display.display_status
+        self._finish_thinking()
+        tc_id = event.tool_call_id
+        comm = event.content
+        self._comm_buffers[tc_id] = comm
+
+        if tc_id and tc_id in self._ephemerals_by_id:
+            target = self._ephemerals_by_id[tc_id]
+            if target.is_running():
+                target.set_communication(comm)
+        elif tc_id and tc_id not in self._ephemerals_by_id:
+            # First comm token — pre-mount a placeholder ephemeral.  Hidden
+            # tools (display_status=False) get a communication-only block (empty
+            # label): the narration is shown so the user still gets updates,
+            # but no tool-status line ever appears for them.
+            block = self._ui.add_ephemeral_block(comm, "" if hidden else "…", "")
+            self._pending_ephemerals[tc_id] = block
+            self._ephemerals.append(block)
+            self._ephemerals_by_id[tc_id] = block
+
+    async def handle_tool_call(self, event: ToolCallEvent) -> None:
+        tool_call_id = event.tool_call_id or ""
+        existing = self._pending_ephemerals.pop(tool_call_id, None) if tool_call_id else None
+        tool_display = REGISTRY.get(str(event.tool))
+
+        if tool_display is not None and not tool_display.display_status:
+            # Hidden tool — never show a tool-status line, but keep its
+            # communication on screen (communication-only block) so the user
+            # still gets updates while the tool runs.  The block stays
+            # registered so tool_result finalises it like any other.
+            self._comm_buffers.pop(tool_call_id, None)
+            if existing is not None and self._agent_msg is None:
+                existing.upgrade("", "")  # drop any "…" placeholder status line
+                return
+            if existing is not None:
+                # Agent narration already covers what's happening — the comm
+                # block is redundant, so retract it.
+                existing.dismiss()
+                self._ephemerals = [e for e in self._ephemerals if e is not existing]
+                self._ephemerals_by_id.pop(tool_call_id, None)
+            if tool_call_id:
+                self._hidden_tool_call_ids.add(tool_call_id)
+            return
+
+        self._finish_thinking()
+        has_narration = self._agent_msg is not None
+        if self._agent_msg is not None:
+            await self._agent_msg.finish()
+            self._agent_msg = None
+
+        buffered_comm = self._comm_buffers.pop(tool_call_id, "")
+        comm = "" if has_narration else buffered_comm
+
+        if str(event.tool) == ToolName.TASK:
+            if existing is not None:
+                existing.dismiss()
+                self._ephemerals = [e for e in self._ephemerals if e is not existing]
+                self._ephemerals_by_id.pop(tool_call_id, None)
+            block = self._ui.add_task_block(comm, list(event.task_summaries))
+            self._task_block = block
+            self._ephemerals.append(block)
+            if tool_call_id:
+                self._ephemerals_by_id[tool_call_id] = block
+        elif existing is not None:
+            if has_narration:
+                existing.set_communication(None)
+            existing.upgrade(
+                self._make_label(tool_display, event), self._make_summary(tool_display, event)
+            )
+        else:
+            block = self._ui.add_ephemeral_block(
+                comm, self._make_label(tool_display, event), self._make_summary(tool_display, event)
+            )
+            self._ephemerals.append(block)
+            if tool_call_id:
+                self._ephemerals_by_id[tool_call_id] = block
+
+    def handle_image_render(self, event: ImageRenderEvent) -> None:
+        self._ui.add_image_block(event.path, event.caption)
+
+    def handle_task_done(self, event: TaskDoneEvent) -> None:
+        if self._task_block is not None and event.task_idx is not None:
+            if event.success:
+                self._task_block.mark_task_done(event.task_idx)
+            else:
+                self._task_block.mark_task_error(event.task_idx)
+
+    def handle_subagent_event(self, event: SubagentEvent) -> None:
+        if self._task_block is None or event.task_idx is None:
+            return
+        if event.event_type == "task_tool_call":
+            tool_name = event.content
+            tool_display = REGISTRY.get(tool_name)
+            activity = event.summary
+            if not activity:
+                activity = tool_display.label if tool_display else tool_name
+            self._task_block.update_task_activity(event.task_idx, activity)
+        elif event.event_type == "task_tool_result":
+            # Tool finished — drop the inline activity so the row reverts to the
+            # worker's subtask summary while the LLM decides on the next step.
+            self._task_block.update_task_activity(event.task_idx, "")
+
+    def handle_tool_result(self, event: ToolResultEvent) -> None:
+        tool_call_id = event.tool_call_id
+        if tool_call_id and tool_call_id in self._hidden_tool_call_ids:
+            self._hidden_tool_call_ids.discard(tool_call_id)
+            return
+        if tool_call_id and tool_call_id in self._ephemerals_by_id:
+            target = self._ephemerals_by_id.pop(tool_call_id)
+            if event.is_error:
+                target.set_error()
+            else:
+                target.set_done()
+            self._ephemerals = [e for e in self._ephemerals if e is not target]
+        else:
+            logger.warning(
+                "Received uncorrelated tool_result (tool_call_id=%r); "
+                "leaving ephemerals running until cleanup",
+                tool_call_id,
+            )
+        self._show_thinking_block()
+
+    def handle_response(self, event: ResponseEvent) -> None:
+        self._finish_thinking()
+        if self._agent_msg is None and event.content:
+            self._agent_msg = self._ui.add_message("agent", event.content)
+
+    async def handle_error(self, event: ErrorEvent) -> None:
+        self._dismiss_thinking_block()
+        if self._agent_msg is not None:
+            await self._agent_msg.finish()
+            self._agent_msg = None
+        self._ui.add_message("error", f"✗ {event.content}")
+
+    async def handle_exception(self, exc: Exception) -> None:
+        self._dismiss_thinking_block()
+        if self._agent_msg is not None:
+            await self._agent_msg.finish()
+            self._agent_msg = None
+        self._ui.add_message("error", f"✗ Error: {exc}")
+
+    # ── Cleanup ───────────────────────────────────────────────────────────────
+
+    async def cleanup(self) -> None:
+        """Finalise all open UI elements (called from the run_agent finally block)."""
+        self._finish_thinking()
+        for e in self._ephemerals:
+            e.set_done()
+        if self._agent_msg is not None:
+            await self._agent_msg.finish()

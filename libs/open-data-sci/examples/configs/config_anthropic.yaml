@@ -1,13 +1,10 @@
 # OpenDataSci — Anthropic config
 #
 # Usage:
-#   opendatasci data.csv --config examples/config_anthropic.yaml
+#   opendatasci data.csv --config examples/configs/config_anthropic.yaml
 #
 # Set your API key:
 #   export ANTHROPIC_API_KEY=sk-ant-...
-#
-# TUI flags override any value here at launch:
-#   opendatasci data.csv --config examples/config_anthropic.yaml --model claude-opus-4-8
 #
 # Fields that cannot coexist with others are commented out with an explanation.
 # All remaining fields are active and can be tuned freely.
@@ -25,26 +22,12 @@ secondary_provider: openai
 secondary_model: gpt-5.6-luna
 
 # ── Sampling ──────────────────────────────────────────────────────────────────
-# temperature: not sent to Claude 4.6+ / Sonnet 5 models (they use adaptive
-# thinking and reject explicit sampling parameters); applies to other models.
-temperature: 0.1
+# primary_temperature: not sent to Claude 4.6+ / Sonnet 5 models (they use
+# adaptive thinking and reject explicit sampling parameters); applies to other models.
+primary_temperature: 0.1
 
 # ── Agent identity ────────────────────────────────────────────────────────────
 name: Sai
-
-# ── Web access ────────────────────────────────────────────────────────────────
-# Domains the fetch_url tool may access, on top of the built-in allowlist.
-extra_web_domains:
-  - arxiv.org
-  - huggingface.co
-  - paperswithcode.com
-  - kaggle.com
-
-# Uncomment override_web_domains to REPLACE the built-in allowlist entirely.
-# This conflicts with extra_web_domains in intent: use one approach or the other.
-# override_web_domains:
-#   - arxiv.org
-#   - huggingface.co
 
 # ── Parallelism ───────────────────────────────────────────────────────────────
 # Maximum wall-clock seconds for all spawned worker agents to finish.
@@ -53,7 +36,7 @@ worker_timeout_seconds: 600
 
 # ── Context management ────────────────────────────────────────────────────────
 # Token count after which the agent's context is compacted mid-turn (execution mode only).
-midturn_compaction_threshold: 80000
+autocompaction_threshold: 80000
 
 # ── API keys & endpoints ──────────────────────────────────────────────────────
 # Per-provider API key fields — prefer setting the env var instead of
@@ -117,7 +100,10 @@ midturn_compaction_threshold: 80000
 #                          (requires pip install 'open-data-sci[azure]')
 
 # ── MCP tool servers ──────────────────────────────────────────────────────────
-# Alternatively, drop a mcp.json file into your workspace's .opendatasci/ folder.
+# Alternatively, configure servers globally in ~/.opendatasci/integrations/mcp.json
+# (or live from the TUI's /config -> Integrations -> MCP Servers).
 # mcp_servers:
-#   - http://localhost:3000/mcp
+#   - name: my-server
+#     url: http://localhost:3000/mcp
+#     transport: http
 

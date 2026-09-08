@@ -7,8 +7,6 @@
 3. `.env` file in the current working directory (loaded automatically)
 4. A YAML config file via `OpenDataSciConfig.from_yaml(path)`
 
-TUI flags always take precedence over all of the above.
-
 ## Quick reference
 
 ```python
@@ -22,7 +20,7 @@ config = OpenDataSciConfig(
     provider="openai",
     model="gpt-5.6-sol",
     openai_api_key="sk-...",
-    temperature=0.2,
+    primary_temperature=0.2,
 )
 
 # Mixed providers — Anthropic for the primary model, OpenAI for summarisation
@@ -45,7 +43,7 @@ config = OpenDataSciConfig.from_yaml("opendatasci_config.yaml")
 |-------|---------|---------|-------------|
 | `provider` | `PROVIDER` | `"anthropic"` | LLM provider for the primary model |
 | `model` | `MODEL` | *(provider default)* | Primary model identifier |
-| `secondary_provider` | `SECONDARY_PROVIDER` | `"anthropic"` | Provider for the secondary model |
+| `secondary_provider` | `SECONDARY_PROVIDER` | `"anthropic"` | Provider for the secondary model — not tied to `provider`; set it explicitly when mixing providers |
 | `secondary_model` | `SECONDARY_MODEL` | *(provider default)* | Secondary model for lightweight tasks |
 
 ### API keys
@@ -66,41 +64,37 @@ config = OpenDataSciConfig.from_yaml("opendatasci_config.yaml")
 | `google_cloud_location` | `GOOGLE_CLOUD_LOCATION` | Vertex AI region |
 | `azure_endpoint` | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI resource endpoint URL |
 | `azure_api_version` | `AZURE_OPENAI_API_VERSION` | Azure API version (default: `2025-01-01-preview`) |
-| `llm_server_base_url` | `LLM_SERVER_BASE_URL` | Custom endpoint for Ollama / OpenAI-compatible server |
+| `llm_server_base_url` | `LLM_SERVER_BASE_URL` | Custom endpoint for Ollama / OpenAI-compatible server. Field default is `None`; if unset, falls back at runtime to `http://localhost:11434` for `ollama` and `http://localhost:8000/v1` for `openai_compatible_server` |
 
 ### Sampling & reasoning
 
 | Field | Env var | Default | Description |
 |-------|---------|---------|-------------|
-| `temperature` | `TEMPERATURE` | `0.0` | LLM sampling temperature (not sent to Claude 4.6+ / Sonnet 5 models) |
+| `primary_temperature` | `PRIMARY_TEMPERATURE` | `0.0` | LLM sampling temperature for the primary model (not sent to Claude 4.6+ / Sonnet 5 models) |
 
 ### Agent behaviour
 
 | Field | Env var | Default | Description |
 |-------|---------|---------|-------------|
 | `name` | `NAME` | `"Sai"` | Agent display name, injected into all system prompts |
-| `midturn_compaction_threshold` | `MIDTURN_COMPACTION_THRESHOLD` | `96000` | Token count after which the agent's context is compacted mid-turn |
+| `autocompaction_threshold` | `AUTOCOMPACTION_THRESHOLD` | `96000` | Token count after which the agent's context is compacted mid-turn |
 | `worker_timeout_seconds` | `WORKER_TIMEOUT_SECONDS` | `300.0` | Max seconds for all spawned workers to finish (`null` = no timeout) |
-
-### Web access
-
-| Field | Env var | Default | Description |
-|-------|---------|---------|-------------|
-| `extra_web_domains` | `EXTRA_FETCH_DOMAINS` | `[]` | Additional hostnames the `fetch_url` tool may access |
-| `override_web_domains` | | `None` | Replaces the built-in domain allowlist entirely when set |
 
 ### Skills
 
 | Field | Env var | Default | Description |
 |-------|---------|---------|-------------|
-| `skills_directory` | `SKILLS_DIRECTORY` | `None` | Path to a user-defined skills directory |
-| `builtin_skills_directory` | `BUILTIN_SKILLS_DIRECTORY` | *(bundled)* | Path to the built-in skills directory |
+| `skills_directory` | `SKILLS_DIRECTORY` | `None` | Path to a directory of custom skill files, loaded in addition to built-ins |
+| `builtin_skills_directory` | `BUILTIN_SKILLS_DIRECTORY` | *(bundled)* | Path to the built-in skills directory — override only to replace defaults entirely |
+| `skill_domains_directory` | `SKILL_DOMAINS_DIRECTORY` | `None` | Path to a directory of custom skill domains, loaded in addition to built-ins |
+| `builtin_skill_domains_directory` | `BUILTIN_SKILL_DOMAINS_DIRECTORY` | *(bundled)* | Path to the built-in skill domains directory — override only to replace defaults entirely |
 
 ### Sandbox
 
 | Field | Env var | Default | Description |
 |-------|---------|---------|-------------|
 | `local_code_exec_timeout` | `CODE_EXEC_TIMEOUT` | `1800` | Max seconds for a single local sandbox execution |
+| `enable_image_rendering` | `ENABLE_IMAGE_RENDERING` | `False` | Whether the `render_image` tool is offered to the agent. Set internally by the TUI based on terminal graphics-protocol support — not typically set by hand |
 
 ### MCP
 
@@ -135,16 +129,12 @@ model: claude-sonnet-5
 secondary_provider: openai
 secondary_model: gpt-5.6-luna
 
-temperature: 0.1
+primary_temperature: 0.1
 
 name: Sai
 
-extra_web_domains:
-  - arxiv.org
-  - huggingface.co
-
 worker_timeout_seconds: 600
-midturn_compaction_threshold: 80000
+autocompaction_threshold: 80000
 ```
 
 ```python

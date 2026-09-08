@@ -1,6 +1,5 @@
 """Unit tests for opendatasci.tools.web."""
 
-
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -8,63 +7,8 @@ import pytest
 
 from opendatasci.tools.web import (
     _clean_html,
-    _is_domain_allowed,
     create_web_tools,
 )
-
-# ---------------------------------------------------------------------------
-# _is_domain_allowed
-# ---------------------------------------------------------------------------
-
-
-class TestIsDomainAllowed:
-    def test_exact_match_allowed(self) -> None:
-        assert _is_domain_allowed("https://github.com/repo") is True
-
-    def test_subdomain_of_allowed_domain(self) -> None:
-        assert _is_domain_allowed("https://en.wikipedia.org/wiki/X") is False
-        assert _is_domain_allowed("https://raw.githubusercontent.com/file") is True
-
-    def test_disallowed_domain_returns_false(self) -> None:
-        assert _is_domain_allowed("https://example.com/page") is False
-
-    def test_subdomain_of_allowed_arxiv(self) -> None:
-        assert _is_domain_allowed("https://arxiv.org/abs/1234") is True
-
-    def test_subdomain_matches(self) -> None:
-        assert _is_domain_allowed("https://pandas.pydata.org/docs/") is True
-
-    def test_extra_domains_extend_allowlist(self) -> None:
-        extra = frozenset({"mycompany.com"})
-        assert _is_domain_allowed("https://mycompany.com/data", extra=extra) is True
-
-    def test_extra_domain_subdomain_allowed(self) -> None:
-        extra = frozenset({"mycompany.com"})
-        assert _is_domain_allowed("https://api.mycompany.com/v1", extra=extra) is True
-
-    def test_override_replaces_base_list(self) -> None:
-        override = frozenset({"custom.io"})
-        assert _is_domain_allowed("https://custom.io/page", override=override) is True
-        assert _is_domain_allowed("https://github.com/repo", override=override) is False
-
-    def test_override_with_extra_both_allowed(self) -> None:
-        override = frozenset({"custom.io"})
-        extra = frozenset({"also.com"})
-        assert _is_domain_allowed("https://custom.io", override=override, extra=extra) is True
-        assert _is_domain_allowed("https://also.com", override=override, extra=extra) is True
-
-    def test_malformed_url_returns_false(self) -> None:
-        assert _is_domain_allowed("not-a-url") is False
-
-    def test_empty_string_returns_false(self) -> None:
-        assert _is_domain_allowed("") is False
-
-    def test_case_insensitive_hostname(self) -> None:
-        assert _is_domain_allowed("https://GITHUB.COM/repo") is True
-
-    def test_finance_yahoo_com_allowed(self) -> None:
-        assert _is_domain_allowed("https://finance.yahoo.com/quote/AAPL") is True
-
 
 # ---------------------------------------------------------------------------
 # _clean_html
@@ -123,16 +67,6 @@ class TestGetWebTools:
         assert "web_search" in names
         assert "fetch_url" in names
 
-    def test_extra_domains_forwarded_to_fetch(self) -> None:
-        tools = create_web_tools(extra_web_domains=["mycompany.com"])
-        fetch = next(t for t in tools if t.name == "fetch_url")
-        assert fetch is not None
-
-    def test_override_domains_forwarded_to_fetch(self) -> None:
-        tools = create_web_tools(override_web_domains=["custom.io"])
-        fetch = next(t for t in tools if t.name == "fetch_url")
-        assert fetch is not None
-
 
 # ---------------------------------------------------------------------------
 # fetch_url tool (via create_web_tools)
@@ -140,24 +74,24 @@ class TestGetWebTools:
 
 
 class TestFetchUrlTool:
-    def _get_fetch_tool(self, **kwargs):
-        tools = create_web_tools(**kwargs)
+    def _get_fetch_tool(self):
+        tools = create_web_tools()
         return next(t for t in tools if t.name == "fetch_url")
 
     @pytest.mark.asyncio
-    async def test_disallowed_domain_returns_error(self) -> None:
+    async def test_malformed_url_returns_error(self) -> None:
         tool = self._get_fetch_tool()
         result = await tool.ainvoke(
             {
-                "url": "https://notallowed.example.com/page",
+                "url": "not-a-url",
                 "summary": "Fetching page",
                 "communication": "fetching",
             }
         )
-        assert "not in the fetch allowlist" in result or "Error" in result
+        assert "Error" in result
 
     @pytest.mark.asyncio
-    async def test_allowed_domain_returns_content(self) -> None:
+    async def test_any_domain_returns_content(self) -> None:
         tool = self._get_fetch_tool()
         mock_response = MagicMock()
         mock_response.text = "<html><body><p>Hello world</p></body></html>"
@@ -172,8 +106,8 @@ class TestFetchUrlTool:
         with patch("httpx.AsyncClient", return_value=mock_client):
             result = await tool.ainvoke(
                 {
-                    "url": "https://github.com/user/repo",
-                    "summary": "Fetching GitHub repo",
+                    "url": "https://example.com/anything",
+                    "summary": "Fetching page",
                     "communication": "fetching",
                 }
             )
@@ -244,29 +178,6 @@ class TestFetchUrlTool:
                 }
             )
         assert "col1,col2" in result
-
-    @pytest.mark.asyncio
-    async def test_extra_domain_allowed_when_configured(self) -> None:
-        tool = self._get_fetch_tool(extra_web_domains=["custom.io"])
-        mock_response = MagicMock()
-        mock_response.text = "custom content"
-        mock_response.headers = {"content-type": "text/plain"}
-        mock_response.raise_for_status = MagicMock()
-
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("httpx.AsyncClient", return_value=mock_client):
-            result = await tool.ainvoke(
-                {
-                    "url": "https://custom.io/data",
-                    "summary": "Fetching custom domain",
-                    "communication": "fetching",
-                }
-            )
-        assert "custom content" in result
 
 
 # ---------------------------------------------------------------------------

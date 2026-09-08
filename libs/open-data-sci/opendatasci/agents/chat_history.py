@@ -6,8 +6,10 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Any
 
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 
+from opendatasci._utils.message_utils import to_text_content_blocks
 from opendatasci._utils.mixins import RenderableMessageMixin
 from opendatasci.context.base import BaseContextStore
 from opendatasci.context.plans import Plan
@@ -61,16 +63,16 @@ class ChatHistoryBuilder(BaseChatHistoryBuilder):
     optionally compacts an oversized ongoing turn, prepends summary and plan recall
     messages, then renders everything for the LLM.
 
-    Pass a *loop_compactor_llm* and a *midturn_compaction_threshold* to enable
+    Pass a *loop_compactor_llm* and an *autocompaction_threshold* to enable
     mid-turn compaction; omit either to disable it. Pass *context_store* and
     *session_id* to include the session's current plan; omit either to skip it.
     """
 
     def __init__(
         self,
-        summarizer_llm: Any,
+        summarizer_llm: BaseChatModel | None,
         loop_compactor_llm: Any | None = None,
-        midturn_compaction_threshold: int | None = None,
+        autocompaction_threshold: int | None = None,
         context_store: BaseContextStore | None = None,
         session_id: str | None = None,
         window_size: int = _CHAT_TURN_SUMMARY_WINDOW_SIZE,
@@ -84,7 +86,7 @@ class ChatHistoryBuilder(BaseChatHistoryBuilder):
         self._loop_compactor = (
             AgentLoopCompactor(llm=loop_compactor_llm) if loop_compactor_llm is not None else None
         )
-        self._midturn_compaction_threshold = midturn_compaction_threshold
+        self._autocompaction_threshold = autocompaction_threshold
         self._context_store = context_store
         self._session_id = session_id
         self._window_size = window_size
@@ -107,12 +109,13 @@ class ChatHistoryBuilder(BaseChatHistoryBuilder):
         """Build a recall message for *plan*, preserving its original timestamp."""
         raw_ts = plan.metadata.get("created_at")
         created_at = datetime.fromisoformat(raw_ts) if raw_ts else datetime.now(timezone.utc)
-        return PlanMessage(content=plan.to_content(), created_at=created_at)
+        return PlanMessage(content=to_text_content_blocks(plan.to_content()), created_at=created_at)
 
     def _build_compaction_message(self, compaction: "ChatHistoryCompaction") -> CompactionMessage:
         """Convert *compaction* into a stamped recall message."""
         return CompactionMessage(
-            content=compaction.to_content(), created_at=compaction.compacted_at
+            content=to_text_content_blocks(compaction.to_content()),
+            created_at=compaction.compacted_at,
         )
 
     def _build_summary_messages(
@@ -124,7 +127,7 @@ class ChatHistoryBuilder(BaseChatHistoryBuilder):
         """
         return [
             SummaryMessage(
-                content=summary.to_content(),
+                content=to_text_content_blocks(summary.to_content()),
                 created_at=summary.turn_end_timestamp,
                 turn_start_timestamp=summary.turn_start_timestamp,
                 turn_end_timestamp=summary.turn_end_timestamp,
@@ -173,9 +176,9 @@ class ChatHistoryBuilder(BaseChatHistoryBuilder):
         messages = list(messages)
         if (
             self._loop_compactor is not None
-            and self._midturn_compaction_threshold is not None
+            and self._autocompaction_threshold is not None
             and is_ongoing_turn(messages)
-            and self._loop_compactor.estimate_tokens(messages) > self._midturn_compaction_threshold
+            and self._loop_compactor.estimate_tokens(messages) > self._autocompaction_threshold
         ):
             messages = await self._loop_compactor.compact(messages)
 

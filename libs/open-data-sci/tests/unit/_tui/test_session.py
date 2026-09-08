@@ -1,5 +1,4 @@
-﻿"""Unit tests for opendatasci._tui.session.CLISessionInfo."""
-
+"""Unit tests for opendatasci._tui.session.CLISessionInfo."""
 
 import pytest
 from pydantic import ValidationError

@@ -6,15 +6,14 @@ are recalled by ChatHistoryBuilder and rendered as standalone HumanMessages
 selection, provider caching markers, and skills only.
 """
 
-
 from functools import partial
 
 import pytest
 from langchain_core.messages import SystemMessage
 
-from opendatasci.prompts.prompt_templates import PLAN_MODE_SYSTEM_PROMPT, MAIN_SYSTEM_PROMPT
-from opendatasci.prompts.builders import SystemContextBuilder as SystemPromptBuilder
 from opendatasci.configs import OpenDataSciConfig
+from opendatasci.prompts.builders import SystemContextBuilder as SystemPromptBuilder
+from opendatasci.prompts.prompt_templates import MAIN_SYSTEM_PROMPT, PLAN_MODE_SYSTEM_PROMPT
 from opendatasci.skills.base import Skill, SkillDomain
 
 
@@ -49,7 +48,9 @@ class TestSystemPromptBuilderBuild:
         config = OpenDataSciConfig(provider=provider)
         builder = SystemPromptBuilder(config=config)
         active_skills = _make_active_skills(skill_prompt)
-        builder.build = partial(builder.build, active_skills=active_skills, is_plan_mode=is_plan_mode)
+        builder.build = partial(
+            builder.build, active_skills=active_skills, is_plan_mode=is_plan_mode
+        )
         return builder
 
     # --- Prompt selection ---

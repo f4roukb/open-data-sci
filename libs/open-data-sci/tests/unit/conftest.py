@@ -7,7 +7,6 @@ minimal stub into ``sys.modules`` here — *before* pytest collects any test
 module — to allow the rest of the package to be imported and tested normally.
 """
 
-
 import sys
 from types import ModuleType
 from unittest.mock import AsyncMock, MagicMock
