@@ -22,7 +22,7 @@ def create_agent(
     created and closed correctly::
 
         async with create_agent("/data/sales.csv") as agent:
-            async for event in agent.astream("summarise the data"):
+            async for event in agent.astream(Invocation.from_text("summarise the data")):
                 ...
 
     Resolves the workspace, sandbox factory, skill store, and persistence
