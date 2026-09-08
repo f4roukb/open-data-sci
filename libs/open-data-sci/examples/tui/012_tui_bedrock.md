@@ -128,7 +128,7 @@ only the setup and launch command differ.
 | `/clear` | Clear conversation history |
 | `/ls-workspace` | List every file in the workspace |
 | `/models` | Show primary and secondary model in use |
-| `/stop` | Interrupt a running agent turn |
+| `/config` (alias `/settings`) | Open the configuration panel (display, models, personalization, and more) |
 | `/exit` | Quit |
 
 ---

@@ -1,7 +1,7 @@
 # OpenDataSci — Ollama config
 #
 # Usage:
-#   opendatasci data.csv --config examples/config_ollama.yaml
+#   opendatasci data.csv --config examples/configs/config_ollama.yaml
 #
 # Prerequisites:
 #   pip install "open-data-sci[ollama]"

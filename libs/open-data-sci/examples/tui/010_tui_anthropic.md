@@ -92,9 +92,8 @@ Type `/` and press **Tab** to autocomplete. All commands take effect immediately
 | `/clear` | Clears conversation history |
 | `/ls-workspace` | Lists every file in the current workspace |
 | `/models` | Shows which primary model and secondary model are in use |
-| `/themes` | Lists available colour themes and marks the active one |
+| `/config` (alias `/settings`) | Opens the configuration panel (display, models, personalization, and more) |
 | `/help` | Prints all available commands with descriptions |
-| `/stop` | Interrupts a running agent turn |
 | `/exit` | Quit |
 
 Sending a message while the agent is busy doesn't get rejected — it's pinned above the input box and runs automatically once the agent is free (unless it's waiting on your answer to a question). Use `/cancel-message` or `/cancel-all-messages` to drop queued messages instead.

@@ -4,7 +4,7 @@ Patterns for working with OpenDataSci across every supported LLM provider.
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.12
 - An API key or server running for the provider you choose
 
 ```bash

@@ -1,7 +1,7 @@
 # OpenDataSci — Anthropic config
 #
 # Usage:
-#   opendatasci data.csv --config examples/config_anthropic.yaml
+#   opendatasci data.csv --config examples/configs/config_anthropic.yaml
 #
 # Set your API key:
 #   export ANTHROPIC_API_KEY=sk-ant-...
@@ -100,7 +100,10 @@ autocompaction_threshold: 80000
 #                          (requires pip install 'open-data-sci[azure]')
 
 # ── MCP tool servers ──────────────────────────────────────────────────────────
-# Alternatively, drop a mcp.json file into your workspace's .opendatasci/ folder.
+# Alternatively, configure servers globally in ~/.opendatasci/integrations/mcp.json
+# (or live from the TUI's /config -> Integrations -> MCP Servers).
 # mcp_servers:
-#   - http://localhost:3000/mcp
+#   - name: my-server
+#     url: http://localhost:3000/mcp
+#     transport: http
 

@@ -4,7 +4,7 @@
 # (vLLM, LM Studio, llama.cpp's server, text-generation-inference, etc.).
 #
 # Usage:
-#   opendatasci data.csv --config examples/config_openai_compatible_server.yaml
+#   opendatasci data.csv --config examples/configs/config_openai_compatible_server.yaml
 #
 # Example with vLLM:
 #   pip install vllm

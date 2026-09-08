@@ -13,7 +13,7 @@ pip install open-data-sci
 
 ### System dependencies
 
-The sandbox that runs agent-generated code shells out to native binaries that `pip` cannot install. Install them with your OS package manager before using the agent:
+The sandbox that runs agent-generated code shells out to native binaries that `pip` cannot install: `ripgrep` everywhere, plus `bubblewrap` and `socat` on Linux. **The TUI detects a missing dependency on first launch and offers to install it for you** — you only need to do this by hand if you're setting things up ahead of time (scripted installs, containers, CI) or decline that step in the wizard. If you've cloned the repository, `make install-system-dependencies` runs the right command for your platform automatically:
 
 ```bash
 # macOS
@@ -72,7 +72,7 @@ pip install "open-data-sci[finance]" # Finance data — yfinance
 
 The `[deep-learning]` extra — deep learning directly on the host, for machines with a GPU or NPU — is required for the built-in **Deep Learning** skill; `[finance]` for the built-in **`finance.yahoo.com`** skill. Combine extras freely:
 
-> **GPU access inside the sandbox is opt-in.** Installing a `[deep-learning]` package makes the sandbox bind-mount the host's GPU device nodes so `torch`/`jax` can actually use the GPU — this exposes the host kernel's GPU driver to sandboxed code, a real change to the sandbox's risk profile. See `opendatasci/sandbox/srt.py`'s module docstring for details and current platform coverage.
+> **GPU access inside the sandbox is opt-in, and it's a real host-kernel exposure.** When a `[deep-learning]` package (`torch`, `jax`, `transformers`, `sentence-transformers`) is installed, the sandbox bind-mounts the host's accelerator device nodes (`/dev/nvidia*`, `/dev/dri/renderD*`, `/dev/dxg` for WSL2, and `/dev/accel/*` for NPUs on Linux) so those frameworks can actually use the hardware — otherwise sandboxed code has no path to accelerator hardware at all. This is a materially different risk than the sandbox's filesystem/network isolation: it hands sandboxed code direct `ioctl` access to the host kernel's GPU driver (GPU driver ioctl surfaces have a real CVE history), and there's no GPU-equivalent of the CPU/memory resource limits the sandbox otherwise enforces. A warning is logged whenever this activates. See the module docstring in `opendatasci/sandbox/srt.py` for the full detail — deep learning on macOS runs on CPU only, with no accelerator passthrough. Uninstall the `[deep-learning]` packages to disable this entirely.
 
 ```bash
 pip install "open-data-sci[aws,gemini,deep-learning,finance]"
@@ -195,6 +195,32 @@ later from `/config` (or `/settings`) without relaunching.
 
 ---
 
+## Key bindings
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+C` | Stop the running agent turn; press again while idle to quit |
+| `Ctrl+R` | Reset session |
+| `Ctrl+L` | Clear conversation |
+| `Escape` | Focus input box; step back a level in `/config` |
+| `Tab` | Cycle `@file` and `/command` completions |
+| `↑` / `↓` | Navigate input history or completion suggestions |
+
+---
+
+## Themes
+
+Pick a theme in the setup wizard, or switch live any time from `/config` → Display → Theme — no restart required.
+
+| Name | Description |
+|------|-------------|
+| `dark (colorblind)` | Dark background, Okabe-Ito colour-blind safe palette (built-in default) |
+| `dark` | Dark background with muted blue accents |
+| `light` | Light background with dark text |
+| `light (colorblind)` | Light background, Okabe-Ito colour-blind safe palette |
+
+---
+
 ## Python SDK quick start
 
 The Python API is async-first. Every public method that touches the network is a coroutine or an async generator.
@@ -308,24 +334,36 @@ OpenDataSci reads from and writes to a **workspace** — a local directory conta
 my-project/
 ├── data.csv
 ├── data2.parquet
-└── .opendatasci/          # managed by OpenDataSci
-    ├── mcp.json           # MCP tool server URLs (optional)
-    └── plans/             # persisted agent plans (auto-managed)
+└── .opendatasci/            # managed by OpenDataSci
+    ├── session.json         # session-to-thread mapping (auto-managed)
+    ├── plans/                # persisted agent plans (auto-managed)
+    ├── dataset_notes/        # persisted dataset notes (auto-managed)
+    ├── dataset_profiling/    # persisted dataset profile cards (auto-managed)
+    ├── skills/               # optional — custom skill files (see below)
+    └── skill_domains/        # optional — custom skill-domain manifests
 ```
 
 ### MCP tool servers
 
-Add external MCP servers by creating `.opendatasci/mcp.json`:
+MCP servers aren't configured per-workspace. Add them either:
 
-```json
-{
-  "servers": [
-    { "url": "http://localhost:3000/mcp" }
-  ]
-}
-```
+- Globally, via `~/.opendatasci/integrations/mcp.json` (also editable live from `/config` → Integrations → MCP Servers in the TUI), using the Cursor/VS Code `mcp.json` convention:
 
-Or set `mcp_servers` in `OpenDataSciConfig`.
+  ```json
+  {
+    "mcpServers": {
+      "my-server": {
+        "url": "http://localhost:3000/mcp",
+        "type": "http",
+        "headers": { "Authorization": "Bearer ..." }
+      }
+    }
+  }
+  ```
+
+- Or by setting `mcp_servers` directly in `OpenDataSciConfig`.
+
+Only the `http` and `sse` transports are supported.
 
 ### Skills
 
@@ -337,17 +375,29 @@ Create `.opendatasci/skills/` in your workspace and add Markdown files describin
 
 | Variable | Description |
 |----------|-------------|
+| `PROVIDER` | LLM provider for the primary model (default: `anthropic`) |
+| `MODEL` | Primary model identifier (default: provider default) |
+| `SECONDARY_PROVIDER` | Provider for the secondary model (default: `anthropic`) |
+| `SECONDARY_MODEL` | Secondary model for lightweight tasks (default: provider default) |
 | `ANTHROPIC_API_KEY` | Anthropic API key |
 | `OPENAI_API_KEY` | OpenAI / OpenAI-compatible server API key |
 | `GOOGLE_API_KEY` | Google Gemini API key |
 | `AZURE_OPENAI_API_KEY` | Azure OpenAI API key |
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI resource URL |
-| `REGION` | Cloud region (Bedrock) |
+| `AZURE_OPENAI_API_VERSION` | Azure OpenAI API version (default: `2025-01-01-preview`) |
+| `REGION` | Cloud region (Bedrock, default: `us-east-1`) |
 | `GOOGLE_CLOUD_PROJECT` | GCP project ID (Vertex AI) |
 | `GOOGLE_CLOUD_LOCATION` | Vertex AI region |
 | `LLM_SERVER_BASE_URL` | Custom endpoint (Ollama / OpenAI-compatible server) |
-| `SKILLS_DIRECTORY` | Path to a user-defined skills directory |
+| `PRIMARY_TEMPERATURE` | Sampling temperature for the primary model (default: `0.0`) |
+| `NAME` | Display name for the agent (default: `Sai`) |
+| `MCP_SERVERS` | MCP servers the agent may connect to |
+| `SKILLS_DIRECTORY` | Path to a directory of custom skill files, loaded in addition to built-ins |
 | `BUILTIN_SKILLS_DIRECTORY` | Override the bundled built-in skills directory |
+| `SKILL_DOMAINS_DIRECTORY` | Path to a directory of custom skill domains, loaded in addition to built-ins |
+| `BUILTIN_SKILL_DOMAINS_DIRECTORY` | Override the bundled built-in skill domains directory |
+| `WORKER_TIMEOUT_SECONDS` | Max seconds to wait for spawned workers to finish (default: `300`) |
+| `AUTOCOMPACTION_THRESHOLD` | Token count at which context is compacted mid-turn (default: `96000`) |
 | `CODE_EXEC_TIMEOUT` | Max seconds for one sandbox execution (default: `1800`) |
 
 A `.env` file in the current working directory is loaded automatically on startup.
