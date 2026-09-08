@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-08
+
 ### Added
 
 - **New `render_image` tool displays a static image inline in the chat** — the agent points at an image file already saved in the workspace (`artifact_path`, plus an optional `caption`); only that path and caption cross the streaming boundary as a new `ImageRenderEvent` — the TUI independently resolves, validates, and renders the file itself, so image bytes never enter the LLM's context. The image is scaled to 80% of the chat pane's width with its aspect ratio preserved, centered horizontally, with a centered caption beneath it. Any static format Pillow can decode is supported (PNG, JPEG, BMP, WEBP, TIFF, ...); GIFs and other animated/multi-frame formats are rejected. Rendering picks the best available tier at display time: a real terminal graphics protocol (Kitty's Terminal Graphics Protocol or Sixel, via `textual-image`'s `AutoImage`) when the terminal supports one, otherwise a clickable link (no low-fidelity Unicode/half-block fallback — that tier renders too poorly to be worth showing) that opens a small generated HTML preview (image + caption) in the system's default browser only when clicked, never automatically. `render_image` is offered to the agent whenever there's a real interactive terminal at all (`OpenDataSciConfig.enable_image_rendering`, detected by the TUI at startup, off by default) — terminal graphics support only decides which of those two tiers is used.
