@@ -133,7 +133,7 @@ opendatasci = "opendatasci._tui.app:main"
 [project.urls]
 Homepage = "https://github.com/f4roukb/open-data-sci"
 Repository = "https://github.com/f4roukb/open-data-sci"
-Documentation = "https://open-data-sci.readthedocs.io"
+Documentation = "https://opendatasci.readthedocs.io/en/latest/"
 "Bug Tracker" = "https://github.com/f4roukb/open-data-sci/issues"
 
 [tool.hatch.build.targets.wheel]

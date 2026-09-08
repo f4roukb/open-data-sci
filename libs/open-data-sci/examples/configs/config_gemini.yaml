@@ -1,7 +1,7 @@
 # OpenDataSci — Google Gemini (AI Studio) config
 #
 # Usage:
-#   opendatasci data.csv --config examples/config_gemini.yaml
+#   opendatasci data.csv --config examples/configs/config_gemini.yaml
 #
 # Prerequisites:
 #   pip install "open-data-sci[gemini]"

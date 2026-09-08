@@ -488,13 +488,6 @@ class TestMainArgParsing:
         assert kwargs["workspace_path"] == str(Path.cwd())
         app_cls_stub.return_value.run.assert_called_once()
 
-    def test_list_providers_prints_table_and_exits(self, monkeypatch, app_cls_stub, capsys) -> None:
-        _run_main(monkeypatch, "--list-providers")
-        out = capsys.readouterr().out
-        assert "anthropic" in out
-        assert "openai" in out
-        app_cls_stub.assert_not_called()
-
     def test_config_file_provides_provider_and_model(
         self, monkeypatch, app_cls_stub, tmp_path
     ) -> None:

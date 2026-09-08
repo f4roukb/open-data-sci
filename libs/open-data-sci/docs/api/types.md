@@ -13,6 +13,8 @@ from opendatasci.streaming import (
     ToolCallEvent,
     ToolCommunicationEvent,
     ToolResultEvent,
+    ImageRenderEvent,
+    MessageEvent,
     TaskDoneEvent,
     SubagentEvent,
     InputRequiredEvent,
@@ -36,6 +38,8 @@ existing `event.type == "token"` comparisons continue to work alongside
 | `ToolCallEvent` | `"tool_call"` | `content`, `tool`, `tool_call_id`, `summary`, `task_summaries` | Agent is invoking a tool |
 | `ToolCommunicationEvent` | `"tool_communication"` | `content`, `tool_call_id`, `tool_name` | In-progress status from a long-running tool |
 | `ToolResultEvent` | `"tool_result"` | `content`, `tool_call_id`, `is_error` | Tool returned its result |
+| `ImageRenderEvent` | `"image_render"` | `tool_call_id`, `path`, `caption` | A tool pointed at a static image to render inline (TUI-only; no image bytes cross this boundary) |
+| `MessageEvent` | `"message"` | `message` | A completed `BaseMessage`, for callers that own their own conversation-history accumulation |
 | `TaskDoneEvent` | `"task_done"` | `task_idx`, `success` | A concurrent worker finished |
 | `SubagentEvent` | `"subagent_event"` | `content`, `task_idx`, `event_type`, `success`, `summary` | Lifecycle event from inside a running worker |
 | `InputRequiredEvent` | `"input_required"` | `content`, `choices` | Agent paused at a free-text/choice interrupt; call `agent.resume_with_input(answer)` to resume |
@@ -103,6 +107,8 @@ async for event in agent.astream(Invocation.from_text("Analyse this dataset")):
         - ToolCallEvent
         - ToolCommunicationEvent
         - ToolResultEvent
+        - ImageRenderEvent
+        - MessageEvent
         - TaskDoneEvent
         - SubagentEvent
         - InputRequiredEvent

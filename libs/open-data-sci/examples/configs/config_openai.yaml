@@ -1,7 +1,7 @@
 # OpenDataSci — OpenAI config
 #
 # Usage:
-#   opendatasci data.csv --config examples/config_openai.yaml
+#   opendatasci data.csv --config examples/configs/config_openai.yaml
 #
 # Set your API key:
 #   export OPENAI_API_KEY=sk-...

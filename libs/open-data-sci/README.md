@@ -1,6 +1,18 @@
 # OpenDataSci
 
-A production-grade AI agent for data science and machine learning. See the [project README](../../README.md) for an overview, benchmark results, and feature descriptions.
+[![PyPI version](https://img.shields.io/pypi/v/open-data-sci.svg)](https://pypi.org/project/open-data-sci/)
+[![Python versions](https://img.shields.io/pypi/pyversions/open-data-sci.svg)](https://pypi.org/project/open-data-sci/)
+[![License](https://img.shields.io/pypi/l/open-data-sci.svg)](https://pypi.org/project/open-data-sci/)
+
+A production-grade AI agent for data science and machine learning — run it as an interactive terminal app, or embed it as an async Python SDK in your own service.
+
+- **Every major LLM provider** — Anthropic, OpenAI, AWS Bedrock, Google Gemini/Vertex AI, Azure OpenAI, Ollama, or any OpenAI-compatible server ([details](#models))
+- **Sandboxed code execution** — the agent writes and runs real Python and CLI code against your data, isolated from the host
+- **Zero-config first run** — point it at a file or directory and an interactive wizard handles the rest; every setting is also scriptable through YAML, environment variables, or the Python SDK
+- **Extensible** — connect [MCP servers](#mcp-servers) for extra tools, or add [custom skills](#custom-skills) to specialise the agent for a domain
+- **Cloud-portable architecture** — every stateful dependency (workspace, sandbox, memory, sessions, background tasks) sits behind an abstract interface, so a multi-tenant deployment is a matter of swapping implementations rather than rewriting the agent ([details](#cloud-portability))
+
+Full documentation, including the complete Python API reference: https://opendatasci.readthedocs.io/en/latest/
 
 ## Contents
 
@@ -11,10 +23,7 @@ A production-grade AI agent for data science and machine learning. See the [proj
 - [Slash Commands](#slash-commands)
 - [The `/config` Panel](#the-config-panel)
 - [File Attachments](#file-attachments)
-- [Key Bindings](#key-bindings)
-- [Themes](#themes)
 - [Python SDK](#python-sdk)
-- [Embedding OpenDataSci in Your Own App](#embedding-opendatasci-in-your-own-app)
 - [Cloud Portability](#cloud-portability)
 - [Models](#models)
 - [MCP Servers](#mcp-servers)
@@ -37,41 +46,7 @@ pip install open-data-sci
 
 ### System dependencies
 
-The sandbox that runs model-generated code shells out to native binaries that `pip` cannot install: `ripgrep` everywhere, plus `bubblewrap` and `socat` on Linux. **The TUI detects a missing dependency on first launch and offers to install it for you** (see below) — you only need to do this by hand if you're setting things up ahead of time or skip that step in the wizard:
-
-```bash
-# macOS
-brew install ripgrep
-
-# Linux (Debian/Ubuntu)
-sudo apt-get install -y bubblewrap socat ripgrep
-
-# Linux (Fedora)
-sudo dnf install -y bubblewrap socat ripgrep
-
-# Linux (Arch)
-sudo pacman -S --noconfirm bubblewrap socat ripgrep
-```
-
-If you've cloned the repository, `make install-system-dependencies` runs the right command for your platform automatically.
-
-Additionally, install the [GitHub CLI](https://cli.github.com) (`gh`) to use the built-in **`github.com`** skill (`execute_cli_command` shells out to it for read-oriented GitHub lookups). This one isn't checked by the setup wizard — install it yourself if you want that skill:
-
-```bash
-# macOS
-brew install gh
-
-# Linux (Debian/Ubuntu)
-sudo apt install gh
-
-# Linux (Fedora)
-sudo dnf install gh
-
-# Linux (Arch)
-sudo pacman -S github-cli
-```
-
-`gh` runs unauthenticated inside the sandbox (the sandbox denies read access to `~/.config/gh`, so it can't inherit a host `gh auth login` session) — fine for public read-only lookups, subject to GitHub's unauthenticated rate limits.
+The sandbox that runs model-generated code shells out to native binaries that `pip` cannot install: `ripgrep` everywhere, plus `bubblewrap` and `socat` on Linux. **The TUI detects a missing dependency on first launch and offers to install it for you** — you only need to install them by hand if you're setting things up ahead of time (scripted installs, containers, CI) or skip that step in the wizard. See the documentation for the exact command per platform, including the optional GitHub CLI (`gh`) install needed for the built-in **`github.com`** skill.
 
 ### Provider extras
 
@@ -96,7 +71,7 @@ pip install "open-data-sci[finance]"       # Finance data — yfinance
 
 The `[deep-learning]` extra — deep learning directly on the host, for machines with a GPU or NPU — is required to use the **Deep Learning** skill; without it, the agent's sandboxed Python environment has no training framework available. The `[finance]` extra is required to use the **`finance.yahoo.com`** skill.
 
-> **GPU access inside the sandbox is opt-in, and it's a real host-kernel exposure.** When a `[deep-learning]` package (`torch`, `jax`, `transformers`, `sentence-transformers`) is installed, the sandbox bind-mounts the host's GPU compute device nodes (`/dev/nvidia*`, `/dev/dri/renderD*` on Linux) so those frameworks can actually use the GPU — otherwise sandboxed code has no path to accelerator hardware at all. This is a materially different risk than the sandbox's filesystem/network isolation: it hands sandboxed code direct `ioctl` access to the host kernel's GPU driver (GPU driver ioctl surfaces have a real CVE history), and there's no GPU-equivalent of the CPU/memory resource limits the sandbox otherwise enforces. A warning is logged whenever this activates. See the module docstring in `opendatasci/sandbox/srt.py` for the full detail. macOS/Metal passthrough and NPU passthrough are not verified — see that docstring for current status. Uninstall the `[deep-learning]` packages to disable this entirely.
+> **GPU access inside the sandbox is opt-in, and it's a real host-kernel exposure.** Installing a `[deep-learning]` package makes the sandbox bind-mount the host's accelerator device nodes so those frameworks can actually use the hardware — a materially different risk than the sandbox's filesystem/network isolation, since it hands sandboxed code direct access to the host kernel's GPU driver. A warning is logged whenever this activates; uninstall the `[deep-learning]` packages to disable it entirely. See the documentation for the full breakdown (device nodes, per-platform coverage, and the underlying risk).
 
 Multiple extras can be combined:
 
@@ -146,9 +121,9 @@ primary_temperature: 0.1
 opendatasci data.csv --config datasci.yaml
 ```
 
-Annotated config files for every supported provider are available in [`examples/configs/`](examples/configs/).
+An annotated config file ships for every supported provider.
 
-### Python SDK
+### Quick start with the Python SDK
 
 ```python
 from opendatasci import create_agent, Invocation
@@ -159,11 +134,7 @@ async with create_agent("data.csv") as agent:
         print(event)
 ```
 
-There's no wizard here — the SDK is not the TUI, so provide `config=OpenDataSciConfig(...)` (or set env vars) up front. See [Embedding OpenDataSci in Your Own App](#embedding-opendatasci-in-your-own-app).
-
-### More examples
-
-The [`examples/`](examples/README.md) directory covers TUI walkthroughs, batch scripts, Jupyter notebooks, and annotated config files across every supported provider.
+There's no wizard here — the SDK is not the TUI, so provide `config=OpenDataSciConfig(...)` (or set env vars) up front. See [Python SDK](#python-sdk) below for more, including custom providers.
 
 ---
 
@@ -183,7 +154,7 @@ A short, linear flow (theme, then whichever of primary/secondary provider and mo
 
 ### 3. Provider secrets
 
-Whatever the chosen provider still needs — an API key, an Azure endpoint, a GCP project ID — is collected one field at a time. Each value is saved as you enter it (to `~/.opendatasci/config.yaml`), so quitting partway through doesn't lose what you've already typed, and it won't be asked again on a later launch. Environment variables and `.env` always take precedence over this saved file, so a value you export or add to `.env` later overrides whatever the wizard remembered.
+Whatever the chosen provider still needs — an API key, an Azure endpoint, a GCP project ID — is collected one field at a time. Each value is saved as you enter it (to `~/.opendatasci/secrets/api.yaml`), so quitting partway through doesn't lose what you've already typed, and it won't be asked again on a later launch. Environment variables and `.env` always take precedence over this saved file, so a value you export or add to `.env` later overrides whatever the wizard remembered.
 
 Everything the wizard sets can be changed afterwards, live, from the `/config` panel — see [The `/config` panel](#the-config-panel).
 
@@ -206,7 +177,6 @@ opendatasci PATH [OPTIONS]
 | Flag | Description |
 |------|-------------|
 | `--config FILE` | Path to a YAML file containing `OpenDataSciConfig` fields. Fields it sets are used as-is; anything it doesn't set (including theme, which it never sets) is picked interactively on startup |
-| `--list-providers` | Print all supported providers and their default models, then exit |
 | `--version` | Print the installed version, then exit |
 
 Provider, model, secondary provider/model, theme, and API keys are set through `--config`, environment variables/`.env`, or the interactive wizard/`/config` panel. If you're scripting a launch and want it to never prompt, use `--config` (and make sure any secrets it needs are in the environment).
@@ -222,9 +192,6 @@ opendatasci data.csv --config datasci.yaml
 
 # Bedrock, credentials from the environment, model/provider from the file
 REGION=us-west-2 opendatasci ./project/ --config examples/configs/config_bedrock.yaml
-
-# See all available providers and their default models
-opendatasci --list-providers
 ```
 
 ---
@@ -260,8 +227,8 @@ Run `/config` (or `/settings` — same command, either name works) to open a nav
 
 | Section | What's in it |
 |---------|--------------|
-| **Display** | Theme (see [Themes](#themes)); Tips (toggle the rotating footer hints) |
-| **Integrations** | **MCP Servers** — add, verify, or remove [MCP servers](#mcp-servers) the agent can call, either by loading candidates from an `mcp.json` file or entering one manually (name, URL, transport, headers); **Skills directory** — point at a folder of [custom skills](#custom-skills) |
+| **Display** | Theme; Tips (toggle the rotating footer hints) |
+| **Integrations** | **MCP Servers** — add, verify, or remove [MCP servers](#mcp-servers) the agent can call, either by loading candidates from an `mcp.json` file or entering one manually (name, URL, transport, headers); **Custom skills** — point at a folder of [custom skills](#custom-skills) |
 | **Models** | Grouped under **Primary Model** (provider, model, sampling temperature) and **Secondary Model** (provider, model) — picking a new provider resets its paired model to that provider's default, and the model choices offered depend on whichever provider is currently selected |
 | **Personalization** | Agent display name |
 | **Subagents** | Worker timeout (max seconds a spawned worker may run) |
@@ -278,34 +245,7 @@ Attach files or code snippets to any message using the `@` prefix:
 @path/to/file.py                      # attach an entire file
 ```
 
-The agent sees the attached content as structured context inline with your message. Paths are resolved relative to your current working directory.
-
----
-
-## Key Bindings
-
-| Key | Action |
-|-----|--------|
-| `Ctrl+C` | Stop the running agent turn; press again while idle to quit |
-| `Ctrl+R` | Reset session |
-| `Ctrl+L` | Clear conversation |
-| `Escape` | Focus input box; step back a level in `/config` |
-| `Tab` | Cycle `@file` and `/command` completions |
-| `↑` / `↓` | Navigate input history or completion suggestions |
-
----
-
-## Themes
-
-Pick a theme in the setup wizard, or switch live any time from `/config` → Display → Theme — no restart required.
-
-| Name | Description |
-|------|-------------|
-| `default` | Dark background with muted accents (built-in default) |
-| `accessible` | Okabe-Ito palette — colour-blind safe |
-| `light` | Light background with dark text |
-| `solarized` | Solarized Dark by Ethan Schoonover |
-| `dracula` | Dracula — vivid pastels on near-black |
+While typing, matching files are discovered relative to your current working directory. The message sent to the agent carries a reference to the resolved absolute path rather than the file's content — the agent reads the file itself using its own file-reading tool.
 
 ---
 
@@ -316,17 +256,17 @@ The async-first Python API gives full programmatic control over the agent, indep
 ### Basic usage
 
 ```python
-from opendatasci import create_agent
+from opendatasci import Invocation, create_agent
 
 async with create_agent("sales.xlsx") as agent:
-    async for event in agent.astream("What is the average revenue by region?"):
+    async for event in agent.astream(Invocation.from_text("What is the average revenue by region?")):
         print(event)
 ```
 
 ### Custom provider and model
 
 ```python
-from opendatasci import OpenDataSciConfig, create_agent
+from opendatasci import Invocation, OpenDataSciConfig, create_agent
 
 config = OpenDataSciConfig(
     provider="openai",
@@ -336,136 +276,23 @@ config = OpenDataSciConfig(
 )
 
 async with create_agent("data.parquet", config=config) as agent:
-    async for event in agent.astream("Train a gradient boosting model on the target column."):
+    async for event in agent.astream(Invocation.from_text("Train a gradient boosting model on the target column.")):
         print(event)
 ```
 
-### `OpenDataSciConfig` reference
-
-| Field | Description |
-|-------|-------------|
-| `provider` | LLM provider (`"anthropic"`, `"openai"`, `"bedrock"`, `"gemini"`, `"vertexai"`, `"azure"`, `"ollama"`, `"openai_compatible_server"`) |
-| `model` | Primary model identifier — omit to use the provider default |
-| `secondary_provider` | Provider for the lightweight secondary model — defaults to the primary provider |
-| `secondary_model` | Secondary model identifier — omit to use the provider default |
-| `anthropic_api_key` | Anthropic API key (env: `ANTHROPIC_API_KEY`) |
-| `openai_api_key` | OpenAI / OpenAI-compatible server API key (env: `OPENAI_API_KEY`) |
-| `google_api_key` | Google Gemini API key (env: `GOOGLE_API_KEY`) |
-| `azure_api_key` | Azure OpenAI API key (env: `AZURE_OPENAI_API_KEY`) |
-| `aws_region` | AWS region for Bedrock (env: `REGION`) |
-| `google_cloud_project` | GCP project ID for Vertex AI (env: `GOOGLE_CLOUD_PROJECT`) |
-| `google_cloud_location` | Vertex AI region (env: `GOOGLE_CLOUD_LOCATION`) |
-| `azure_endpoint` | Azure OpenAI resource endpoint URL (env: `AZURE_OPENAI_ENDPOINT`) |
-| `azure_api_version` | Azure OpenAI API version — defaults to `2025-01-01-preview` (env: `AZURE_OPENAI_API_VERSION`) |
-| `llm_server_base_url` | Custom API base URL — required for `ollama` and `openai_compatible_server` (env: `LLM_SERVER_BASE_URL`) |
-| `primary_temperature` | Sampling temperature for the primary model — not sent to Claude 4.6+ / Sonnet 5 models, which use adaptive thinking (env: `PRIMARY_TEMPERATURE`) |
-| `name` | Display name for the agent — defaults to `"Sai"` (env: `NAME`) |
-| `mcp_servers` | MCP servers the agent may connect to — see [MCP Servers](#mcp-servers) (env: `MCP_SERVERS`) |
-| `skills_directory` | Path to a directory of custom skill files loaded in addition to built-ins (env: `SKILLS_DIRECTORY`) |
-| `builtin_skills_directory` | Path to the built-in skills directory — override only to replace defaults entirely (env: `BUILTIN_SKILLS_DIRECTORY`) |
-| `skill_domains_directory` | Path to a directory of custom skill domains, loaded in addition to built-ins (env: `SKILL_DOMAINS_DIRECTORY`) |
-| `builtin_skill_domains_directory` | Path to the built-in skill domains directory — override only to replace defaults entirely (env: `BUILTIN_SKILL_DOMAINS_DIRECTORY`) |
-| `worker_timeout_seconds` | Max seconds to wait for spawned workers to finish — `null` disables the timeout, default `300` (env: `WORKER_TIMEOUT_SECONDS`) |
-| `autocompaction_threshold` | Token count at which context is compacted mid-turn — default `96000` (env: `AUTOCOMPACTION_THRESHOLD`) |
-| `local_code_exec_timeout` | Max seconds for a single sandboxed code-execution run — default `1800` (env: `CODE_EXEC_TIMEOUT`) |
-
-Note that `OpenDataSciConfig` itself never prompts for anything — it's a plain `pydantic-settings` model. The setup wizard is a TUI-only affair (`opendatasci/_tui/`); code built on the SDK directly is responsible for supplying whatever the chosen provider needs, same as any other library.
-
----
-
-## Embedding OpenDataSci in Your Own App
-
-The same `create_agent`/`astream` pattern the TUI is built on works unattended — no terminal, no human answering prompts — which is the shape you want for a desktop app's backend, a batch job, an API service, or a cloud deployment.
-
-### Headless batch processing
-
-The pattern below (trimmed from [`examples/scripts/020_script_anthropic.py`](examples/scripts/020_script_anthropic.py) — see that file, plus its [OpenAI-compatible-server](examples/scripts/021_script_openai_compatible_server.py) and [Bedrock](examples/scripts/022_script_bedrock.py) variants, for the runnable version) drives the agent over a batch of files with no TUI at all — suitable for a scheduled job, a CI pipeline, or a worker process behind an API:
-
-```python
-import asyncio
-from pathlib import Path
-
-from opendatasci import Invocation, OpenDataSciConfig, create_agent
-
-async def analyse(csv_path: Path, config: OpenDataSciConfig) -> str:
-    final = ""
-    async with create_agent(str(csv_path), config=config) as agent:
-        async for event in agent.astream(Invocation.from_text("Summarise this dataset.")):
-            if event.type == "response":
-                final = event.content
-            elif event.type == "error":
-                raise RuntimeError(event.content)
-    return final
-
-async def main() -> None:
-    # No terminal, no prompts — every value the provider needs must be
-    # supplied here or via the environment before this runs.
-    config = OpenDataSciConfig(provider="anthropic", primary_temperature=0.1)
-    for path in Path("data").glob("*.csv"):
-        report = await analyse(path, config)
-        Path("reports", path.with_suffix(".report.txt").name).write_text(report)
-
-asyncio.run(main())
-```
-
-Swap `config` for any other provider — e.g. `OpenDataSciConfig(provider="openai_compatible_server", model="Qwen/Qwen3.5-4B", llm_server_base_url="http://gpu-box:8000/v1")` to point at a self-hosted vLLM server with no external API key at all, a natural fit for an on-prem or air-gapped deployment.
-
-### Long-lived sessions (a desktop app or notebook)
-
-Keep the agent alive across multiple calls — each becomes a follow-up turn in the same conversation, sharing sandbox/session state — using `AsyncExitStack` instead of a single `async with` block:
-
-```python
-from contextlib import AsyncExitStack
-from opendatasci import Invocation, create_agent
-
-stack = AsyncExitStack()
-agent = await stack.enter_async_context(create_agent("data.csv"))
-
-async for event in agent.astream(Invocation.from_text("Profile this dataset.")):
-    ...  # handle events (e.g. forward "token" events to a UI as they stream)
-
-async for event in agent.astream(Invocation.from_text("Now train a baseline model.")):
-    ...  # second turn, same session — the agent still has the first turn's context
-
-await stack.aclose()  # tears down the sandbox and any open connections
-```
-
-This is the shape a desktop app's backend or a long-running notebook kernel wants: one agent instance per user session, driven by whatever UI events (button clicks, chat input) your app already has, forwarding `agent.astream()`'s event stream to your own renderer instead of a terminal. See [`examples/notebooks/`](examples/notebooks/) for a full worked example (dataset profiling → model training → SHAP interpretation across several cells/turns).
-
-### Cloud / multi-tenant deployment notes
-
-- **Configuration is entirely explicit** — `OpenDataSciConfig` reads only `__init__` kwargs, environment variables, and `.env`; nothing about it assumes an interactive terminal, so it's safe to construct per-request or per-tenant in a server process.
-- **Secrets belong to your deployment's own secret manager**, not `.env` — pass them as `OpenDataSciConfig(...)` kwargs sourced from wherever your platform already keeps them (env injected by the orchestrator, a secrets API, etc.).
-- **Sandboxed code execution needs the same [system dependencies](#system-dependencies)** (`ripgrep`, and on Linux `bubblewrap`/`socat`) baked into your container image — there's no wizard to fall back on in a headless deployment, so install them at build time.
-- **`agent.astream()`'s event stream** (`token`/`response`/`error`, plus tool-call and background-task events) is the integration surface for a custom frontend — pipe it into a WebSocket, an SSE endpoint, or your desktop app's own message-passing, rather than trying to reuse any `_tui`-internal code (that package is private and not part of the public API).
-- See [`examples/configs/`](examples/configs/) for a ready-made `OpenDataSciConfig` per provider to adapt into your deployment's own config-loading path.
+There's no wizard here — `OpenDataSciConfig` is a plain `pydantic-settings` model that never prompts for anything, so code built on the SDK directly is responsible for supplying whatever the chosen provider needs, same as any other library. See the documentation for the complete field-by-field reference (every field, its environment variable alias, and its default), plus patterns for headless batch processing, long-lived sessions, and multi-tenant deployment.
 
 ---
 
 ## Cloud Portability
 
-Every stateful dependency OpenDataSci relies on — where it stores data, where it runs code, where it keeps memory — sits behind an abstract interface, and the local backend shipped today is just one implementation of each. Swap in a cloud-infrastructure-backed implementation of the same interface and the agent keeps working unchanged, which is what makes moving OpenDataSci into a multi-tenant or distributed deployment a matter of configuration and infrastructure choice, not a rewrite.
-
-### Dependencies and their interfaces
-
-| Dependency | Utility | Abstraction | Shipped Implementation | Recommended Cloud Implementation |
-|---|---|---|---|---|
-| Workspace | The dataset files and other workspace artifacts | `BaseWorkspace` | Local directory on disk | Object store (e.g., S3) |
-| Code execution | Running the agent's sandboxed Python and CLI executions | `BaseSandbox` | Local OS sandbox | Firecracker microVMs |
-| Project memory | Dataset profiles, notes, and session plans | `BaseContextStore` | Local project directory | MongoDB |
-| Session-to-thread mapping | The session-to-thread mapping | `BaseSessionManager` | Local session file | Redis |
-| Conversation checkpoints | Conversation checkpoint state | `BaseCheckpointSaver` | In-memory saver | Managed Postgres |
-| Background tasks | Running and tracking background tasks | `BackgroundTaskManagerBase` | In-process async tasks | Celery (with a Redis or SQS broker) |
-| Skill registry | Skill and skill-domain files shared across an agent fleet | `BaseSkillStore` | Local skill files | Object store (e.g., S3) |
-| Human approval channel | Collecting the user's approve/reject decision for guarded actions in a headless deployment | `HumanApprovalBaseManager` | TUI prompt | A hosted approval workflow (e.g., a Slack app) |
-
-None of this is enabled out of the box — the shipped implementations are all local. Cloud portability here means the architecture doesn't stand in the way: swapping in a cloud-backed implementation of one of these interfaces doesn't require touching the agent logic that depends on it.
+Every stateful dependency OpenDataSci relies on — where it stores data, where it runs code, where it keeps memory — sits behind an abstract interface (workspace, sandbox, project memory, session mapping, conversation checkpoints, background tasks, skill registry, human approval), and the local backend shipped today is just one implementation of each. None of this is enabled out of the box — the shipped implementations are all local. Swap in a cloud-infrastructure-backed implementation of the same interface (e.g. an S3-compatible object store for the workspace, Firecracker microVMs for sandboxing, Valkey for session state) and the agent keeps working unchanged, which is what makes moving OpenDataSci into a multi-tenant or distributed deployment a matter of configuration and infrastructure choice, not a rewrite. See the documentation for the full list of interfaces and their recommended cloud implementations.
 
 ---
 
 ## Models
 
-OpenDataSci supports every major LLM provider. Pass `provider`/`model` in your `--config` YAML or `OpenDataSciConfig`, or pick them from the setup wizard / `/config` → Providers.
+OpenDataSci supports every major LLM provider. Pass `provider`/`model` in your `--config` YAML or `OpenDataSciConfig`, or pick them from the setup wizard / `/config` → Models.
 
 | Provider | Value | Extra required | Default model |
 |----------|-------|-----------------|---------------|
@@ -478,8 +305,6 @@ OpenDataSci supports every major LLM provider. Pass `provider`/`model` in your `
 | Azure OpenAI | `azure` | `open-data-sci[azure]` | `gpt-5.6-sol` |
 | Ollama | `ollama` | `open-data-sci[ollama]` | `qwen3.5:9b` |
 
-Run `opendatasci --list-providers` to print this table from the CLI at any time.
-
 ---
 
 ## MCP Servers
@@ -488,26 +313,9 @@ Connect the agent to external [Model Context Protocol](https://modelcontextproto
 
 ### From the TUI
 
-The easiest path: `/config` → Integrations → MCP Servers. Load candidate servers from an existing `mcp.json` file (pick which to add), or add one manually (name, URL, transport, headers) — either way, the server is verified reachable before being kept.
+The easiest path: `/config` → Integrations → MCP Servers. Load candidate servers from an existing `mcp.json` file (pick which to add — these are added as-is, with no connectivity check), or add one manually (name, URL, transport, headers) — a manually-added server is tested and must connect successfully before it's kept.
 
-### `.opendatasci/mcp.json`
-
-Place this inside your workspace's `.opendatasci/` directory to have it picked up automatically. The format mirrors Cursor/VS Code's convention:
-
-```json
-{
-  "mcpServers": {
-    "my-server": {
-      "url": "http://localhost:8080",
-      "type": "http",
-      "headers": { "Authorization": "Bearer ..." }
-    },
-    "another": { "url": "http://localhost:9000", "type": "sse" }
-  }
-}
-```
-
-`type` defaults to `"http"` and `headers` defaults to `{}` when omitted. Tools are (re)discovered from every configured server at the start of each turn, not just once at startup, so enabling/disabling tools on the server side takes effect without restarting OpenDataSci.
+Tools are (re)discovered from every configured server at the start of each turn, not just once at startup, so enabling/disabling tools on the server side takes effect without restarting OpenDataSci.
 
 ### Via the SDK
 
@@ -529,7 +337,7 @@ async with create_agent("data.csv", config=config) as agent:
 
 ## Custom Skills
 
-Skills are Markdown (or YAML/JSON) files that give the agent a specialised persona and instruction set. OpenDataSci ships several built-in skills; you can add your own at the workspace level or point the agent at any directory you choose.
+Skills are Markdown files that give the agent a specialised persona and instruction set. OpenDataSci ships several built-in skills; you can add your own at the workspace level or point the agent at any directory you choose.
 
 ### Workspace skills (recommended)
 
@@ -560,7 +368,7 @@ You are a time-series forecasting specialist. When analysing data, always...
 
 ### Global skills directory
 
-To share skills across workspaces, set `SKILLS_DIRECTORY` in your environment or `.env` file — or point `/config` → Integrations → Skills directory at it live from inside the TUI:
+To share skills across workspaces, set `SKILLS_DIRECTORY` in your environment or `.env` file — or point `/config` → Integrations → Custom skills at it live from inside the TUI:
 
 ```bash
 SKILLS_DIRECTORY=/home/user/my-skills
@@ -583,8 +391,15 @@ async with create_agent("data.csv", config=config) as agent:
 
 ## Environment Variables
 
+Each variable below is also settable as a field on `OpenDataSciConfig` directly in the Python SDK — use whichever fits your setup.
+
 | Variable | Description |
 |----------|-------------|
+| `PROVIDER` | LLM provider for the primary model (default: `anthropic`) |
+| `MODEL` | Primary model identifier (default: provider default) |
+| `SECONDARY_PROVIDER` | Provider for the secondary model (default: `anthropic`, independent of `PROVIDER`) |
+| `SECONDARY_MODEL` | Secondary model for lightweight tasks (default: provider default) |
+| `NAME` | Agent display name, injected into all system prompts (default: `Sai`) |
 | `ANTHROPIC_API_KEY` | API key for the Anthropic provider |
 | `OPENAI_API_KEY` | API key for the OpenAI / OpenAI-compatible server provider |
 | `GOOGLE_API_KEY` | API key for the Google Gemini provider |
@@ -605,4 +420,4 @@ async with create_agent("data.csv", config=config) as agent:
 | `AUTOCOMPACTION_THRESHOLD` | Token count at which context is compacted mid-turn (default: `96000`) |
 | `CODE_EXEC_TIMEOUT` | Max seconds for a single sandboxed code execution (default: `1800`) |
 
-A `.env` file in the working directory is loaded automatically at startup. Anything set here (or exported directly) always overrides both a `--config` YAML file's corresponding field and whatever the setup wizard has saved to `~/.opendatasci/config.yaml`.
+A `.env` file in the working directory is loaded automatically at startup. A `--config` YAML file's fields take precedence over environment variables and `.env`, which in turn take precedence over whatever the setup wizard has saved to `~/.opendatasci/settings/global.yaml` and `~/.opendatasci/secrets/api.yaml`.

@@ -1,7 +1,7 @@
 # OpenDataSci — Azure OpenAI config
 #
 # Usage:
-#   opendatasci data.csv --config examples/config_azure.yaml
+#   opendatasci data.csv --config examples/configs/config_azure.yaml
 #
 # Prerequisites:
 #   pip install "open-data-sci[azure]"

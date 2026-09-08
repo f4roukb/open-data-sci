@@ -10,7 +10,15 @@ The library ships with built-in skills and skill domains covering data science, 
 
 ## Custom skills
 
-Add your own skills by pointing `OpenDataSciConfig.skills_directory` (or the `SKILLS_DIRECTORY` env var) at a directory of `.md` files:
+`create_agent()` scans skills in three layers, in increasing order of precedence: the
+bundled built-ins, then the current workspace's own `.opendatasci/skills/` directory
+(`.opendatasci/skill_domains/` for skill domains), then an explicit
+`OpenDataSciConfig.skills_directory` (or the `SKILLS_DIRECTORY` env var) override if set.
+A name that clashes across layers resolves to the higher-precedence one.
+
+The simplest way to add skills to a single workspace is to drop `.md` files straight into
+its `.opendatasci/skills/` directory — no configuration needed. To share a skills directory
+across workspaces, point `skills_directory` at it instead:
 
 ```
 my_skills/
@@ -29,7 +37,11 @@ async with create_agent("data.csv", config=config) as agent:
     ...
 ```
 
-Custom skills are merged with the built-in set; a custom file with the same name as a built-in overrides it.
+Custom skills are merged with the built-in set and the workspace's own skills; a name that
+exists at more than one layer resolves to the highest-precedence one (`skills_directory` >
+workspace `.opendatasci/skills/` > built-in). `LocalSkillStore.load_user_defined()` returns
+just the non-built-in skills — everything from the workspace directory and the explicit
+`skills_directory` override, with the bundled built-ins excluded.
 
 ## Custom skill store
 

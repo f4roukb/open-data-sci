@@ -16,14 +16,16 @@ This background-scheduling layer is backed by `opendatasci.tasks`.
 
 | Method | Use it to |
 |---|---|
+| `submit_task(work, summary)` | Create a `BackgroundTaskRecord` and schedule `work` to run against it, returning its `task_id`. `work` receives only the `task_id`, not the record — a task manager exposes reading tasks, not writing to them from the scheduling side. |
 | `get_task(task_id)` | Look up one task's current record. |
 | `list_tasks()` | List every tracked task. |
 | `cancel_task(task_id)` | Request cancellation (best-effort). |
+| `upsert_record(record)` | Insert or overwrite a `BackgroundTaskRecord` wholesale, keyed by `record.task_id`. For a worker running independently of the manager (e.g. in a different process) to report its own state back directly. |
 | `push_activity(task_id, entry)` | Append one plain-text entry to a task's activity log (used internally by the `task` tool as a worker's tool calls complete). |
 | `monitor_task(task_id, regex_patterns)` | Register one fire-once monitor per pattern against a task's activity log; returns a monitor ID per pattern. See [Monitoring task activity](#monitoring-task-activity). |
 | `list_task_monitors(task_id)` | Return `{monitor_id: pattern}` for a task's currently active monitors. |
 | `record_task_update(task_id, kind, ...)` | The single write path behind both delivery mechanisms below — store a `BackgroundTaskUpdate` and notify both the doorbell and the content buffer. Most callers use `push_activity`/`monitor_task` rather than this directly. |
-| `listen_task_updates()` | `async for task_id, update_id in agent.task_manager.listen_task_updates():` — yields as soon as an update (a completion or a monitor match) is recorded against a task. Use this to show a notification or trigger your own follow-up logic without polling. Single-consumer: each update is delivered exactly once. |
+| `listen_task_updates()` | `async for event in agent.task_manager.listen_task_updates(): task_id, update_id = event.task_id, event.update_id` — yields a `BackgroundTaskUpdateEvent` as soon as an update (a completion or a monitor match) is recorded against a task. Use this to show a notification or trigger your own follow-up logic without polling. Single-consumer: each update is delivered exactly once. |
 | `pull_task_updates()` / `has_task_updates()` | Non-blocking drain of updates collected since the last pull — independent of `listen_task_updates()`, so each can have its own consumer without racing. |
 
 While a turn is already in progress, the agent drains its own task manager automatically as work completes, so a result can change what it does next within the same turn rather than sitting unused until the turn ends. Starting a *new* turn to deliver a result — when the agent is otherwise idle, or once the current turn wraps up — is the driving caller's job: the bundled TUI does this for you by watching `listen_task_updates()` and kicking off a turn as soon as one is warranted, so if you're using the TUI you never need to think about this at all.
@@ -65,6 +67,13 @@ This is exposed to the agent as the `monitor_task` tool, alongside `check_task`/
 ---
 
 ::: opendatasci.tasks.base.BackgroundTaskUpdate
+    options:
+      show_root_heading: true
+      show_source: false
+
+---
+
+::: opendatasci.tasks.base.BackgroundTaskUpdateEvent
     options:
       show_root_heading: true
       show_source: false

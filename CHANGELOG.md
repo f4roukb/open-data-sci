@@ -59,6 +59,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Removed
 
 - **Dead TUI theme keys** — `thinking` and `muted_bg` were defined in every palette but their only consumer (an unused `MessageBubble.thinking` CSS rule, for a message role nothing ever creates) has been removed too.
+- **`--list-providers` CLI flag** — printed a table of supported providers and their default models, then exited; no longer supported. The same table still lives in the README and `docs/getting-started.md`.
 
 ## [0.2.1] - 2026-07-21
 

@@ -7,8 +7,6 @@ from pathlib import Path
 from typing import Awaitable, Callable, cast
 
 from dotenv import load_dotenv
-from rich.console import Console
-from rich.table import Table
 from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -54,20 +52,11 @@ from opendatasci._tui.screens.onboarding_screen import OnboardingScreen
 from opendatasci._tui.screens.startup_wizard_screen import StartupWizardScreen
 from opendatasci._tui.screens.system_dependencies_screen import SystemDependenciesScreen
 from opendatasci._tui.style import theme as _theme
-from opendatasci.configs import DEFAULT_MODEL, OpenDataSciConfig
+from opendatasci.configs import OpenDataSciConfig
 from opendatasci.sandbox.srt import get_system_dependency_status
 from opendatasci.tools.mcp import MCPServerSpec
 
 logger = logging.getLogger(__name__)
-
-
-def _print_providers() -> None:
-    table = Table(title=None, show_header=True, header_style="bold")
-    table.add_column("Provider")
-    table.add_column("Default model")
-    for provider, model in DEFAULT_MODEL.items():
-        table.add_row(provider, model)
-    Console().print(table)
 
 
 def _apply_global_config_fallback(kwargs: dict[str, object], global_cfg: dict[str, object]) -> None:
@@ -491,17 +480,8 @@ Examples:
             "which it never sets) is picked interactively on startup."
         ),
     )
-    parser.add_argument(
-        "--list-providers",
-        action="store_true",
-        help="List supported providers and their default models, then exit",
-    )
     parser.add_argument("--version", action="version", version=f"OpenDataSci {_get_version()}")
     args = parser.parse_args()
-
-    if args.list_providers:
-        _print_providers()
-        return
 
     workspace_or_file = args.workspace_or_file or str(Path.cwd())
     secrets = load_secrets()

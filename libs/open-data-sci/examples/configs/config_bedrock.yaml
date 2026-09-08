@@ -1,7 +1,7 @@
 # OpenDataSci — AWS Bedrock config
 #
 # Usage:
-#   opendatasci data.csv --config examples/config_bedrock.yaml
+#   opendatasci data.csv --config examples/configs/config_bedrock.yaml
 #
 # Prerequisites:
 #   pip install "open-data-sci[aws]"
